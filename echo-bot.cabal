@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 43a3559249a657e57cde62890fb18624f754b4162fb2cf041997d2fc6575e440
+-- hash: 564ec00728c15e353bd4cbbfd9b37cc15a627377a77ba42b44524eb61a6043c5
 
 name:           echo-bot
 version:        0.1.0.0
@@ -61,6 +61,7 @@ test-suite echo-bot-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
+      LoggerSpec
       Paths_echo_bot
   hs-source-dirs:
       test
@@ -69,6 +70,7 @@ test-suite echo-bot-test
       async
     , base >=4.7 && <5
     , echo-bot
+    , hspec
     , mtl
     , text
     , time
