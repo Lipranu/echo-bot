@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 564ec00728c15e353bd4cbbfd9b37cc15a627377a77ba42b44524eb61a6043c5
+-- hash: 92aab5557dac8ebe6f461165cbe6efc42d90790a0be935e29a6e8181a0872a75
 
 name:           echo-bot
 version:        0.1.0.0
@@ -67,7 +67,8 @@ test-suite echo-bot-test
       test
   ghc-options: -threaded -rtsopts -with-rtsopts=-N
   build-depends:
-      async
+      QuickCheck
+    , async
     , base >=4.7 && <5
     , echo-bot
     , hspec
