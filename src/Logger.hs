@@ -52,7 +52,7 @@ class MonadTime m => MonadLog m where
 type App = ReaderT Env (StateT State IO)
 
 instance MonadLog App where
-  logger lvl msg = showLog lvl msg >>= liftIO . putStrLn
+  logger lvl msg = showLog lvl msg <$> getTime >>= liftIO . putStrLn
 
 instance MonadTime App where
   getTime = liftIO $ getCurrentTime
@@ -60,11 +60,13 @@ instance MonadTime App where
 showt :: Show a => a -> Text
 showt = pack . show
 
-showLog :: MonadTime m => Priority -> Text -> m Text
-showLog lvl msg =
-  (<>) . showt
-  <$> getTime
-  <*> pure (" - [" <> showt lvl <> "]:\n" <> msg <> "\n")
+showLog :: Priority -> Text -> UTCTime -> Text
+showLog lvl msg time = showt time
+  <> " - ["
+  <> showt lvl
+  <> "]:\n"
+  <> msg
+  <> "\n"
 
 logPure :: (Has Priority r, MonadReader r m, MonadLog m)
       => Priority
