@@ -24,6 +24,7 @@ dependencies:
 - time
 - mtl
 - async
+- aeson
 - base >= 4.7 && < 5
 
 library:

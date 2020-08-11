@@ -1,3 +1,4 @@
+log/
 .stack-work/
 stack*.yaml.lock
 .ghci
