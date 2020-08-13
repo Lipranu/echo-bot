@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5f23608dfec086a5253637c12c063ea39812e38cec9ebd3e31547064b48b00e8
+-- hash: b24cbcf91c772a1f0ff1949f5ce340c6e7de4b1de01ea84844992c1f454d40e5
 
 name:           echo-bot
 version:        0.1.0.0
@@ -37,6 +37,7 @@ library
       aeson
     , async
     , base >=4.7 && <5
+    , bytestring
     , mtl
     , text
     , time
@@ -53,6 +54,7 @@ executable echo-bot-exe
       aeson
     , async
     , base >=4.7 && <5
+    , bytestring
     , echo-bot
     , mtl
     , text
@@ -73,6 +75,7 @@ test-suite echo-bot-test
     , aeson
     , async
     , base >=4.7 && <5
+    , bytestring
     , echo-bot
     , hspec
     , mtl
