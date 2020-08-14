@@ -6,7 +6,7 @@
 module EchoBot ( run ) where
 
 import           Internal                        ( Has (..), Lock )
-import qualified Logger                       as Logger
+import qualified Logger
 
 import           Control.Concurrent.Async        ( concurrently )
 import           Control.Concurrent.MVar         ( newMVar )
