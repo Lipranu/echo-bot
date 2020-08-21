@@ -20,12 +20,13 @@ extra-source-files:
 description:         Please see the README on GitHub at <https://github.com/lipranu/echo-bot#readme>
 
 dependencies:
+- aeson
+- async
+- bytestring
+- containers
+- mtl
 - text
 - time
-- mtl
-- async
-- aeson
-- bytestring
 - base >= 4.7 && < 5
 
 library:

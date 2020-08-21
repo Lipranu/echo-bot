@@ -21,7 +21,6 @@ import           System.IO                       ( BufferMode (..)
                                                  , stdout
                                                  )
 import qualified Data.Aeson                   as Aeson
-import qualified Data.ByteString.Lazy         as BS
 import qualified Data.Text.IO                 as TextIO
 
 data Env = Env
@@ -53,11 +52,11 @@ runApp app env = evalStateT (runReaderT (unApp app) env)
 run :: IO ()
 run = do
   lock <- newMVar ()
-  config <- BS.readFile "bot.conf"
-  let config' = Aeson.eitherDecode config :: Either String Logger.Config
+--  config <- BS.readFile "bot.conf"
+  config <- Aeson.eitherDecodeFileStrict "bot.conf" :: IO (Either String Logger.Config)
   hSetBuffering stdout LineBuffering
-  case config' of
-    Left  e -> putStrLn e
+  case config of
+    Left  e -> putStrLn $ "config error" <> e
     Right r -> do
       let vk = Logger.mkLogger r "vk"
           te = Logger.mkLogger r "telegram"

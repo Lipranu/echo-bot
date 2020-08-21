@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: fb06750aec742774d6afdb1b8f8ef65ba8a0de23feefde15d41dc04af3bbc7e7
+-- hash: 7301770cd948695939125ce608279a51f96cfb961fda7b18ebc516e56605ce02
 
 name:           echo-bot
 version:        0.1.0.0
@@ -30,7 +30,6 @@ library
       EchoBot
       Internal
       Logger
-      Logger.Internal
   other-modules:
       Paths_echo_bot
   hs-source-dirs:
@@ -40,6 +39,7 @@ library
     , async
     , base >=4.7 && <5
     , bytestring
+    , containers
     , mtl
     , text
     , time
@@ -57,6 +57,7 @@ executable echo-bot-exe
     , async
     , base >=4.7 && <5
     , bytestring
+    , containers
     , echo-bot
     , mtl
     , text
@@ -78,6 +79,7 @@ test-suite echo-bot-test
     , async
     , base >=4.7 && <5
     , bytestring
+    , containers
     , echo-bot
     , hspec
     , mtl
