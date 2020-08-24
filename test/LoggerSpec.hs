@@ -1,33 +1,42 @@
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module LoggerSpec where
 
+import Internal (Has (..), Lock)
 import Logger
-import Internal (Lock, Has(..))
 
-import Data.Aeson (decode)
-import Data.Text
---import qualified Data.ByteString.Lazy.Char8 as BS
-import Data.Bifunctor
-import Control.Concurrent.MVar
-import Data.Time
-import Data.Maybe
-import Data.Map (Map, (!), (!?))
-import qualified Data.Map as Map
-import Test.Hspec
-import Test.Hspec.QuickCheck
-import Test.QuickCheck
-import Control.Monad.Reader
-import Control.Monad.State
+import Control.Concurrent.Async ( concurrently )
+import Control.Concurrent.MVar  ( newMVar )
+import Control.Monad.IO.Class   ( MonadIO, liftIO )
+import Control.Monad.Reader     ( ReaderT, MonadReader, asks, runReaderT )
+import Data.Aeson               ( eitherDecode )
+import Data.Bifunctor           ( bimap )
+import Data.IORef               ( IORef, modifyIORef, newIORef, readIORef )
+import Data.Map                 ( Map, (!), (!?) )
+import Data.Maybe               ( fromMaybe )
+import Data.Text                ( Text )
+import Test.Hspec               ( Spec, context, describe, it, shouldBe )
+import Test.Hspec.QuickCheck    ( prop )
+import Test.QuickCheck          ( Arbitrary (..), elements )
+
+import qualified Data.Map  as Map
+import qualified Data.Text as Text
+import qualified Data.Time as Time
+
 import Prelude hiding (log)
 
-type TestState = (Text, Map FilePath Text)
+type FileLog = IORef (Map FilePath Text)
+type ConsoleLog = IORef Text
+
 data TestEnv = TestEnv
   { logger :: Logger Test
   , lock   :: Lock
+  , fileLog :: FileLog
+  , consoleLog :: ConsoleLog
   }
 
 instance Has (Logger Test) TestEnv where
@@ -36,28 +45,24 @@ instance Has (Logger Test) TestEnv where
 instance Has Lock TestEnv where
   getter = lock
 
-newtype Test a = Test { unTest :: ReaderT TestEnv (StateT TestState IO) a }
-  deriving ( Functor
-           , Applicative
-           , Monad
-           , MonadReader TestEnv
-           , MonadState TestState
-           , MonadIO
-           )
+newtype Test a = Test { unTest :: ReaderT TestEnv IO a } deriving
+  (Functor, Applicative, Monad, MonadReader TestEnv, MonadIO)
 
 instance MonadTime Test where
-  getTime = pure $ UTCTime
-    { utctDay = fromGregorian 0 1 1
-    , utctDayTime = secondsToDiffTime 0
-    }
+  getTime = pure testTime
 
 instance MonadLogger Test where
-  logConsole msg   = modify $ first $ (<>) msg
-  logFile path msg = modify $ second $
-    Map.insertWithKey (\_ old new -> old <> new) path msg
+  logConsole msg = do
+    log <- asks consoleLog
+    liftIO $ modifyIORef log (<> msg)
+
+  logFile path msg = do
+    log <- asks fileLog
+    liftIO $ modifyIORef log
+           $ Map.insertWithKey (\_ old new -> old <> new) path msg
 
 instance Arbitrary Text where
-  arbitrary = pack <$> arbitrary
+  arbitrary = Text.pack <$> arbitrary
 
 instance Arbitrary Priority where
   arbitrary = elements [Debug, Info, Warning, Error]
@@ -75,143 +80,176 @@ instance Arbitrary Config where
     <*> arbitrary
     <*> arbitrary
 
-runTest :: Test a -> TestEnv -> IO (Text, Map FilePath Text)
-runTest app logger = execStateT
-  (runReaderT (unTest app) logger)
-  (empty, Map.empty)
+mkEnv :: Logger Test -> IO TestEnv
+mkEnv l = TestEnv l
+  <$> newMVar ()
+  <*> newIORef mempty
+  <*> newIORef mempty
 
-defaultOptions :: Options
+runTest :: Test a -> TestEnv -> IO a
+runTest app = runReaderT (unTest app)
+
+getResult :: TestEnv -> IO (Text, Map FilePath Text)
+getResult TestEnv {..} = (,)
+  <$> readIORef consoleLog
+  <*> readIORef fileLog
+
+testTime :: Time.UTCTime
+testTime = Time.UTCTime
+  { utctDay     = Time.fromGregorian 0 1 1
+  , utctDayTime = Time.secondsToDiffTime 0
+  }
+
+defaultOptions, testOptions :: Options
 defaultOptions = Options
   { oEnable   = True
   , oPriority = Warning
   , oShowTime = False
   , oShowMode = True
   }
+testOptions = Options
+  { oEnable   = True
+  , oPriority = Debug
+  , oShowTime = True
+  , oShowMode = True
+  }
 
-defaultConfig :: Config
+defaultConfig, testConfig :: Config
 defaultConfig = Config
   { consoleOptions = defaultOptions
   , fileOptions    = defaultOptions
   , logFilePath    = "log"
   }
-
---runConsole :: Test a -> Logger Test -> Text
---runConsole app = fst . runTest app
-
---runFile :: Test a -> Logger Test -> Map FilePath Text
---runFile app = snd . runTest app
-
---consoleLoggerSpec :: Spec
---consoleLoggerSpec = describe "consoleLogger" $
---  prop "work" $ \msg lvl ->
---    let result = runConsole (log lvl msg) consoleLogger
---        test   = pack $ show $ Message lvl msg Nothing Nothing
---     in result `shouldBe` test
---
---fileLoggerSpec :: Spec
---fileLoggerSpec = describe "fileLogger" $ do
---  prop "work with correct path" $ \lvl msg ->
---    forAll (listOf1 arbitrary) $ \path ->
---      let result = (runFile (log lvl msg) $ fileLogger $ Just path) ! path
---          test   = pack $ show $ Message lvl msg Nothing Nothing
---       in result `shouldBe` test
---  prop "log is empty then filepath is empty string or Nothing" $ \lvl msg ->
---    forAll (elements [Nothing, Just ""]) $ \path ->
---      let result = runFile (log lvl msg) $ fileLogger path
---       in result `shouldSatisfy` Map.null
---  it "log is empty then filepath is abscent" $
---    let result = runFile (logInfo "test") $ fileLogger Nothing
---     in result `shouldSatisfy` Map.null
---
---enableLoggerSpec :: Spec
---enableLoggerSpec = describe "enablelogger" $ do
---  prop "log then true or Nothing" $ \lvl msg ->
---    forAll (listOf1 arbitrary) $ \path ->
---      forAll (elements [Just True, Nothing]) $ \b ->
---        let result a = runTest (log lvl msg) $ enableLogger b a
---            resultC  = fst $ result consoleLogger
---            resultF  = (snd $ result $ fileLogger $ Just path) ! path
---            test     = pack $ show $ Message lvl msg Nothing Nothing
---         in resultC <> resultF `shouldBe` test <> test
---  prop "not log then false" $ \lvl msg path ->
---    let result a = runTest (log lvl msg) $ enableLogger (Just False) a
---        resultC  = fst $ result consoleLogger
---        resultF  = snd $ result $ fileLogger path
---     in (resultC, Map.null resultF) `shouldBe` ("", True)
---
---filterLoggerSpec :: Spec
---filterLoggerSpec = describe "filterlogger" $
---  prop "log only equel an highter priority logs" $ \conf lvl msg ->
---    let result a = runTest (log lvl msg) $ filterLogger (Just conf) a
---        resultC  = fst $ result consoleLogger
---        resultF  = snd $ result $ fileLogger $ Just "path"
---        test     | lvl < conf = ""
---                 | otherwise  = pack $ show $ Message lvl "" Nothing Nothing
---     in resultC `shouldBe` test
+testConfig = Config
+  { consoleOptions = testOptions
+  , fileOptions    = testOptions
+  , logFilePath    = "log"
+  }
 
 decodePrioritySpec :: Spec
 decodePrioritySpec = describe "decode priority json" $ do
-  it "debug"   $ result "\"debug\""   `shouldBe` Just Debug
-  it "info"    $ result "\"info\""    `shouldBe` Just Info
-  it "warning" $ result "\"warning\"" `shouldBe` Just Warning
-  it "error"   $ result "\"error\""   `shouldBe` Just Error
-  it "invalid" $ result "{}"          `shouldBe` Nothing
-  it "empty"   $ result ""            `shouldBe` Nothing
-  where result t = decode t :: Maybe Priority
+  it "debug"      $ result "\"debug\""   `shouldBe` Right Debug
+  it "info"       $ result "\"info\""    `shouldBe` Right Info
+  it "warning"    $ result "\"warning\"" `shouldBe` Right Warning
+  it "error"      $ result "\"error\""   `shouldBe` Right Error
+  it "invalid"    $ result "\"e\""       `shouldBe` Left invalid
+  it "wrong type" $ result "{}"          `shouldBe` Left wrongType
+  where result t  = eitherDecode t :: Either String Priority
+        invalid   = "Error in $: Logger.Priority: unknown priority: e"
+        wrongType = "Error in $: parsing Logger.Priority failed,\
+                    \ expected String, but encountered Object"
+
 
 decodeOptionsSpec :: Spec
 decodeOptionsSpec = describe "decode options json" $ do
-  it "valid"   $ result valid   `shouldBe` Just (Options True Info True False)
-  it "invalid" $ result invalid `shouldBe` Nothing
-  it "empty"   $ result "{}"    `shouldBe` Just defaultOptions
-  where result t = decode t :: Maybe Options
-        invalid  = "{\"enable\":1}"
-        valid    = "{\"enable\":true,\
-                   \\"priority\":\"info\",\
-                   \\"show_time\":true,\
-                   \\"show_mode\":false}"
+  it "valid"        $ result valid  `shouldBe` Right testOptions
+  it "wrong type"   $ result "\"\"" `shouldBe` Left wrongType
+  it "empty object" $ result "{}"   `shouldBe` Right defaultOptions
+  where result t  = eitherDecode t :: Either String Options
+        wrongType = "Error in $: parsing Logger.Options failed,\
+                    \ expected Object, but encountered String"
+        valid     = "{\"enable\":true,\"priority\":\"debug\",\
+                    \\"show_time\":true,\"show_mode\":true}"
 
 decodeConfigSpec :: Spec
 decodeConfigSpec = describe "decode config json" $ do
-  it "valid"   $ result validC  `shouldBe` Just testC
-  it "invalid" $ result invalid `shouldBe` Nothing
-  it "empty"   $ result "{}"    `shouldBe` Just defaultConfig
-  where result t = decode t :: Maybe Config
-        invalid  = "{\"log_path\":\"\"}"
-        testO    = Options True Info True False
-        testC    = Config testO testO "path"
-        validC   = "{\"console_logger\":" <> validO
-                <> ",\"file_logger\":"    <> validO
-                <> ",\"log_path\":\"path\"}"
-        validO   = "{\"enable\":true,\
-                   \\"priority\":\"info\",\
-                   \\"show_time\":true,\
-                   \\"show_mode\":false}"
---prop_same :: Options -> Text -> Priority -> Text -> Property
-prop_same options mode lvl msg = do
-  lock <- newMVar ()
-  let config = Config options options "path"
-  result <- runTest (log lvl msg) $ TestEnv (mkLogger config mode) lock
-  fst result `shouldBe` fromMaybe "" (snd result !? "path")
+  it "valid"        $ result valid   `shouldBe` Right testConfig
+  it "wrong type"   $ result "\"\""  `shouldBe` Left wrongType
+  it "empty path"   $ result invalid `shouldBe` Left emptyPath
+  it "empty object" $ result "{}"    `shouldBe` Right defaultConfig
+  where result t  = eitherDecode t :: Either String Config
+        wrongType = "Error in $: parsing Logger.Config failed,\
+                    \ expected Object, but encountered String"
+        emptyPath = "Error in $: Logger.Config: empty log path"
+        invalid   = "{\"log_path\":\"\"}"
+        valid     = "{\"console_logger\":" <> options
+                 <> ",\"file_logger\":"    <> options
+                 <> ",\"log_path\":\"log\"}"
+        options   = "{\"enable\":true,\
+                    \\"priority\":\"debug\",\
+                    \\"show_time\":true,\
+                    \\"show_mode\":true}"
 
-mkLoggerSpec :: Spec
-mkLoggerSpec = describe "mkConfig" $ do
-  modifyMaxSuccess (const 1000) $
-    prop "if filepath is valid then with" prop_same
-  it "f" $ 1 + 1 `shouldBe` 2
---    $ \options lvl msg -> do
---    lock <- newMVar ()
---    let config = Config options options $ Just "path"
---    result <- runTest (log lvl msg) $ TestEnv (mkLogger config "Test") lock
---    fst result `shouldBe` fromMaybe "" ((snd result) !? "path")
+logSpec :: Spec
+logSpec = describe "log" $ do
+  context "console" $ do
+    it "logDebug"   $ rConsole logDebug   >>= (`shouldBe` test "Debug")
+    it "logInfo"    $ rConsole logInfo    >>= (`shouldBe` test "Info")
+    it "logWarning" $ rConsole logWarning >>= (`shouldBe` test "Warning")
+    it "logError"   $ rConsole logError   >>= (`shouldBe` test "Error")
+  context "file" $ do
+    it "logDebug"   $ rFile    logDebug   >>= (`shouldBe` test "Debug")
+    it "logInfo"    $ rFile    logInfo    >>= (`shouldBe` test "Info")
+    it "logWarning" $ rFile    logWarning >>= (`shouldBe` test "Warning")
+    it "logError"   $ rFile    logError   >>= (`shouldBe` test "Error")
+  where result log action = do
+          env <- mkEnv $ mkLogger testConfig "Test"
+          runTest (action "test") env
+          liftIO $ readIORef $ log env
+        rConsole     = result consoleLog
+        rFile action = (! "log") <$> result fileLog action
+        test lvl     = "[" <> lvl <> "] {Test} ("
+                    <> (Text.pack . show) testTime <> "): test\n"
+
+loggerMonoidLawSpec :: Spec
+loggerMonoidLawSpec = describe "Logger monoid laws" $ do
+  prop "left identity" $ \config mode lvl msg -> do
+    env1         <- mkEnv $ mkLogger config mode
+    env2         <- mkEnv $ mempty <> mkLogger config mode
+    (res1, res2) <- runBoth env1 env2 $ log lvl msg
+    res1 `shouldBe` res2
+  prop "right identity" $ \config mode lvl msg -> do
+    env1         <- mkEnv $ mkLogger config mode
+    env2         <- mkEnv $ mkLogger config mode <> mempty
+    (res1, res2) <- runBoth env1 env2 $ log lvl msg
+    res1 `shouldBe` res2
+  prop "associativity" $ \c1 c2 c3 m1 m2 m3 lvl msg -> do
+    let logger1 = mkLogger c1 m1
+        logger2 = mkLogger c2 m2
+        logger3 = mkLogger c3 m3
+    env1         <- mkEnv $ (logger1 <> logger2) <> logger3
+    env2         <- mkEnv $ logger1 <> (logger2 <> logger3)
+    (res1, res2) <- runBoth env1 env2 $ log lvl msg
+    res1 `shouldBe` res2
+  where runBoth env1 env2 action = do
+          runTest action env1
+          runTest action env2
+          res1 <- getResult env1
+          res2 <- getResult env2
+          return (res1, res2)
+
+loggerPropertiesSpec :: Spec
+loggerPropertiesSpec = describe "Logger properties" $ do
+  prop "with the same settings, the same messages are logged \
+       \to the console and file" $ \options lvl msg -> do
+    env <- mkEnv $ mkLogger (Config options options "path") "Test"
+    runTest (log lvl msg) env
+    (console, file) <- getResult env
+    console `shouldBe` fromMaybe "" (file !? "path")
+  prop "does not log messages with lower priority \
+       \than in the config" $ \clvl lvl msg -> do
+    let options = testOptions { oPriority = clvl }
+        config  = testConfig  { consoleOptions = options
+                              , fileOptions    = options
+                              }
+    env <- mkEnv $ mkLogger config "Test"
+    runTest (log lvl msg) env
+    res <- getResult env
+    bimap Text.null Map.null res `shouldBe` (lvl < clvl, lvl < clvl)
+  prop "concurrent logging" $ \config lvl msg -> do
+    env1 <- mkEnv $ mkLogger config "Test"
+    env2 <- mkEnv $ mkLogger config "Test"
+    concurrently (runTest (log lvl msg) env1) (runTest (log lvl msg) env1)
+    runTest (log lvl msg >> log lvl msg) env2
+    res1 <- getResult env1
+    res2 <- getResult env2
+    res1 `shouldBe` res2
 
 spec :: Spec
 spec = do
---  consoleLoggerSpec
---  fileLoggerSpec
---  enableLoggerSpec
---  filterLoggerSpec
   decodePrioritySpec
   decodeOptionsSpec
   decodeConfigSpec
-  mkLoggerSpec
+  logSpec
+  loggerMonoidLawSpec
+  loggerPropertiesSpec
