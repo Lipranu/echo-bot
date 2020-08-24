@@ -21,30 +21,20 @@ module Logger
   , mkLogger
   ) where
 
-import           Internal
+import Internal                ( Has (..), Lock )
 
-import           Control.Concurrent.MVar     ( takeMVar
-                                             , putMVar
-                                             )
-import           Control.Monad.Reader        ( MonadReader
-                                             , MonadIO
-                                             , asks
-                                             , when
-                                             , liftIO
-                                             )
-import           Data.Aeson                  ( FromJSON
-                                             , (.:?)
-                                             , (.!=)
-                                             , parseJSON
-                                             , withObject
-                                             , withText
-                                             )
-import           Data.Text                   ( Text
-                                             , pack
-                                             , unpack
-                                             )
-import           Data.Time                   ( UTCTime )
-import           Prelude              hiding ( log )
+import Control.Concurrent.MVar ( takeMVar, putMVar )
+import Control.Monad           ( when )
+import Control.Monad.IO.Class  ( MonadIO, liftIO )
+import Control.Monad.Reader    ( MonadReader, asks )
+import Data.Aeson              ( (.:?), (.!=) )
+import Data.Text               ( Text )
+import Data.Time               ( UTCTime )
+
+import qualified Data.Aeson as Aeson
+import qualified Data.Text  as Text
+
+import Prelude hiding ( log )
 
 class Monad m => MonadTime m where
   getTime :: m UTCTime
@@ -60,23 +50,23 @@ data Priority
   | Error
   deriving (Show, Eq, Ord)
 
-instance FromJSON Priority where
-  parseJSON = withText "FromJSON Logger.Priority" $ \case
+instance Aeson.FromJSON Priority where
+  parseJSON = Aeson.withText "Logger.Priority" $ \case
     "debug"   -> pure Debug
     "info"    -> pure Info
     "warning" -> pure Warning
     "error"   -> pure Error
-    e         -> fail $ "Unknown priority: " ++ unpack e
+    e         -> fail $ "Logger.Priority: unknown priority: " ++ Text.unpack e
 
 data Options = Options
   { oEnable   :: Bool
   , oPriority :: Priority
   , oShowTime :: Bool
   , oShowMode :: Bool
-  }
+  } deriving (Show, Eq)
 
-instance FromJSON Options where
-  parseJSON = withObject "FromJSON Logger.Options" $ \o -> Options
+instance Aeson.FromJSON Options where
+  parseJSON = Aeson.withObject "Logger.Options" $ \o -> Options
     <$> o .:? "enable"    .!= True
     <*> o .:? "priority"  .!= Warning
     <*> o .:? "show_time" .!= False
@@ -86,16 +76,22 @@ data Config = Config
   { consoleOptions :: Options
   , fileOptions    :: Options
   , logFilePath    :: FilePath
-  }
+  } deriving (Show, Eq)
 
-instance FromJSON Config where
-  parseJSON = withObject "FromJSON Logger.Config" $ \o -> do
+instance Aeson.FromJSON Config where
+  parseJSON = Aeson.withObject "Logger.Config" $ \o -> do
     cl   <- o .:? "console_logger" .!= defaultOptions
     fl   <- o .:? "file_logger"    .!= defaultOptions
     path <- o .:? "log_path"       .!= "log"
     case path of
-      "" -> fail "Config: empty log path"
+      "" -> fail "Logger.Config: empty log path"
       path -> return $ Config cl fl path
+    where defaultOptions = Options
+            { oEnable   = True
+            , oPriority = Warning
+            , oShowTime = False
+            , oShowMode = True
+            }
 
 data Message = Message
   { mPriority :: Priority
@@ -109,11 +105,12 @@ instance Show Message where
     where
       priority = "[" <> show mPriority <> "]"
 
-      message  = ": " <> unpack mText <> "\n"
+      message  = ": " <> Text.unpack mText <> "\n"
 
       mode     = case mMode of
         Nothing -> ""
-        Just m  -> " {" <> unpack m <> "}"
+        Just "" -> ""
+        Just m  -> " {" <> Text.unpack m <> "}"
 
       time     = case mTime of
         Nothing -> ""
@@ -126,14 +123,6 @@ instance Applicative m => Semigroup (Logger m) where
 
 instance Applicative m => Monoid (Logger m) where
   mempty = Logger $ \_ -> pure ()
-
-defaultOptions :: Options
-defaultOptions = Options
-  { oEnable   = True
-  , oPriority = Warning
-  , oShowTime = False
-  , oShowMode = True
-  }
 
 log :: (Has (Logger m) r, MonadReader r m, MonadTime m)
     => Priority
@@ -172,10 +161,10 @@ enableLogger True  l = l
 enableLogger False _ = mempty
 
 consoleLogger :: MonadLogger m => Logger m
-consoleLogger = Logger $ logConsole . pack . show
+consoleLogger = Logger $ logConsole . Text.pack . show
 
 fileLogger :: MonadLogger m => FilePath -> Logger m
-fileLogger path = Logger $ logFile path . pack . show
+fileLogger path = Logger $ logFile path . Text.pack . show
 
 concurrentLogger :: (Has Lock r, MonadReader r m, MonadLogger m, MonadIO m)
                  => Logger m
