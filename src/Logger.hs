@@ -166,7 +166,7 @@ modeLogger True  t logger = Logger $ \m -> runLogger logger $ m { mMode = Just t
 modeLogger False _ logger = logger
 
 filterLogger :: Monad m => Priority -> Logger m -> Logger m
-filterLogger p (Logger l) = Logger $ \m -> when (mPriority m >= p) $ l m
+filterLogger p logger = Logger $ \m -> when (mPriority m >= p) $ runLogger logger m
 
 enableLogger :: Applicative m => Bool -> Logger m -> Logger m
 enableLogger True  logger = logger
