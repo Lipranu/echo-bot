@@ -137,8 +137,14 @@ log :: (Has (Logger m) r, MonadReader r m, MonadTime m)
     -> Text
     -> m ()
 log lvl msg = do
-  a <- asks getter
-  runLogger a $ Message lvl msg Nothing Nothing
+  logger <- asks getter
+  runLogger logger message
+  where message = Message
+          { mPriority = lvl
+          , mText     = msg
+          , mMode     = Nothing
+          , mTime     = Nothing
+          }
 
 logDebug, logInfo, logWarning, logError
   :: (Has (Logger m) r, MonadReader r m, MonadTime m)
@@ -149,24 +155,22 @@ logInfo    = log Info
 logWarning = log Warning
 logError   = log Error
 
--- Adds time to the logger message. If this option not specified
--- in the configuration, then it is disabled by default.
 timeLogger :: MonadTime m => Bool -> Logger m -> Logger m
-timeLogger True  (Logger l) = Logger $ \m -> do
+timeLogger True  logger = Logger $ \m -> do
   time <- getTime
-  l $ m { mTime = Just time }
-timeLogger False l          = l
+  runLogger logger $ m { mTime = Just time }
+timeLogger False logger = logger
 
 modeLogger :: Bool -> Text -> Logger m -> Logger m
-modeLogger True  t (Logger l) = Logger $ \m -> l $ m { mMode = Just t }
-modeLogger False _ l          = l
+modeLogger True  t logger = Logger $ \m -> runLogger logger $ m { mMode = Just t }
+modeLogger False _ logger = logger
 
 filterLogger :: Monad m => Priority -> Logger m -> Logger m
 filterLogger p (Logger l) = Logger $ \m -> when (mPriority m >= p) $ l m
 
 enableLogger :: Applicative m => Bool -> Logger m -> Logger m
-enableLogger True  l = l
-enableLogger False _ = mempty
+enableLogger True  logger = logger
+enableLogger False _      = mempty
 
 consoleLogger :: MonadLogger m => Logger m
 consoleLogger = Logger $ logConsole . Text.pack . show
@@ -177,10 +181,10 @@ fileLogger path = Logger $ logFile path . Text.pack . show
 concurrentLogger :: (Has Lock r, MonadReader r m, MonadLogger m, MonadIO m)
                  => Logger m
                  -> Logger m
-concurrentLogger (Logger l) = Logger $ \m -> do
+concurrentLogger logger = Logger $ \m -> do
   lock <- asks getter
   _ <- liftIO $ takeMVar lock
-  l m
+  runLogger logger m
   liftIO $ putMVar lock ()
 
 mkLogger :: ( Has Lock r

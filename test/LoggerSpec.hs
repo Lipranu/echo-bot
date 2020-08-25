@@ -160,7 +160,7 @@ decodeOptionsSpec = describe "decode options json" $ do
     result t  = eitherDecode t :: Either String Options
 
     wrongType = "Error in $: parsing Logger.Options failed,\
-                    \ expected Object, but encountered String"
+                \ expected Object, but encountered String"
 
     valid     = "{\"enable\":true,\"priority\":\"debug\",\
                 \\"show_time\":true,\"show_mode\":true}"
@@ -181,8 +181,10 @@ decodeConfigSpec = describe "decode config json" $ do
 
     invalid   = "{\"log_path\":\"\"}"
 
-    valid     = "{\"console_logger\":" <> options
-             <> ",\"file_logger\":"    <> options
+    valid     = "{\"console_logger\":"
+             <> options
+             <> ",\"file_logger\":"
+             <> options
              <> ",\"log_path\":\"log\"}"
 
     options   = "{\"enable\":true,\"priority\":\"debug\",\
@@ -211,7 +213,7 @@ logSpec = describe "log" $ do
 
     rFile    action = result action >>= fmap ((! "log") . snd)
 
-    test lvl        = "[" <> lvl <> "] {Test} ("
+    test        lvl = "[" <> lvl <> "] {Test} ("
                    <> (Text.pack . show) testTime <> "): test\n"
 
 loggerMonoidLawSpec :: Spec
