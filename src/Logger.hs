@@ -21,6 +21,8 @@ module Logger
   , mkLogger
   ) where
 
+-- IMPORTS ---------------------------------------------------------------------
+
 import Internal                ( Has (..), Lock )
 
 import Control.Concurrent.MVar ( takeMVar, putMVar )
@@ -36,12 +38,16 @@ import qualified Data.Text  as Text
 
 import Prelude hiding ( log )
 
+-- CLASSES ---------------------------------------------------------------------
+
 class Monad m => MonadTime m where
   getTime :: m UTCTime
 
 class Monad m => MonadLogger m where
   logConsole :: Text -> m ()
   logFile    :: FilePath -> Text -> m ()
+
+-- TYPES AND INSTANCES ---------------------------------------------------------
 
 data Priority
   = Debug
@@ -84,7 +90,7 @@ instance Aeson.FromJSON Config where
     fl   <- o .:? "file_logger"    .!= defaultOptions
     path <- o .:? "log_path"       .!= "log"
     case path of
-      "" -> fail "Logger.Config: empty log path"
+      ""   -> fail "Logger.Config: empty log path"
       path -> return $ Config cl fl path
     where defaultOptions = Options
             { oEnable   = True
@@ -123,6 +129,8 @@ instance Applicative m => Semigroup (Logger m) where
 
 instance Applicative m => Monoid (Logger m) where
   mempty = Logger $ \_ -> pure ()
+
+-- FUNCTIONS -------------------------------------------------------------------
 
 log :: (Has (Logger m) r, MonadReader r m, MonadTime m)
     => Priority
