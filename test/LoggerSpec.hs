@@ -202,17 +202,17 @@ logSpec = describe "log" $ do
     it "logWarning" $ rFile    logWarning >>= (`shouldBe` test "Warning")
     it "logError"   $ rFile    logError   >>= (`shouldBe` test "Error")
   where
-    result log action = do
+    result action = do
       env <- mkEnv $ mkLogger testConfig "Test"
       runTest (action "test") env
-      liftIO $ readIORef $ log env
+      return $ getResult env
 
-    rConsole     = result consoleLog
+    rConsole action = result action >>= fmap fst
 
-    rFile action = (! "log") <$> result fileLog action
+    rFile    action = result action >>= fmap ((! "log") . snd)
 
-    test lvl     = "[" <> lvl <> "] {Test} ("
-                <> (Text.pack . show) testTime <> "): test\n"
+    test lvl        = "[" <> lvl <> "] {Test} ("
+                   <> (Text.pack . show) testTime <> "): test\n"
 
 loggerMonoidLawSpec :: Spec
 loggerMonoidLawSpec = describe "Logger monoid laws" $ do
