@@ -7,6 +7,7 @@ module EchoBot ( run ) where
 
 import           Internal                        ( Has (..), Lock )
 import qualified Logger
+import qualified Request
 
 import           Control.Concurrent.Async        ( concurrently )
 import           Control.Concurrent.MVar         ( newMVar )
@@ -67,6 +68,7 @@ run = do
 
 app :: App ()
 app = do
+  liftIO $ Request.request
   Logger.logDebug "Message 1"
   Logger.logInfo "Message 2"
   Logger.logWarning "Message 3"
