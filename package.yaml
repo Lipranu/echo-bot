@@ -24,6 +24,8 @@ dependencies:
 - async
 - bytestring
 - containers
+- http-client
+- http-client-tls
 - mtl
 - text
 - time
