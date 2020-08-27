@@ -31,7 +31,10 @@ import Control.Monad.IO.Class  ( MonadIO, liftIO )
 import Control.Monad.Reader    ( MonadReader, asks )
 import Data.Aeson              ( (.:?), (.!=) )
 import Data.Text               ( Text )
+import Data.Text.Encoding      ( decodeUtf8 )
 import Data.Time               ( UTCTime )
+import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as LBS
 
 import qualified Data.Aeson as Aeson
 import qualified Data.Text  as Text
@@ -47,7 +50,22 @@ class Monad m => MonadLogger m where
   logConsole :: Text -> m ()
   logFile    :: FilePath -> Text -> m ()
 
+class Loggable a where
+  toLog :: a -> Text
+
 -- TYPES AND INSTANCES ---------------------------------------------------------
+
+instance Loggable Text where
+  toLog = id
+
+instance Loggable String where
+  toLog = Text.pack
+
+instance Loggable BS.ByteString where
+  toLog = decodeUtf8
+
+instance Loggable LBS.ByteString where
+  toLog = decodeUtf8 . LBS.toStrict
 
 data Priority
   = Debug
@@ -132,23 +150,23 @@ instance Applicative m => Monoid (Logger m) where
 
 -- FUNCTIONS -------------------------------------------------------------------
 
-log :: (Has (Logger m) r, MonadReader r m, MonadTime m)
+log :: (Has (Logger m) r, MonadReader r m, MonadTime m, Loggable a)
     => Priority
-    -> Text
+    -> a
     -> m ()
 log lvl msg = do
   logger <- asks getter
   runLogger logger message
   where message = Message
           { mPriority = lvl
-          , mText     = msg
+          , mText     = toLog msg
           , mMode     = Nothing
           , mTime     = Nothing
           }
 
 logDebug, logInfo, logWarning, logError
-  :: (Has (Logger m) r, MonadReader r m, MonadTime m)
-  => Text
+  :: (Has (Logger m) r, MonadReader r m, MonadTime m, Loggable a)
+  => a
   -> m ()
 logDebug   = log Debug
 logInfo    = log Info

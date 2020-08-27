@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables            #-}
 
 module LoggerSpec ( spec ) where
 
@@ -206,7 +207,7 @@ logSpec = describe "log" $ do
   where
     result action = do
       env <- mkEnv $ mkLogger testConfig "Test"
-      runTest (action "test") env
+      runTest (action ("test" :: Text)) env
       return $ getResult env
 
     rConsole action = result action >>= fmap fst
@@ -218,19 +219,19 @@ logSpec = describe "log" $ do
 
 loggerMonoidLawSpec :: Spec
 loggerMonoidLawSpec = describe "Logger monoid laws" $ do
-  prop "left identity" $ \config mode lvl msg -> do
+  prop "left identity" $ \config mode lvl (msg :: Text) -> do
     env1         <- mkEnv $ mkLogger config mode
     env2         <- mkEnv $ mempty <> mkLogger config mode
     (res1, res2) <- runBoth env1 env2 $ log lvl msg
     res1 `shouldBe` res2
 
-  prop "right identity" $ \config mode lvl msg -> do
+  prop "right identity" $ \config mode lvl (msg :: Text) -> do
     env1         <- mkEnv $ mkLogger config mode
     env2         <- mkEnv $ mkLogger config mode <> mempty
     (res1, res2) <- runBoth env1 env2 $ log lvl msg
     res1 `shouldBe` res2
 
-  prop "associativity" $ \c1 c2 c3 m1 m2 m3 lvl msg -> do
+  prop "associativity" $ \c1 c2 c3 m1 m2 m3 lvl (msg :: Text) -> do
     let logger1 = mkLogger c1 m1
         logger2 = mkLogger c2 m2
         logger3 = mkLogger c3 m3
@@ -249,14 +250,14 @@ loggerMonoidLawSpec = describe "Logger monoid laws" $ do
 loggerPropertiesSpec :: Spec
 loggerPropertiesSpec = describe "Logger properties" $ do
   prop "with the same settings, the same messages are logged \
-       \to the console and file" $ \options lvl msg -> do
+       \to the console and file" $ \options lvl (msg :: Text) -> do
     env <- mkEnv $ mkLogger (Config options options "path") "Test"
     runTest (log lvl msg) env
     (console, file) <- getResult env
     console `shouldBe` fromMaybe "" (file !? "path")
 
   prop "does not log messages with lower priority \
-       \than in the config" $ \clvl lvl msg -> do
+       \than in the config" $ \clvl lvl (msg :: Text) -> do
     let options = testOptions { oPriority = clvl }
         config  = testConfig  { consoleOptions = options
                               , fileOptions    = options
@@ -266,7 +267,7 @@ loggerPropertiesSpec = describe "Logger properties" $ do
     res <- getResult env
     bimap Text.null Map.null res `shouldBe` (lvl < clvl, lvl < clvl)
 
-  prop "concurrent logging" $ \config lvl msg -> do
+  prop "concurrent logging" $ \config lvl (msg :: Text) -> do
     env1 <- mkEnv $ mkLogger config "Test"
     env2 <- mkEnv $ mkLogger config "Test"
     concurrently (runTest (log lvl msg) env1) (runTest (log lvl msg) env1)
