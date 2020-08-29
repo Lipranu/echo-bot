@@ -1,4 +1,5 @@
 log
+bot.conf.local
 .stack-work/
 stack*.yaml.lock
 .ghci

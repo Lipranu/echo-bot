@@ -1,6 +1,6 @@
 module Main where
 
-import EchoBot
+import qualified App
 
 main :: IO ()
-main = run
+main = App.run
