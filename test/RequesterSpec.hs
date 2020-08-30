@@ -1,8 +1,8 @@
-module RequestSpec ( spec ) where
+module RequesterSpec ( spec ) where
 
 -- IMPORTS ---------------------------------------------------------------------
 
-import Request
+import Requester
 
 import Test.Hspec               ( Spec, context, describe, it, shouldBe )
 import Test.Hspec.QuickCheck    ( prop )

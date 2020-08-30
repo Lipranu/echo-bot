@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: a1d0e5ecff92b015b09aaa3c0b2f3df393d09066930cc848a15d4193f20e4aa5
+-- hash: 2c6a1b16ad119c88893171f51cf0619b07fbb44c9b6597744e46ad42afc895d5
 
 name:           echo-bot
 version:        0.1.0.0
@@ -34,7 +34,7 @@ library
       Internal
       Logger
       Network.HTTP.Client.Extended
-      Request
+      Requester
       Trash
   other-modules:
       Paths_echo_bot
