@@ -5,12 +5,12 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE ScopedTypeVariables            #-}
 
-module LoggerSpec ( spec ) where
+module Infrastructure.LoggerSpec ( spec ) where
 
 -- IMPORTS ---------------------------------------------------------------------
 
 import Internal (Has (..), Lock)
-import Logger
+import Infrastructure.Logger
 
 import Control.Concurrent.Async ( concurrently )
 import Control.Concurrent.MVar  ( newMVar )

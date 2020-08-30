@@ -3,9 +3,10 @@
 
 module App ( run ) where
 
-import qualified Logger
-import qualified App.Vk       as Vk
-import qualified App.Telegram as Telegram
+import qualified App.Telegram             as Telegram
+import qualified App.Vk                   as Vk
+import qualified Infrastructure.Logger    as Logger
+import qualified Infrastructure.Requester as Requester
 
 import Control.Concurrent.Async ( concurrently )
 import Control.Concurrent.MVar  ( newMVar )

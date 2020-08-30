@@ -5,7 +5,7 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE LambdaCase                 #-}
 
-module Logger
+module Infrastructure.Logger
   ( Config (..)
   , Logger
   , MonadLogger (..)

@@ -8,11 +8,12 @@
 module App.Vk ( Config, mkApp, runApp ) where
 
 import           Internal (Lock, Has (..))
-import qualified Logger
-import qualified Requester
+import qualified Infrastructure.Logger    as Logger
+import qualified Infrastructure.Requester as Requester
 
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
+import Control.Exception      ( try )
 import Data.Aeson             ( (.:) )
 import Data.Text              ( Text )
 import Data.Time              ( getCurrentTime )
@@ -60,7 +61,7 @@ instance Logger.MonadTime App where
   getTime = liftIO getCurrentTime
 
 instance Requester.MonadRequester App where
-  request manager = liftIO . httpLbs manager
+  requester manager req = liftIO $ try $ httpLbs req manager
 
 app :: App ()
 app = do

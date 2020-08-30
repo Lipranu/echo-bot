@@ -2,7 +2,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE ConstraintKinds #-}
 
-module Requester
+module Infrastructure.Requester
   ( MonadRequester (..)
   , Requester
 
@@ -16,16 +16,16 @@ module Requester
 
 import Internal                     ( Has (..) )
 
-import Data.Aeson                   ( FromJSON, eitherDecode )
 import Control.Monad.Reader         ( MonadReader, asks )
+import Data.Aeson                   ( FromJSON, eitherDecode )
 import Data.Text                    (Text)
 import Data.Text.Encoding           (decodeUtf8)
 import Network.HTTP.Client.Extended ( Request, Response
                                     , Manager, HttpException )
 
 import qualified Data.ByteString.Lazy         as BSL
-import qualified Network.HTTP.Client.Extended as HTTP
 import qualified Data.Text                    as Text
+import qualified Network.HTTP.Client.Extended as HTTP
 
 -- CLASSES ---------------------------------------------------------------------
 

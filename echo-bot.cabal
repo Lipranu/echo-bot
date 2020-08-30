@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 5b88493469c7d960ae18c99f4423000d678a899a5ea81f1de372324a4311c662
+-- hash: ec4e19b46c4345ad2a4cd48a10ab8cf3a6e60856f7e6b3218dd8909c32ec8715
 
 name:           echo-bot
 version:        0.1.0.0
@@ -31,10 +31,10 @@ library
       App.Shared
       App.Telegram
       App.Vk
+      Infrastructure.Logger
+      Infrastructure.Requester
       Internal
-      Logger
       Network.HTTP.Client.Extended
-      Requester
       Trash
   other-modules:
       Paths_echo_bot
@@ -78,8 +78,8 @@ test-suite echo-bot-test
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      LoggerSpec
-      RequesterSpec
+      Infrastructure.LoggerSpec
+      Infrastructure.RequesterSpec
       Paths_echo_bot
   hs-source-dirs:
       test
