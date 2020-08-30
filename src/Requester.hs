@@ -1,30 +1,48 @@
 --{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Requester
   ( MonadRequester (..)
+  , Requester
+
+  , mkRequester
   ) where
 
 -- IMPORTS ---------------------------------------------------------------------
 
-import qualified Network.HTTP.Client.Extended as HTTP
---import Network.HTTP.Client.TLS ( tlsManagerSettings )
+
 --import qualified Data.Aeson as Aeson
---import Control.Exception (try)
---import qualified Data.ByteString.Lazy.Char8 as L8
+import Control.Monad.Reader         ( MonadReader, asks )
+import Data.Text (Text)
+import Network.HTTP.Client.Extended ( Request
+                                    , Response
+                                    , Manager
+                                    , HttpException
+                                    )
+
 import qualified Data.ByteString.Lazy as BSL
---import Data.Text (Text)
---import           Data.Text.Encoding  (decodeUtf8)
---import qualified Data.Text as Text
+import qualified Network.HTTP.Client.Extended as HTTP
+import qualified Data.Text as Text
 
 -- CLASSES ---------------------------------------------------------------------
 
 class Monad m => MonadRequester m where
-  request :: HTTP.Request -> HTTP.Manager -> m (HTTP.Response BSL.ByteString)
+  requester :: Manager
+            -> Request
+            -> m (Either HttpException (Response BSL.ByteString))
+
+class ToRequest a where
+  toRequest :: a -> Request
 
 -- TYPES AND INSTANCES ---------------------------------------------------------
 
-
+newtype Requester m = Requester
+  { unRequester :: Request
+                -> m (Either HttpException (Response BSL.ByteString))
+  }
 
 -- FUNCTIONS -------------------------------------------------------------------
 
+mkRequester :: MonadRequester m => Manager -> Requester m
+mkRequester = Requester . requester
