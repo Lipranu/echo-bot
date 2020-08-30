@@ -12,6 +12,7 @@ import qualified Infrastructure.Requester as Requester
 import Control.Concurrent.Async ( concurrently )
 import Control.Concurrent.MVar  ( newMVar )
 import GHC.Generics             ( Generic )
+import Network.HTTP.Client.TLS  ( newTlsManager )
 
 import qualified Data.Aeson.Extended as Aeson
 
@@ -31,7 +32,8 @@ run = do
     Left l -> putStrLn l
     Right Config {..} -> do
       lock    <- newMVar ()
-      let vk  = Vk.mkApp       cVk       cLogger lock
-          tel = Telegram.mkApp cTelegram cLogger lock
+      manager <- newTlsManager
+      let vk  = Vk.mkApp       cVk       cLogger lock manager
+          tel = Telegram.mkApp cTelegram cLogger lock manager
       concurrently (Vk.runApp vk) (Telegram.runApp tel)
       return ()

@@ -6,7 +6,10 @@
 
 module App.Telegram ( Config, mkApp, runApp ) where
 
-import           Internal        ( Lock, Has (..) )
+import           Internal                 ( Lock, Has (..) )
+import           Infrastructure.Logger    ( Logger )
+import           Infrastructure.Requester ( Requester )
+
 import qualified Infrastructure.Logger    as Logger
 import qualified Infrastructure.Requester as Requester
 
@@ -16,11 +19,11 @@ import Control.Exception      ( try )
 import Data.Aeson             ( (.:) )
 import Data.Text              ( Text )
 import Data.Time              ( getCurrentTime )
-import Network.HTTP.Client    ( httpLbs )
 
-import qualified Data.Aeson   as Aeson
-import qualified Data.Text    as Text
-import qualified Data.Text.IO as TextIO
+import qualified Network.HTTP.Client as HTTP
+import qualified Data.Aeson          as Aeson
+import qualified Data.Text           as Text
+import qualified Data.Text.IO        as TextIO
 
 data Config = Config
   { cToken :: Token
@@ -33,16 +36,20 @@ instance Aeson.FromJSON Config where
 newtype Token = Token { unToken :: Text }
 
 data Env = Env
-  { token  :: Token
-  , logger :: Logger.Logger App
-  , lock   :: Lock
+  { envToken     :: Token
+  , envLogger    :: Logger App
+  , envLock      :: Lock
+  , envRequester :: Requester App
   }
 
 instance Has Lock Env where
-  getter = lock
+  getter = envLock
 
-instance Has (Logger.Logger App) Env where
-  getter = logger
+instance Has (Logger App) Env where
+  getter = envLogger
+
+instance Has (Requester App) Env where
+  getter = envRequester
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
   (Functor, Applicative, Monad, MonadReader Env, MonadIO)
@@ -55,7 +62,7 @@ instance Logger.MonadTime App where
   getTime = liftIO getCurrentTime
 
 instance Requester.MonadRequester App where
-  requester manager req = liftIO $ try $ httpLbs req manager
+  requester manager req = liftIO $ try $ HTTP.httpLbs req manager
 
 app :: App ()
 app = do
@@ -64,8 +71,9 @@ app = do
   Logger.logWarning ("Warning Message" :: Text)
   Logger.logError ("Error Message" :: Text)
 
-mkApp :: Config -> Logger.Config -> Lock -> Env
-mkApp Config {..} cLogger = Env cToken logger
+mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
+mkApp Config {..} cLogger lock = Env cToken logger lock
+                               . Requester.mkRequester
   where logger = Logger.mkLogger cLogger "Telegram"
 
 runApp :: Env -> IO ()
