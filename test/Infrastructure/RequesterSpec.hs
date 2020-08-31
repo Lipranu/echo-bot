@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE TypeSynonymInstances  #-}
 
 module Infrastructure.RequesterSpec ( spec ) where
@@ -11,15 +12,15 @@ module Infrastructure.RequesterSpec ( spec ) where
 import Internal
 import Infrastructure.Requester
 
-import Control.Monad.Reader         ( Reader, asks )
+import Control.Monad.Reader         ( Reader, asks, runReader )
+import Control.Monad.IO.Class       ( liftIO )
 import Data.Text                    ( Text )
 import GHC.Generics                 ( Generic )
+--import Network.HTTP.Simple          -- setRequestBodyJson )
 import Network.HTTP.Client.Extended ( HttpException (..), createCookieJar )
 import Network.HTTP.Client.Internal ( ResponseClose (..), Response (..) )
 import Network.HTTP.Types           ( mkStatus, http11 )
-import Test.Hspec                   ( Spec, context, describe, it, shouldBe )
-import Test.Hspec.QuickCheck        ( prop )
-import Test.QuickCheck              ( Arbitrary (..), elements )
+import Test.Hspec                   ( Spec, describe, it, shouldBe )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.ByteString.Lazy         as BSL
@@ -52,6 +53,10 @@ instance Aeson.FromJSON TestBody where
 instance Aeson.ToJSON TestBody where
   toJSON = Aeson.toJsonDrop
 
+instance ToRequest TestBody where
+  toRequest b = HTTP.defaultRequest
+    { HTTP.requestBody = HTTP.RequestBodyLBS $ Aeson.encode b }
+
 -- FUNCTIONS -------------------------------------------------------------------
 
 testBody :: TestBody
@@ -75,6 +80,15 @@ succeededResponse = Response
 
 -- TESTS -----------------------------------------------------------------------
 
+requestSpec :: Spec
+requestSpec = describe "request" $ do
+  it "should return RequestException if request fails" $ do
+    manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
+    let req = mkRequester manager
+        env = Env req $ Left failedResponse
+        test = runReader (request @TestBody testBody) env
+    test `shouldBe` (RequestError $ Text.pack $ show $ failedResponse)
+
 spec :: Spec
-spec = describe "init" $ it "test" $
-  1 + 1 `shouldBe` 2
+spec = do
+  requestSpec

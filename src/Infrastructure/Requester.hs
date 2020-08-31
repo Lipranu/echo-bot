@@ -52,6 +52,7 @@ data Result a
   = Result a
   | DecodeError Text Text
   | RequestError Text
+  deriving (Show, Eq)
 
 -- FUNCTIONS -------------------------------------------------------------------
 
