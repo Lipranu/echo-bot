@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b17e68053b47961fbc2d2aaeff5305c1b72c711d12741c55770c9d088c74069a
+-- hash: bc004208abaf8af82208e167d040c568119be182441301dce6b69b4397fad9b5
 
 name:           echo-bot
 version:        0.1.0.0
@@ -35,7 +35,6 @@ library
       Infrastructure.Requester
       Internal
       Network.HTTP.Client.Extended
-      Trash
   other-modules:
       Paths_echo_bot
   hs-source-dirs:
