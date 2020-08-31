@@ -1,6 +1,6 @@
-{-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE ConstraintKinds  #-}
+{-# LANGUAGE ExplicitForAll   #-}
 {-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE ConstraintKinds #-}
 
 module Infrastructure.Requester
   ( MonadRequester (..)
