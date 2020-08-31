@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 839ee5923ee391be497d11b0554c48290f3839f903dc3a2b4e53b0823ba62f44
+-- hash: b17e68053b47961fbc2d2aaeff5305c1b72c711d12741c55770c9d088c74069a
 
 name:           echo-bot
 version:        0.1.0.0
@@ -95,6 +95,7 @@ test-suite echo-bot-test
     , hspec
     , http-client
     , http-client-tls
+    , http-types
     , mtl
     , text
     , time
