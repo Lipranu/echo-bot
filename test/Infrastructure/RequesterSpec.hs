@@ -86,8 +86,15 @@ requestSpec = describe "request" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
     let req = mkRequester manager
         env = Env req $ Left failedResponse
-        test = runReader (request @TestBody testBody) env
+        test = runReader (request testBody) env
     test `shouldBe` (RequestError $ Text.pack $ show $ failedResponse)
+
+  it "should return bytestring body on successful request" $ do
+    manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
+    let req = mkRequester manager
+        env = Env req $ Right succeededResponse
+        test = runReader (request testBody) env
+    test `shouldBe` Result testBodyRaw
 
 spec :: Spec
 spec = do
