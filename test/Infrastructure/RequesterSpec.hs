@@ -3,7 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TypeApplications      #-}
-{-# LANGUAGE TypeSynonymInstances  #-}
 
 module Infrastructure.RequesterSpec ( spec ) where
 
@@ -30,10 +29,11 @@ import qualified Network.HTTP.Client.Extended as HTTP
 -- TYPES AND INSTANCES ---------------------------------------------------------
 
 type App = Reader Env
+type RequestResult = Either HttpException (Response BSL.ByteString)
 
 data Env = Env
   { envRequester :: Requester App
-  , envResult    :: Either HttpException (Response BSL.ByteString)
+  , envResult    :: RequestResult
   }
 
 instance MonadRequester App where
@@ -88,11 +88,14 @@ succeededResponse = Response
   }
 
 requestError, decodeError :: Result a
-requestError = RequestError $ Text.pack $ show $ failedResponse
+requestError = RequestError $ Text.pack $ show failedResponse
 decodeError  = DecodeError err bs
   where bs   = decodeUtf8 $ BSL.toStrict testBodyFail
         err  = "Error in $: parsing Infrastructure.RequesterSpec.\
                \TestBody(TestBody) failed, key \"field_text\" not found"
+
+runTest :: Reader Env a -> HTTP.Manager -> RequestResult -> a
+runTest action manager req = runReader action $ Env (mkRequester manager) req
 
 -- TESTS -----------------------------------------------------------------------
 
@@ -100,17 +103,12 @@ requestSpec :: Spec
 requestSpec = describe "request" $ do
   it "should return RequestError if request fails" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
-    let req = mkRequester manager
-        env = Env req $ Left failedResponse
-        test = runReader (request testBody) env
-    test `shouldBe` requestError
+    test manager (Left failedResponse) `shouldBe` requestError
 
   it "should return bytestring body on successful request" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
-    let req = mkRequester manager
-        env = Env req $ Right succeededResponse
-        test = runReader (request testBody) env
-    test `shouldBe` Result testBodyRaw
+    test manager (Right succeededResponse) `shouldBe` Result testBodyRaw
+  where test = runTest (request testBody)
 
 decodeSpec :: Spec
 decodeSpec = describe "decode" $ do
@@ -134,24 +132,16 @@ requestAndDecodeSpec :: Spec
 requestAndDecodeSpec = describe "requestAndDecode" $ do
   it "should return RequestError if request fails" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
-    let req = mkRequester manager
-        env = Env req $ Left failedResponse
-        test = runReader (requestAndDecode @TestBody testBody) env
-    test `shouldBe` requestError
+    test manager (Left failedResponse) `shouldBe` requestError
 
   it "should return DecodeError if decode fails" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
-    let req = mkRequester manager
-        env = Env req $ Right decodeFailResponse
-        test = runReader (requestAndDecode @TestBody testBody) env
-    test `shouldBe` decodeError
+    test manager (Right decodeFailResponse) `shouldBe` decodeError
 
   it "should return annotated type on successful decoding" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
-    let req = mkRequester manager
-        env = Env req $ Right succeededResponse
-        test = runReader (requestAndDecode @TestBody testBody) env
-    test `shouldBe` Result testBody
+    test manager (Right succeededResponse) `shouldBe` Result testBody
+  where test = runTest (requestAndDecode @TestBody testBody)
 
 spec :: Spec
 spec = do
