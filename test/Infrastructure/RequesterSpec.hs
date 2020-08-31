@@ -63,13 +63,21 @@ testBody :: TestBody
 testBody = TestBody "text" 1
 
 testBodyRaw, testBodyFail :: BSL.ByteString
-testBodyRaw = "{\"field_text\":\"text\",\"field_num\":1}"
+testBodyRaw  = "{\"field_text\":\"text\",\"field_num\":1}"
 testBodyFail = "{\"field_num\":1}"
 
 failedResponse :: HttpException
 failedResponse = HTTP.InvalidUrlException "test" "test"
 
-succeededResponse :: Response BSL.ByteString
+decodeFailResponse, succeededResponse :: Response BSL.ByteString
+decodeFailResponse = Response
+  { responseStatus = mkStatus 200 "success"
+  , responseVersion = http11
+  , responseHeaders = []
+  , responseBody = testBodyFail
+  , responseCookieJar = createCookieJar []
+  , responseClose' = ResponseClose (return () :: IO ())
+  }
 succeededResponse = Response
   { responseStatus = mkStatus 200 "success"
   , responseVersion = http11
@@ -122,7 +130,31 @@ decodeSpec = describe "decode" $ do
     let test = decode @TestBody decodeError
      in test `shouldBe` decodeError
 
+requestAndDecodeSpec :: Spec
+requestAndDecodeSpec = describe "requestAndDecode" $ do
+  it "should return RequestError if request fails" $ do
+    manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
+    let req = mkRequester manager
+        env = Env req $ Left failedResponse
+        test = runReader (requestAndDecode @TestBody testBody) env
+    test `shouldBe` requestError
+
+  it "should return DecodeError if decode fails" $ do
+    manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
+    let req = mkRequester manager
+        env = Env req $ Right decodeFailResponse
+        test = runReader (requestAndDecode @TestBody testBody) env
+    test `shouldBe` decodeError
+
+  it "should return annotated type on successful decoding" $ do
+    manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
+    let req = mkRequester manager
+        env = Env req $ Right succeededResponse
+        test = runReader (requestAndDecode @TestBody testBody) env
+    test `shouldBe` Result testBody
+
 spec :: Spec
 spec = do
   requestSpec
   decodeSpec
+  requestAndDecodeSpec
