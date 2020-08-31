@@ -5,6 +5,8 @@
 module Infrastructure.Requester
   ( MonadRequester (..)
   , Requester
+  , ToRequest (..)
+  , Result (..)
 
   , decode
   , mkRequester
