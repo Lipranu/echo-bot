@@ -1,9 +1,10 @@
+{-# LANGUAGE ConstraintKinds            #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE LambdaCase                 #-}
 
 module Infrastructure.Logger
   ( Config (..)
@@ -23,7 +24,7 @@ module Infrastructure.Logger
 
 -- IMPORTS ---------------------------------------------------------------------
 
-import Internal                ( Has (..), Lock )
+import Internal
 
 import Control.Concurrent.MVar ( takeMVar, putMVar )
 import Control.Monad           ( when )
@@ -33,11 +34,11 @@ import Data.Aeson              ( (.:?), (.!=) )
 import Data.Text               ( Text )
 import Data.Text.Encoding      ( decodeUtf8 )
 import Data.Time               ( UTCTime )
-import qualified Data.ByteString as BS
-import qualified Data.ByteString.Lazy as LBS
 
-import qualified Data.Aeson as Aeson
-import qualified Data.Text  as Text
+import qualified Data.ByteString      as BS
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Aeson           as Aeson
+import qualified Data.Text            as Text
 
 import Prelude hiding ( log )
 

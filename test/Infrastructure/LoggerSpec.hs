@@ -9,7 +9,7 @@ module Infrastructure.LoggerSpec ( spec ) where
 
 -- IMPORTS ---------------------------------------------------------------------
 
-import Internal (Has (..), Lock)
+import Internal
 import Infrastructure.Logger
 
 import Control.Concurrent.Async ( concurrently )
@@ -37,26 +37,26 @@ import Prelude hiding (log)
 type FileLog    = Map FilePath Text
 type ConsoleLog = Text
 
-data TestEnv = TestEnv
-  { logger     :: Logger Test
+data Env = Env
+  { logger     :: Logger App
   , lock       :: Lock
   , fileLog    :: IORef FileLog
   , consoleLog :: IORef ConsoleLog
   }
 
-instance Has (Logger Test) TestEnv where
+instance Has (Logger App) Env where
   getter = logger
 
-instance Has Lock TestEnv where
+instance Has Lock Env where
   getter = lock
 
-newtype Test a = Test { unTest :: ReaderT TestEnv IO a } deriving
-  (Functor, Applicative, Monad, MonadReader TestEnv, MonadIO)
+newtype App a = App { unTest :: ReaderT Env IO a } deriving
+  (Functor, Applicative, Monad, MonadReader Env, MonadIO)
 
-instance MonadTime Test where
+instance MonadTime App where
   getTime = pure testTime
 
-instance MonadLogger Test where
+instance MonadLogger App where
   logConsole msg = do
     log <- asks consoleLog
     liftIO $ modifyIORef log (<> msg)
@@ -87,17 +87,17 @@ instance Arbitrary Config where
 
 -- FUNCTIONS -------------------------------------------------------------------
 
-mkEnv :: Logger Test -> IO TestEnv
-mkEnv l = TestEnv l
+mkEnv :: Logger App -> IO Env
+mkEnv logger = Env logger
   <$> newMVar ()
   <*> newIORef mempty
   <*> newIORef mempty
 
-runTest :: Test a -> TestEnv -> IO a
+runTest :: App a -> Env -> IO a
 runTest app = runReaderT (unTest app)
 
-getResult :: TestEnv -> IO (ConsoleLog, FileLog)
-getResult TestEnv {..} = (,)
+getResult :: Env -> IO (ConsoleLog, FileLog)
+getResult Env {..} = (,)
   <$> readIORef consoleLog
   <*> readIORef fileLog
 
