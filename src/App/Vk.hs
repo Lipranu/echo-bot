@@ -6,6 +6,7 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE ExplicitForAll           #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
@@ -18,6 +19,7 @@ import Internal
 import qualified Infrastructure.Logger as Logger
 
 import Control.Applicative    ( (<|>) )
+import Control.Monad          ( (>=>) )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT, asks )
 import Control.Exception      ( try )
@@ -66,7 +68,7 @@ instance Has Token           Env where getter = envToken
 instance Has Group           Env where getter = envGroup
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
-  (Functor, Applicative, Monad, MonadReader Env, MonadIO)
+  (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadFail)
 
 instance MonadLogger App where
   logConsole   = liftIO . TextIO.putStr
@@ -125,17 +127,17 @@ instance ToRequest GetLongPollServer where
     = HTTP.urlEncodedBody (defaultBody t g)
     $ defaultRequest { HTTP.path = "/method/groups.getLongPollServer" }
 
-data GetServer = GetServer
+data GetUpdates = GetUpdates
   { gsKey    :: Text
   , gsTs     :: Text
   , gsServer :: Text
   } deriving (Generic, Show)
 
-instance Aeson.FromJSON GetServer where
+instance Aeson.FromJSON GetUpdates where
   parseJSON = Aeson.parseJsonDrop
 
-instance ToRequest GetServer where
-  toRequest GetServer {..} = mkBody $ defaultRequest
+instance ToRequest GetUpdates where
+  toRequest GetUpdates {..} = mkBody $ defaultRequest
     { HTTP.path = snd splitUp
     , HTTP.host = fst splitUp
     }
@@ -177,18 +179,9 @@ instance Aeson.FromJSON Updates where
 
 app :: App ()
 app = do
-  r <- getLongPollServer >>= requestAndDecode @(Response GetServer)
-  case r of
-    Result (Succes v) -> do
-      logDebug $ show v
-      d <- requestAndDecode @Updates v
-      case d of
-        Result v        -> logDebug $ show v
-        DecodeError e v -> logError e >> logDebug v
-        RequestError e  -> logError e
-    Result (Error x) -> logError x
-    DecodeError e v  -> logError e >> logDebug v
-    RequestError e   -> logError e
+  s <- requestLongPollServer
+  u <- handleErrors @Updates s
+  updatesHandler u s
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
@@ -202,6 +195,44 @@ getLongPollServer :: (Has Token r, Has Group r, MonadReader r m)
 getLongPollServer = GetLongPollServer
   <$> asks getter
   <*> asks getter
+
+handleErrors :: forall b a . (ToRequest a, Show b, Aeson.FromJSON b) => a -> App b
+handleErrors req = do
+  v <- requestAndDecode req
+  case v of
+    Result v -> do
+      logDebug $ show v
+      return v
+    DecodeError e v  -> logError e >> logDebug v >> fail ""
+    RequestError e   -> logError e >> fail ""
+
+handleResult :: forall a . Show a => Response a -> App a
+handleResult (Error x)  = logError x >> fail ""
+handleResult (Succes v) = logInfo ("Successful request" :: Text)
+                       >> logDebug (show v)
+                       >> return v
+
+handler :: forall b a . (ToRequest a, Show b, Aeson.FromJSON b) => a -> App b
+handler = handleErrors >=> handleResult
+
+requestLongPollServer :: App GetUpdates
+requestLongPollServer = getLongPollServer >>= handler
+
+updatesHandler :: Updates -> GetUpdates -> App () --GetUpdates
+updatesHandler DataLost             _ = do
+  logWarning ("Information is lost, performing request for new key and ts" :: Text)
+  server  <- requestLongPollServer
+  updates <- handleErrors @Updates server
+  updatesHandler updates server
+updatesHandler KeyExpired           _ = do
+  logInfo ("The key has expired, performing request for new key" :: Text)
+  fail "gsg"
+updatesHandler (OutOfDateOrLost ts) _ = do
+  logWarning ("The event history is out of date or has been partially lost" :: Text)
+  fail "gsg"
+updatesHandler (Updates ts upd)     _ = do
+  logWarning ("Information is lost, performing request for new key and ts" :: Text)
+  fail "gsg"
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
