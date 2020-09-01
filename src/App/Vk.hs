@@ -21,7 +21,7 @@ import Control.Applicative    ( (<|>) )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT, asks )
 import Control.Exception      ( try )
-import Data.Aeson             ( (.:) )
+import Data.Aeson             ( (.:), (.:?) )
 import Data.Bifunctor         ( bimap )
 import Data.Text              ( Text )
 import Data.Maybe             ( fromMaybe )
@@ -123,7 +123,7 @@ data GetLongPollServer = GetLongPollServer Token Group
 instance ToRequest GetLongPollServer where
   toRequest (GetLongPollServer t g)
     = HTTP.urlEncodedBody (defaultBody t g)
-    $ defaultRequest { HTTP.path = "/method/groups.getLongPollServe" }
+    $ defaultRequest { HTTP.path = "/method/groups.getLongPollServer" }
 
 data GetServer = GetServer
   { gsKey    :: Text
@@ -153,6 +153,26 @@ instance ToRequest GetServer where
               , ("mode", "2")
               ]
 
+data Updates
+  = Updates [Aeson.Object] Text
+  | OutOfDateOrLost Text
+  | KeyExpired
+  | DataLost
+  deriving Show
+
+instance Aeson.FromJSON Updates where
+  parseJSON = Aeson.withObject "App.Vk.Updates" $ \o -> do
+    v <- o .:? "updates"
+    case v of
+      Just r -> Updates r <$> o .: "ts"
+      Nothing -> do
+        i <- o .: "failed"
+        case i :: Integer of
+          1 -> OutOfDateOrLost <$> o .: "ts"
+          2 -> return KeyExpired
+          3 -> return DataLost
+          e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
+
 -- FUNCTIONS -------------------------------------------------------------------
 
 app :: App ()
@@ -161,7 +181,7 @@ app = do
   case r of
     Result (Succes v) -> do
       logDebug $ show v
-      d <- requestAndDecode @(Response GetServer) v
+      d <- requestAndDecode @Updates v
       case d of
         Result v        -> logDebug $ show v
         DecodeError e v -> logError e >> logDebug v
