@@ -9,6 +9,7 @@
 module Infrastructure.Logger
   ( Config (..)
   , Logger
+  , Loggable (..)
   , MonadLogger (..)
   , MonadTime (..)
   , Options (..)
