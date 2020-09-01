@@ -21,7 +21,9 @@ import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT, asks )
 import Control.Exception      ( try )
 import Data.Aeson             ( (.:) )
+import Data.Bifunctor         ( bimap )
 import Data.Text              ( Text )
+import Data.Maybe             ( fromMaybe )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Time              ( getCurrentTime )
 import GHC.Generics           ( Generic )
@@ -56,20 +58,11 @@ data Env = Env
   , envRequester :: Requester App
   }
 
-instance Has Lock Env where
-  getter = envLock
-
-instance Has (Logger App) Env where
-  getter = envLogger
-
-instance Has (Requester App) Env where
-  getter = envRequester
-
-instance Has Token Env where
-  getter = envToken
-
-instance Has Group Env where
-  getter = envGroup
+instance Has Lock            Env where getter = envLock
+instance Has (Logger App)    Env where getter = envLogger
+instance Has (Requester App) Env where getter = envRequester
+instance Has Token           Env where getter = envToken
+instance Has Group           Env where getter = envGroup
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
   (Functor, Applicative, Monad, MonadReader Env, MonadIO)
@@ -84,6 +77,21 @@ instance MonadTime App where
 instance MonadRequester App where
   requester manager req = liftIO $ try $ HTTP.httpLbs req manager
 
+data Response a
+  = Succes a
+  | Error ErrorResponse
+  deriving Show
+
+instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
+  parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
+    Succes <$> o .: "response"
+
+data ErrorResponse = ErrorResponse
+  { err :: Text } deriving (Generic, Show)
+
+instance Aeson.FromJSON ErrorResponse where
+  parseJSON = Aeson.parseJsonDrop
+
 data GetLongPollServer = GetLongPollServer Token Group
 
 instance ToRequest GetLongPollServer where
@@ -92,21 +100,47 @@ instance ToRequest GetLongPollServer where
     $ defaultRequest { HTTP.path = "/method/groups.getLongPollServer" }
 
 data GetServer = GetServer
-  { guKey :: Text
-  , guTs  :: Text
-  , guServer :: Text
+  { gsKey :: Text
+  , gsTs  :: Text
+  , gsServer :: Text
   } deriving (Generic, Show)
 
 instance Aeson.FromJSON GetServer where
   parseJSON = Aeson.parseJsonDrop
 
+instance ToRequest GetServer where
+  toRequest GetServer {..} = mkBody $ defaultRequest
+    { HTTP.path = snd splitUp
+    , HTTP.host = fst splitUp
+    }
+    where
+      splitUp = bimap encodeUtf8 encodeUtf8
+              $ Text.span (/='/')
+              $ fromMaybe gsServer
+              $ Text.stripPrefix "https://" gsServer
+
+      mkBody  = HTTP.urlEncodedBody
+              [ ("act" , "a_check")
+              , ("key" , encodeUtf8 gsKey)
+              , ("wait", "25")
+              , ("ts"  , encodeUtf8 gsTs)
+              , ("mode", "2")
+              ]
+
 -- FUNCTIONS -------------------------------------------------------------------
 
 app :: App ()
 app = do
-  r <- getLongPollServer >>= requestAndDecode @GetServer
+  r <- getLongPollServer >>= requestAndDecode @(Response GetServer)
   case r of
-    Result v -> logDebug $ show v
+    Result (Succes v) -> do
+      logDebug $ show v
+      d <- requestAndDecode @(Response GetServer) v
+      case d of
+        Result v -> logDebug $ show v
+        DecodeError e v -> logError e >> logDebug v
+        RequestError e -> logError e
+    Result x -> logError $ show x
     DecodeError e v -> logError e >> logDebug v
     RequestError e -> logError e
 
