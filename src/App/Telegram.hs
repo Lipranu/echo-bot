@@ -3,21 +3,24 @@
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE TypeApplications #-}
 
 module App.Telegram ( Config, mkApp, runApp ) where
 
-import           Internal                 ( Lock, Has (..) )
-import           Infrastructure.Logger    ( Logger )
-import           Infrastructure.Requester ( Requester )
+-- IMPORTS --------------------------------------------------------------------
 
-import qualified Infrastructure.Logger    as Logger
-import qualified Infrastructure.Requester as Requester
+import Infrastructure.Logger    hiding ( Config, Priority (..) )
+import Infrastructure.Requester
+import Internal                        ( Lock, Has (..) )
+
+import qualified Infrastructure.Logger as Logger
 
 import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
+import Control.Monad.Reader   ( ReaderT, MonadReader, asks, runReaderT )
 import Control.Exception      ( try )
 import Data.Aeson             ( (.:) )
 import Data.Text              ( Text )
+import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Time              ( getCurrentTime )
 
 import qualified Network.HTTP.Client as HTTP
@@ -42,39 +45,57 @@ data Env = Env
   , envRequester :: Requester App
   }
 
-instance Has Lock Env where
-  getter = envLock
-
-instance Has (Logger App) Env where
-  getter = envLogger
-
-instance Has (Requester App) Env where
-  getter = envRequester
+instance Has Lock            Env where getter = envLock
+instance Has (Logger App)    Env where getter = envLogger
+instance Has (Requester App) Env where getter = envRequester
+instance Has Token           Env where getter = envToken
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
   (Functor, Applicative, Monad, MonadReader Env, MonadIO)
 
-instance Logger.MonadLogger App where
+instance MonadLogger App where
   logConsole   = liftIO . TextIO.putStr
   logFile path = liftIO . TextIO.appendFile path
 
 instance Logger.MonadTime App where
   getTime = liftIO getCurrentTime
 
-instance Requester.MonadRequester App where
+instance MonadRequester App where
   requester manager req = liftIO $ try $ HTTP.httpLbs req manager
+
+data GetUpdates = GetUpdates (Maybe Integer) Token
+
+instance ToRequest GetUpdates where
+  toRequest (GetUpdates Nothing t) = defaultRequest
+    { HTTP.path = "/bot" <> (encodeUtf8 . unToken) t <> "/getUpdates"
+    , HTTP.method = "GET"
+    }
+
+  toRequest (GetUpdates (Just n) t)
+    = HTTP.urlEncodedBody mkBody $ defaultRequest
+    { HTTP.path = "/bot" <> (encodeUtf8 . unToken) t <> "/getUpdates" }
+    where mkBody = [ ("offset" , encodeUtf8 $ Text.pack $ show $ n + 1)
+                   , ("timeout", "25")
+                   ]
 
 app :: App ()
 app = do
-  Logger.logDebug ("Debug Message" :: Text)
-  Logger.logInfo ("Info Message" :: Text)
-  Logger.logWarning ("Warning Message" :: Text)
-  Logger.logError ("Error Message" :: Text)
+  t <- asks getter
+  r <- requestAndDecode @Config $ GetUpdates Nothing t
+  case r of
+    Result v -> logDebug ("successful" :: Text)
+    DecodeError e t -> logError e >> logDebug t
+    RequestError e -> logError e
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
-mkApp Config {..} cLogger lock = Env cToken logger lock
-                               . Requester.mkRequester
-  where logger = Logger.mkLogger cLogger "Telegram"
+mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
+  where logger = mkLogger cLogger "Telegram"
 
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
+
+defaultRequest :: HTTP.Request
+defaultRequest = HTTP.defaultRequest
+  { HTTP.host = "api.telegram.org"
+  , HTTP.method = "POST"
+  }

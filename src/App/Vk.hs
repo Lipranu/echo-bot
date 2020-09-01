@@ -10,7 +10,7 @@
 
 module App.Vk ( Config, mkApp, runApp ) where
 
--- IMPORTS ---------------------------------------------------------------------
+-- IMPORTS --------------------------------------------------------------------
 
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
@@ -37,7 +37,7 @@ import qualified Data.Text.IO        as TextIO
 import qualified Data.ByteString     as BS
 import qualified Network.HTTP.Client as HTTP
 
--- TYPES AND INSTANCES ---------------------------------------------------------
+-- TYPES AND INSTANCES --------------------------------------------------------
 
 data Config = Config
   { cToken :: Token
@@ -175,7 +175,7 @@ instance Aeson.FromJSON Updates where
           3 -> return DataLost
           e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
 
--- FUNCTIONS -------------------------------------------------------------------
+-- FUNCTIONS -----------------------------------------------------------------
 
 app :: App ()
 app = do
