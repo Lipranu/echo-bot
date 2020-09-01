@@ -11,12 +11,13 @@ module App.Vk ( Config, mkApp, runApp ) where
 
 -- IMPORTS ---------------------------------------------------------------------
 
-import Infrastructure.Logger    hiding ( Config )
+import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
 import Internal
 
 import qualified Infrastructure.Logger as Logger
 
+import Control.Applicative    ( (<|>) )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT, asks )
 import Control.Exception      ( try )
@@ -84,24 +85,49 @@ data Response a
 
 instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
   parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
-    Succes <$> o .: "response"
+        Succes <$> o .: "response"
+    <|> Error  <$> o .: "error"
 
 data ErrorResponse = ErrorResponse
-  { err :: Text } deriving (Generic, Show)
+  { eErrorCode     :: Integer
+  , eErrorMsg      :: Text
+  , eRequestParams :: [RequestParams]
+  } deriving (Generic, Show)
 
 instance Aeson.FromJSON ErrorResponse where
   parseJSON = Aeson.parseJsonDrop
+
+instance Loggable ErrorResponse where
+  toLog ErrorResponse {..}
+    = "An error occurred as a result of the request\n"
+   <> " | Error Code: "        <> code
+   <> " | Error Message: "     <> message
+   <> " | Request Parameters:" <> params
+    where code    = (Text.pack . show) eErrorCode <> "\n"
+          message = eErrorMsg <> "\n"
+          params  = foldr (<>) "" $ fmap toLog eRequestParams
+
+data RequestParams = RequestParams
+  { rpKey   :: Text
+  , rpValue :: Text
+  } deriving (Generic, Show)
+
+instance Aeson.FromJSON RequestParams where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable RequestParams where
+  toLog RequestParams {..} = "\n | \t" <> rpKey <> ": " <> rpValue
 
 data GetLongPollServer = GetLongPollServer Token Group
 
 instance ToRequest GetLongPollServer where
   toRequest (GetLongPollServer t g)
     = HTTP.urlEncodedBody (defaultBody t g)
-    $ defaultRequest { HTTP.path = "/method/groups.getLongPollServer" }
+    $ defaultRequest { HTTP.path = "/method/groups.getLongPollServe" }
 
 data GetServer = GetServer
-  { gsKey :: Text
-  , gsTs  :: Text
+  { gsKey    :: Text
+  , gsTs     :: Text
   , gsServer :: Text
   } deriving (Generic, Show)
 
@@ -137,12 +163,12 @@ app = do
       logDebug $ show v
       d <- requestAndDecode @(Response GetServer) v
       case d of
-        Result v -> logDebug $ show v
+        Result v        -> logDebug $ show v
         DecodeError e v -> logError e >> logDebug v
-        RequestError e -> logError e
-    Result x -> logError $ show x
-    DecodeError e v -> logError e >> logDebug v
-    RequestError e -> logError e
+        RequestError e  -> logError e
+    Result (Error x) -> logError x
+    DecodeError e v  -> logError e >> logDebug v
+    RequestError e   -> logError e
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
