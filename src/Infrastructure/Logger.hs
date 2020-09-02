@@ -23,7 +23,7 @@ module Infrastructure.Logger
   , mkLogger
   ) where
 
--- IMPORTS ---------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import Internal
 
@@ -32,7 +32,7 @@ import Control.Monad                ( when )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
 import Control.Monad.Reader         ( MonadReader, asks )
 import Data.Aeson                   ( (.:?), (.!=) )
-import Data.Text                    ( Text )
+import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
 import Data.Time                    ( UTCTime )
 import Network.HTTP.Client.Extended ( HttpException (..)
@@ -44,7 +44,7 @@ import Network.HTTP.Types.Status    ( Status (..) )
 import qualified Data.ByteString      as BS
 import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Aeson           as Aeson
-import qualified Data.Text            as Text
+import qualified Data.Text.Extended   as Text
 
 import Prelude hiding ( log )
 
@@ -78,7 +78,7 @@ instance Loggable HttpExceptionContent where
     \server returns a non-2XX response status code\n\
     \ | Code: "    <> code <> "\n\
     \ | Message: " <> message
-    where code    = Text.pack $ show $ statusCode $ responseStatus response
+    where code    = Text.showt $ statusCode    $ responseStatus response
           message = decodeUtf8 $ statusMessage $ responseStatus response
 
   toLog (TooManyRedirects _) = "TooManyRedirects\n\
@@ -98,7 +98,7 @@ instance Loggable HttpExceptionContent where
   toLog (ConnectionFailure e) = "ConnectionFailure\n\
     \ | Description: An exception occurred when trying \
     \to connect to the server\n\
-    \ | Exception: " <> (Text.pack . show) e
+    \ | Exception: " <> Text.showt e
 
   toLog (InvalidStatusLine bs) = "InvalidStatusLine\n\
     \ | Description: The status line returned by the \
@@ -116,14 +116,14 @@ instance Loggable HttpExceptionContent where
   toLog (InternalException e) = "InternalException\n\
     \ | Description: An exception was raised by an underlying \
     \library when performing the request\n\
-    \ | Content: " <> (Text.pack . show) e
+    \ | Content: " <> Text.showt e
 
   toLog (ProxyConnectException host port status) = "ProxyConnectException\n\
     \ | Description: A non-200 status code was returned when trying to \
     \connect to the proxy server on the given host and port\n\
-    \ | Code: "    <> (Text.pack . show . statusCode) status <> "\n\
-    \ | Message: " <> (decodeUtf8 . statusMessage) status    <> "\n\
-    \ | Port: "    <> (Text.pack . show) port                <> "\n\
+    \ | Code: "    <> (Text.showt . statusCode) status    <> "\n\
+    \ | Message: " <> (decodeUtf8 . statusMessage) status <> "\n\
+    \ | Port: "    <> Text.showt port                     <> "\n\
     \ | Host: "    <> decodeUtf8 host
 
   toLog NoResponseDataReceived = "NoResponseDataReceived\n\
@@ -140,13 +140,13 @@ instance Loggable HttpExceptionContent where
     = "WrongRequestBodyStreamSize\n\
     \ | Description: The request body provided did not match \
     \the expected size\n\
-    \ | Expected: " <> (Text.pack . show) expected <> "\n\
-    \ | Actual: "   <> (Text.pack . show) actual
+    \ | Expected: " <> Text.showt expected <> "\n\
+    \ | Actual: "   <> Text.showt actual
 
   toLog (ResponseBodyTooShort expected actual) = "ResponseBodyTooShort\n\
     \ | Description: The returned response body is too short\n\
-    \ | Expected: " <> (Text.pack . show) expected <> "\n\
-    \ | Actual: "   <> (Text.pack . show) actual
+    \ | Expected: " <> Text.showt expected <> "\n\
+    \ | Actual: "   <> Text.showt actual
 
   toLog InvalidChunkHeaders = "InvalidChunkHeaders\n\
     \ | Description: A chunked response body had invalid headers"
@@ -160,7 +160,7 @@ instance Loggable HttpExceptionContent where
 
   toLog (HttpZlibException e) = "HttpZlibException\n\
     \ | Description: An exception was thrown when inflating a response body\n\
-    \ | Content: " <> (Text.pack . show) e
+    \ | Content: " <> Text.showt e
 
   toLog (InvalidProxyEnvironmentVariable name value)
     = "InvalidProxyEnvironmentVariable\n\
@@ -265,7 +265,7 @@ instance Applicative m => Semigroup (Logger m) where
 instance Applicative m => Monoid (Logger m) where
   mempty = Logger $ \_ -> pure ()
 
--- FUNCTIONS -------------------------------------------------------------------
+-- FUNCTIONS ---------------------------------------------------------------
 
 log :: (Has (Logger m) r, MonadReader r m, MonadTime m, Loggable a)
     => Priority
@@ -297,11 +297,13 @@ timeLogger True  logger = Logger $ \m -> do
 timeLogger False logger = logger
 
 modeLogger :: Bool -> Text -> Logger m -> Logger m
-modeLogger True  t logger = Logger $ \m -> runLogger logger $ m { mMode = Just t }
+modeLogger True  t logger = Logger $ \m ->
+  runLogger logger $ m { mMode = Just t }
 modeLogger False _ logger = logger
 
 filterLogger :: Monad m => Priority -> Logger m -> Logger m
-filterLogger p logger = Logger $ \m -> when (mPriority m >= p) $ runLogger logger m
+filterLogger p logger = Logger $ \m ->
+  when (mPriority m >= p) $ runLogger logger m
 
 enableLogger :: Applicative m => Bool -> Logger m -> Logger m
 enableLogger True  logger = logger
