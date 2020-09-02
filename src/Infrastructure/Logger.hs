@@ -41,10 +41,8 @@ import Network.HTTP.Client.Extended ( HttpException (..)
                                     )
 import Network.HTTP.Types.Status    ( Status (..) )
 
-import qualified Data.ByteString      as BS
-import qualified Data.ByteString.Lazy as LBS
-import qualified Data.Aeson           as Aeson
-import qualified Data.Text.Extended   as Text
+import qualified Data.Aeson         as Aeson
+import qualified Data.Text.Extended as Text
 
 import Prelude hiding ( log )
 
@@ -62,7 +60,8 @@ class Loggable a where
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
-instance Loggable Text where toLog = id
+instance Loggable Text   where toLog = id
+instance Loggable String where toLog = Text.pack
 
 instance Loggable HttpException where
   toLog (HttpExceptionRequest _ content) = toLog content
@@ -174,15 +173,6 @@ instance Loggable HttpExceptionContent where
   toLog (InvalidProxySettings content) = "InvalidProxySettings\n\
     \ | Description: Proxy settings are not valid\n\
     \ | Content: " <> content
-
-instance Loggable String where
-  toLog = Text.pack
-
-instance Loggable BS.ByteString where
-  toLog = decodeUtf8
-
-instance Loggable LBS.ByteString where
-  toLog = decodeUtf8 . LBS.toStrict
 
 data Priority
   = Debug
