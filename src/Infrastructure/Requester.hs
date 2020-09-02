@@ -1,6 +1,7 @@
-{-# LANGUAGE ConstraintKinds  #-}
-{-# LANGUAGE ExplicitForAll   #-}
-{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE ConstraintKinds   #-}
+{-# LANGUAGE ExplicitForAll    #-}
+{-# LANGUAGE FlexibleContexts  #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Infrastructure.Requester
   ( MonadRequester (..)
@@ -14,8 +15,9 @@ module Infrastructure.Requester
   , requestAndDecode
   ) where
 
--- IMPORTS ---------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
+import Infrastructure.Logger        ( Loggable (..) )
 import Internal
 
 import Control.Monad.Reader         ( MonadReader, asks )
@@ -29,7 +31,7 @@ import qualified Data.ByteString.Lazy         as LBS
 import qualified Data.Text                    as Text
 import qualified Network.HTTP.Client.Extended as HTTP
 
--- CLASSES ---------------------------------------------------------------------
+-- CLASSES -----------------------------------------------------------------
 
 class Monad m => MonadRequester m where
   requester :: Manager -> Request -> m RequestResult
@@ -37,7 +39,7 @@ class Monad m => MonadRequester m where
 class ToRequest a where
   toRequest :: a -> Request
 
--- TYPES AND INSTANCES ---------------------------------------------------------
+-- TYPES AND INSTANCES -----------------------------------------------------
 
 type RequestResult = Either HttpException (Response LBS.ByteString)
 
@@ -46,10 +48,20 @@ newtype Requester m = Requester { unRequester :: Request -> m RequestResult }
 data Result a
   = Result a
   | DecodeError Text Text
-  | RequestError Text
-  deriving (Show, Eq)
+  | RequestError HttpException
+  deriving (Show)
 
--- FUNCTIONS -------------------------------------------------------------------
+instance Loggable a => Loggable (Result a) where
+  toLog (Result result) = toLog result
+
+  toLog (DecodeError err bs) = "An error occurred during decoding:\n\
+    \ | Error Message: " <> err <> "\n\
+    \ | Source: "        <> bs
+
+  toLog (RequestError err) = "An error occurred during request:\n\
+    \ | Error: " <> toLog err
+
+-- FUNCTIONS ---------------------------------------------------------------
 
 mkRequester :: MonadRequester m => Manager -> Requester m
 mkRequester = Requester . requester
@@ -61,7 +73,7 @@ request r = do
   req    <- asks getter
   result <- unRequester req $ toRequest r
   case result of
-    Left  e -> return $ RequestError $ Text.pack $ show e
+    Left  e -> return $ RequestError e
     Right r -> return $ Result $ HTTP.responseBody r
 
 decode :: forall a . FromJSON a => Result LBS.ByteString -> Result a
