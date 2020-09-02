@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: bc004208abaf8af82208e167d040c568119be182441301dce6b69b4397fad9b5
+-- hash: 0da53a34635adfc05f98e1c4f463006047aa74f7b25e294346f918f631f10f45
 
 name:           echo-bot
 version:        0.1.0.0
@@ -31,6 +31,7 @@ library
       App.Telegram
       App.Vk
       Data.Aeson.Extended
+      Data.Text.Extended
       Infrastructure.Logger
       Infrastructure.Requester
       Internal
@@ -47,6 +48,7 @@ library
     , containers
     , http-client
     , http-client-tls
+    , http-types
     , mtl
     , text
     , time
@@ -68,6 +70,7 @@ executable echo-bot-exe
     , echo-bot
     , http-client
     , http-client-tls
+    , http-types
     , mtl
     , text
     , time

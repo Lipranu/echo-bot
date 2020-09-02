@@ -26,6 +26,7 @@ dependencies:
 - containers
 - http-client
 - http-client-tls
+- http-types
 - mtl
 - text
 - time
@@ -56,5 +57,4 @@ tests:
     dependencies:
     - hspec
     - QuickCheck
-    - http-types
     - echo-bot

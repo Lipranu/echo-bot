@@ -241,21 +241,21 @@ data Message = Message
   , mMode     :: Maybe Text
   }
 
-instance Show Message where
-  show Message {..} = priority <> mode <> time <> message
+instance Loggable Message where
+  toLog Message {..} = priority <> mode <> time <> message
     where
-      priority = "[" <> show mPriority <> "]"
+      priority = "[" <> Text.showt mPriority <> "]"
 
-      message  = ": " <> Text.unpack mText <> "\n"
+      message  = ": " <> mText <> "\n"
 
       mode     = case mMode of
         Nothing -> ""
         Just "" -> ""
-        Just m  -> " {" <> Text.unpack m <> "}"
+        Just m  -> " {" <> m <> "}"
 
       time     = case mTime of
         Nothing -> ""
-        Just t  -> " (" <> show t <> ")"
+        Just t  -> " (" <> Text.showt t <> ")"
 
 newtype Logger m = Logger { runLogger :: Message -> m () }
 
@@ -310,10 +310,10 @@ enableLogger True  logger = logger
 enableLogger False _      = mempty
 
 consoleLogger :: MonadLogger m => Logger m
-consoleLogger = Logger $ logConsole . Text.pack . show
+consoleLogger = Logger $ logConsole . toLog
 
 fileLogger :: MonadLogger m => FilePath -> Logger m
-fileLogger path = Logger $ logFile path . Text.pack . show
+fileLogger path = Logger $ logFile path . toLog
 
 concurrentLogger :: (Has Lock r, MonadReader r m, MonadLogger m, MonadIO m)
                  => Logger m
