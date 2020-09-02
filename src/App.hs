@@ -1,4 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE DeriveGeneric     #-}
 
@@ -7,9 +6,8 @@ module App ( run ) where
 import qualified App.Telegram             as Telegram
 import qualified App.Vk                   as Vk
 import qualified Infrastructure.Logger    as Logger
-import qualified Infrastructure.Requester as Requester
 
-import Control.Concurrent.Async ( concurrently )
+import Control.Concurrent.Async ( concurrently_ )
 import Control.Concurrent.MVar  ( newMVar )
 import GHC.Generics             ( Generic )
 import Network.HTTP.Client.TLS  ( newTlsManager )
@@ -35,5 +33,4 @@ run = do
       manager <- newTlsManager
       let vk  = Vk.mkApp       cVk       cLogger lock manager
           tel = Telegram.mkApp cTelegram cLogger lock manager
-      concurrently (Vk.runApp vk) (Telegram.runApp tel)
-      return ()
+      concurrently_ (Vk.runApp vk) (Telegram.runApp tel)

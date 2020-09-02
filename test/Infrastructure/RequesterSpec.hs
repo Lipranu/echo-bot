@@ -25,7 +25,6 @@ import Test.Hspec                   ( Spec, describe, it, shouldBe )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.ByteString.Lazy         as BSL
-import qualified Data.Text.Extended           as Text
 import qualified Network.HTTP.Client.Extended as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
