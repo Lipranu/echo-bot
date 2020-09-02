@@ -3,11 +3,11 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module Infrastructure.LoggerSpec ( spec ) where
 
--- IMPORTS ---------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import Internal
 import Infrastructure.Logger
@@ -32,7 +32,10 @@ import qualified Data.Time as Time
 
 import Prelude hiding (log)
 
--- TYPES AND INSTANCES ---------------------------------------------------------
+{- HLINT ignore "Monoid law, right identity" -}
+{- HLINT ignore "Monoid law, left identity"  -}
+
+-- TYPES AND INSTANCES -----------------------------------------------------
 
 type FileLog    = Map FilePath Text
 type ConsoleLog = Text
@@ -85,7 +88,7 @@ instance Arbitrary Config where
     <*> arbitrary
     <*> arbitrary
 
--- FUNCTIONS -------------------------------------------------------------------
+-- FUNCTIONS ---------------------------------------------------------------
 
 mkEnv :: Logger App -> IO Env
 mkEnv logger = Env logger
@@ -133,7 +136,7 @@ testConfig = Config
   , logFilePath    = "log"
   }
 
--- TESTS -----------------------------------------------------------------------
+-- TESTS -------------------------------------------------------------------
 
 decodePrioritySpec :: Spec
 decodePrioritySpec = describe "decode priority json" $ do
