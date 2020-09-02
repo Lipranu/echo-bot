@@ -2,18 +2,20 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE StandaloneDeriving    #-}
 {-# LANGUAGE TypeApplications      #-}
 
 module Infrastructure.RequesterSpec ( spec ) where
 
--- IMPORTS ---------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import Internal
 import Infrastructure.Requester
+import Infrastructure.Logger        ( Loggable (..) )
 
 import Control.Monad.Reader         ( Reader, asks, runReader )
 import Control.Monad.IO.Class       ( liftIO )
-import Data.Text                    ( Text )
+import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
 import GHC.Generics                 ( Generic )
 import Network.HTTP.Client.Extended ( HttpException (..), createCookieJar )
@@ -23,10 +25,10 @@ import Test.Hspec                   ( Spec, describe, it, shouldBe )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.ByteString.Lazy         as BSL
-import qualified Data.Text                    as Text
+import qualified Data.Text.Extended           as Text
 import qualified Network.HTTP.Client.Extended as HTTP
 
--- TYPES AND INSTANCES ---------------------------------------------------------
+-- TYPES AND INSTANCES -----------------------------------------------------
 
 type App = Reader Env
 type RequestResult = Either HttpException (Response BSL.ByteString)
@@ -57,7 +59,12 @@ instance ToRequest TestBody where
   toRequest b = HTTP.defaultRequest
     { HTTP.requestBody = HTTP.RequestBodyLBS $ Aeson.encode b }
 
--- FUNCTIONS -------------------------------------------------------------------
+deriving instance Eq a => Eq (Result a)
+
+instance Eq HttpException where
+  x == y = toLog x == toLog y
+
+-- FUNCTIONS ---------------------------------------------------------------
 
 testBody :: TestBody
 testBody = TestBody "text" 1
@@ -88,7 +95,7 @@ succeededResponse = Response
   }
 
 requestError, decodeError :: Result a
-requestError = RequestError $ Text.pack $ show failedResponse
+requestError = RequestError failedResponse
 decodeError  = DecodeError err bs
   where bs   = decodeUtf8 $ BSL.toStrict testBodyFail
         err  = "Error in $: parsing Infrastructure.RequesterSpec.\
@@ -97,7 +104,7 @@ decodeError  = DecodeError err bs
 runTest :: Reader Env a -> HTTP.Manager -> RequestResult -> a
 runTest action manager req = runReader action $ Env (mkRequester manager) req
 
--- TESTS -----------------------------------------------------------------------
+-- TESTS -------------------------------------------------------------------
 
 requestSpec :: Spec
 requestSpec = describe "request" $ do

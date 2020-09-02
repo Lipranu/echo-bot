@@ -49,7 +49,7 @@ data Result a
   = Result a
   | DecodeError Text Text
   | RequestError HttpException
-  deriving (Show)
+  deriving Show
 
 instance Loggable a => Loggable (Result a) where
   toLog (Result result) = toLog result
