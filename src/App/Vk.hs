@@ -19,23 +19,22 @@ import Internal
 import qualified Infrastructure.Logger as Logger
 
 import Control.Applicative    ( (<|>) )
-import Control.Monad          ( (>=>) )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT, asks )
+import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
 import Control.Exception      ( try )
 import Data.Aeson             ( (.:), (.:?) )
 import Data.Bifunctor         ( bimap )
-import Data.Text              ( Text )
+import Data.Text.Extended     ( Text )
 import Data.Maybe             ( fromMaybe )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Time              ( getCurrentTime )
 import GHC.Generics           ( Generic )
 
-import qualified Data.Aeson.Extended as Aeson
-import qualified Data.Text           as Text
-import qualified Data.Text.IO        as TextIO
-import qualified Data.ByteString     as BS
-import qualified Network.HTTP.Client as HTTP
+import qualified Data.Aeson.Extended          as Aeson
+import qualified Data.Text.Extended           as Text
+import qualified Data.Text.IO                 as TextIO
+import qualified Data.ByteString              as BS
+import qualified Network.HTTP.Client.Extended as HTTP
 
 -- TYPES AND INSTANCES --------------------------------------------------------
 
@@ -90,6 +89,10 @@ instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
         Succes <$> o .: "response"
     <|> Error  <$> o .: "error"
 
+instance Loggable a => Loggable (Response a) where
+  toLog (Succes x) = toLog x
+  toLog (Error x)  = toLog x
+
 data ErrorResponse = ErrorResponse
   { eErrorCode     :: Integer
   , eErrorMsg      :: Text
@@ -120,40 +123,47 @@ instance Aeson.FromJSON RequestParams where
 instance Loggable RequestParams where
   toLog RequestParams {..} = "\n | \t" <> rpKey <> ": " <> rpValue
 
-data GetLongPollServer = GetLongPollServer Token Group
+data GetLongPollServer = GetLongPollServer
 
-instance ToRequest GetLongPollServer where
-  toRequest (GetLongPollServer t g)
-    = HTTP.urlEncodedBody (defaultBody t g)
-    $ defaultRequest { HTTP.path = "/method/groups.getLongPollServer" }
+instance (Has Token r, Has Group r, MonadReader r m) =>
+  ToRequest m r GetLongPollServer where
+  toRequest GetLongPollServer = do
+    token <- obtain
+    group <- obtain
+    return $ HTTP.urlEncodedBody (defaultBody token group)
+           $ defaultRequest
+           { HTTP.path = "/method/groups.getLongPollServer" }
 
 data GetUpdates = GetUpdates
-  { gsKey    :: Text
-  , gsTs     :: Text
-  , gsServer :: Text
+  { guKey    :: Text
+  , guTs     :: Text
+  , guServer :: Text
   } deriving (Generic, Show)
 
 instance Aeson.FromJSON GetUpdates where
   parseJSON = Aeson.parseJsonDrop
 
-instance ToRequest GetUpdates where
-  toRequest GetUpdates {..} = mkBody $ defaultRequest
+instance MonadReader r m => ToRequest m r GetUpdates where
+  toRequest GetUpdates {..} = return $ mkBody $ defaultRequest
     { HTTP.path = snd splitUp
     , HTTP.host = fst splitUp
     }
     where
       splitUp = bimap encodeUtf8 encodeUtf8
               $ Text.span (/='/')
-              $ fromMaybe gsServer
-              $ Text.stripPrefix "https://" gsServer
+              $ fromMaybe guServer
+              $ Text.stripPrefix "https://" guServer
 
       mkBody  = HTTP.urlEncodedBody
               [ ("act" , "a_check")
-              , ("key" , encodeUtf8 gsKey)
+              , ("key" , encodeUtf8 guKey)
               , ("wait", "25")
-              , ("ts"  , encodeUtf8 gsTs)
+              , ("ts"  , encodeUtf8 guTs)
               , ("mode", "2")
               ]
+
+instance Loggable GetUpdates where
+  toLog _ = "getUpdates"
 
 data Updates
   = Updates [Aeson.Object] Text
@@ -175,13 +185,13 @@ instance Aeson.FromJSON Updates where
           3 -> return DataLost
           e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
 
+instance Loggable Updates where
+  toLog _ = "updates"
+
 -- FUNCTIONS -----------------------------------------------------------------
 
 app :: App ()
-app = do
-  s <- requestLongPollServer
-  u <- handleErrors @Updates s
-  updatesHandler u s
+app = getLongPollServer
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
@@ -190,49 +200,31 @@ mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
 
-getLongPollServer :: (Has Token r, Has Group r, MonadReader r m)
-                  => m GetLongPollServer
-getLongPollServer = GetLongPollServer
-  <$> asks getter
-  <*> asks getter
+getLongPollServer :: App ()
+getLongPollServer = do
+  result <- requestAndDecode GetLongPollServer
+  case result of
+    Result (Succes v) -> logDebug v >> getUpdates v
+    err               -> logError err
 
-handleErrors :: forall b a . (ToRequest a, Show b, Aeson.FromJSON b) => a -> App b
-handleErrors req = do
-  v <- requestAndDecode req
-  case v of
-    Result v -> do
-      logDebug $ show v
-      return v
-    DecodeError e v  -> logError e >> logDebug v >> fail ""
-    RequestError e   -> logError e >> fail ""
+getUpdates :: GetUpdates -> App ()
+getUpdates gu = do
+  result <- requestAndDecode gu
+  case result of
+    Result (OutOfDateOrLost ts)
+      -> logWarning result
+      >> getUpdates gu { guTs = ts }
+    Result (Updates upd ts)
+      -> logInfo result
+      >> proccessUpdates upd
+      >> getUpdates gu { guTs = ts }
+    Result v
+      -> logWarning result
+      >> getLongPollServer
+    err -> logError err
 
-handleResult :: forall a . Show a => Response a -> App a
-handleResult (Error x)  = logError x >> fail ""
-handleResult (Succes v) = logInfo ("Successful request" :: Text)
-                       >> logDebug (show v)
-                       >> return v
-
-handler :: forall b a . (ToRequest a, Show b, Aeson.FromJSON b) => a -> App b
-handler = handleErrors >=> handleResult
-
-requestLongPollServer :: App GetUpdates
-requestLongPollServer = getLongPollServer >>= handler
-
-updatesHandler :: Updates -> GetUpdates -> App () --GetUpdates
-updatesHandler DataLost             _ = do
-  logWarning ("Information is lost, performing request for new key and ts" :: Text)
-  server  <- requestLongPollServer
-  updates <- handleErrors @Updates server
-  updatesHandler updates server
-updatesHandler KeyExpired           _ = do
-  logInfo ("The key has expired, performing request for new key" :: Text)
-  fail "gsg"
-updatesHandler (OutOfDateOrLost ts) _ = do
-  logWarning ("The event history is out of date or has been partially lost" :: Text)
-  fail "gsg"
-updatesHandler (Updates ts upd)     _ = do
-  logWarning ("Information is lost, performing request for new key and ts" :: Text)
-  fail "gsg"
+proccessUpdates :: [Aeson.Object] -> App ()
+proccessUpdates upds = logInfo $ Text.showt $ length upds
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
