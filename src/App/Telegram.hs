@@ -1,11 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE MultiParamTypeClasses  #-}
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module App.Telegram ( Config, mkApp, runApp ) where
 
@@ -26,7 +24,6 @@ import Data.Aeson.Extended    ( (.:) )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Text.Extended     ( Text )
 import Data.Time              ( getCurrentTime )
---import GHC.Generics           ( Generic )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.ByteString              as BS
@@ -39,9 +36,7 @@ import qualified Network.HTTP.Client.Extended as HTTP
 
 newtype Token = Token { unToken :: Text }
 
-newtype Config = Config
-  { cToken :: Token
-  }
+newtype Config = Config { cToken :: Token }
 
 instance Aeson.FromJSON Config where
   parseJSON = Aeson.withObject "Telegram.Config" $ \o -> Config
@@ -90,7 +85,7 @@ instance Loggable a => Loggable (Response a) where
     \ | Error Code: "        <> Text.showt code <> "\n\
     \ | Error Description: " <> description
 
-data GetUpdates = GetUpdates (Maybe Integer)
+newtype GetUpdates = GetUpdates (Maybe Integer)
 
 instance (Has Token r, MonadReader r m) => ToRequest m r GetUpdates where
   toRequest (GetUpdates Nothing) = do
@@ -117,15 +112,14 @@ instance Loggable GetUpdates where
   toLog (GetUpdates (Just n))
     = "GetUpdates request with offset: " <> Text.showt (n + 1)
 
-data Update
-  = Post Integer
+newtype Update = Post Integer
 
 instance Aeson.FromJSON Update where
   parseJSON = Aeson.withObject "App.Vk.Update" $ \o -> Post
     <$> o .: "update_id"
 
 instance Loggable [Update] where
-  toLog v = "Updates resived: " <> (Text.showt $ length v)
+  toLog v = "Updates resived: " <> Text.showt (length v)
 
 instance Loggable Update where
   toLog (Post i) = "Proccess post with id: " <> Text.showt i
@@ -133,7 +127,9 @@ instance Loggable Update where
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
-app = getUpdates $ GetUpdates Nothing
+app = do
+  logInfo ("Application getting started" :: Text)
+  getUpdates $ GetUpdates Nothing
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
@@ -144,11 +140,15 @@ runApp = runReaderT (unApp app)
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
-  logDebug gu
-  r <- requestAndDecode gu
-  case r of
-    Result (Succes v) -> logDebug v >> proccessUpdates v
-    err -> logError err
+  logInfo gu
+  result <- requestAndDecode gu
+  case result of
+    Result (Succes v) -> do
+      logInfo v
+      proccessUpdates v
+    error -> do
+      logError error
+      logError ("Application shut down" :: Text)
 
 proccessUpdates :: [Update] -> App ()
 proccessUpdates xs = do
@@ -156,9 +156,9 @@ proccessUpdates xs = do
   getUpdates $ GetUpdates x
 
 proccessUpdate :: Maybe Integer -> Update -> App (Maybe Integer)
-proccessUpdate current p@(Post id)
-   = logDebug p
-  >> return (max current $ Just id)
+proccessUpdate current p@(Post id) = do
+  logDebug p
+  return (max current $ Just id)
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest
@@ -167,7 +167,7 @@ defaultRequest = HTTP.defaultRequest
   }
 
 defaultPath :: Token -> BS.ByteString
-defaultPath (Token t) = "/bot1" <> encodeUtf8 t
+defaultPath token = "/bot" <> encodeUtf8 (unToken token)
 
 defaultGetUpdatesBody :: [(BS.ByteString, BS.ByteString)]
 defaultGetUpdatesBody =

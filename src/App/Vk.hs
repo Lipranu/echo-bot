@@ -5,7 +5,6 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TypeApplications           #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
@@ -79,17 +78,17 @@ instance MonadRequester App where
   requester manager req = liftIO $ try $ HTTP.httpLbs req manager
 
 data Response a
-  = Succes a
+  = Success a
   | Error ErrorResponse
 
 instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
   parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
-        Succes <$> o .: "response"
-    <|> Error  <$> o .: "error"
+        Success <$> o .: "response"
+    <|> Error   <$> o .: "error"
 
 instance Loggable a => Loggable (Response a) where
-  toLog (Succes x) = toLog x
-  toLog (Error x)  = toLog x
+  toLog (Success x) = toLog x
+  toLog (Error   x) = toLog x
 
 data ErrorResponse = ErrorResponse
   { eErrorCode     :: Integer
@@ -166,7 +165,7 @@ instance Loggable GetUpdates where
 
 data Updates
   = Updates [Aeson.Object] Text
-  | OutOfDateOrLost Text
+  | OutOfDate Text
   | KeyExpired
   | DataLost
 
@@ -178,7 +177,7 @@ instance Aeson.FromJSON Updates where
       Nothing -> do
         i <- o .: "failed"
         case i :: Integer of
-          1 -> OutOfDateOrLost <$> o .: "ts"
+          1 -> OutOfDate <$> o .: "ts"
           2 -> return KeyExpired
           3 -> return DataLost
           e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
@@ -188,7 +187,7 @@ instance Loggable Updates where
     <> (Text.showt . length) upds
     <> " | New timestamp: "
     <> ts
-  toLog (OutOfDateOrLost ts) =
+  toLog (OutOfDate ts) =
     "Event history is outdated or partially lost. \
     \Performing new request for updates with timestamp: " <> ts
   toLog KeyExpired = "Key expired. Performing request for new key"
@@ -197,7 +196,9 @@ instance Loggable Updates where
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
-app = getLongPollServer
+app = do
+  logInfo ("Application getting started" :: Text)
+  getLongPollServer
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
@@ -208,29 +209,38 @@ runApp = runReaderT (unApp app)
 
 getLongPollServer :: App ()
 getLongPollServer = do
-  result <- requestAndDecode GetLongPollServer
+  let lp = GetLongPollServer
+  logInfo lp
+  result <- requestAndDecode lp
   case result of
-    Result (Succes v) -> logDebug v >> getUpdates v
-    err               -> logError err
+    Result (Success gu) -> do
+      logInfo gu
+      getUpdates gu
+    error -> do
+      logError error
+      logError ("Application shut down" :: Text)
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
+  logInfo gu
   result <- requestAndDecode gu
   case result of
-    Result (OutOfDateOrLost ts)
-      -> logWarning result
-      >> getUpdates gu { guTs = ts }
-    Result (Updates upd ts)
-      -> logInfo result
-      >> proccessUpdates upd
-      >> getUpdates gu { guTs = ts }
-    Result v
-      -> logWarning result
-      >> getLongPollServer
-    err -> logError err
+    Result (Updates upd ts) -> do
+      logInfo result
+      proccessUpdates upd
+      getUpdates gu { guTs = ts }
+    Result (OutOfDate ts) -> do
+      logWarning result
+      getUpdates gu { guTs = ts }
+    Result v -> do
+      logWarning v
+      getLongPollServer
+    error -> do
+      logError error
+      logError ("Application shut down" :: Text)
 
 proccessUpdates :: [Aeson.Object] -> App ()
-proccessUpdates upds = logInfo ("in proccessUpdates" :: Text)
+proccessUpdates xs = logInfo ("Proccessing updates" :: Text)
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
