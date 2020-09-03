@@ -21,7 +21,6 @@ import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
 import Control.Exception      ( try )
 import Data.Aeson             ( (.:), (.:?) )
-import Data.Bifunctor         ( bimap )
 import Data.Text.Extended     ( Text )
 import Data.Maybe             ( fromMaybe )
 import Data.Text.Encoding     ( encodeUtf8 )
@@ -133,32 +132,34 @@ instance Loggable GetLongPollServer where
   toLog _ = "Requesting long poll server"
 
 data GetUpdates = GetUpdates
-  { guKey    :: Text
-  , guTs     :: Text
-  , guServer :: Text
-  } deriving Generic
+  { guKey  :: Text
+  , guTs   :: Text
+  , guPath :: Text
+  , guHost :: Text
+  }
 
 instance Aeson.FromJSON GetUpdates where
-  parseJSON = Aeson.parseJsonDrop
+  parseJSON = Aeson.withObject "App.Vk.GetUpdates" $ \o -> do
+    guKey    <- o .: "key"
+    guTs     <- o .: "ts"
+    guServer <- o .: "server"
+    let (guHost,guPath) = Text.span (/='/')
+                        $ fromMaybe guServer
+                        $ Text.stripPrefix "https://" guServer
+    return GetUpdates {..}
 
 instance MonadReader r m => ToRequest m r GetUpdates where
   toRequest GetUpdates {..} = return $ mkBody $ defaultRequest
-    { HTTP.path = snd splitUp
-    , HTTP.host = fst splitUp
+    { HTTP.path = encodeUtf8 guPath
+    , HTTP.host = encodeUtf8 guHost
     }
-    where
-      splitUp = bimap encodeUtf8 encodeUtf8
-              $ Text.span (/='/')
-              $ fromMaybe guServer
-              $ Text.stripPrefix "https://" guServer
-
-      mkBody  = HTTP.urlEncodedBody
-              [ ("act" , "a_check")
-              , ("key" , encodeUtf8 guKey)
-              , ("wait", "25")
-              , ("ts"  , encodeUtf8 guTs)
-              , ("mode", "2")
-              ]
+    where mkBody = HTTP.urlEncodedBody
+                 [ ("act" , "a_check")
+                 , ("key" , encodeUtf8 guKey)
+                 , ("wait", "25")
+                 , ("ts"  , encodeUtf8 guTs)
+                 , ("mode", "2")
+                 ]
 
 instance Loggable GetUpdates where
   toLog _ = "Requesting updates from long poll server"
@@ -213,12 +214,8 @@ getLongPollServer = do
   logInfo lp
   result <- requestAndDecode lp
   case result of
-    Result (Success gu) -> do
-      logInfo gu
-      getUpdates gu
-    error -> do
-      logError error
-      logError ("Application shut down" :: Text)
+    Result (Success gu) -> getUpdates gu
+    error -> logError error >> logError ("Application shut down" :: Text)
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
@@ -232,12 +229,8 @@ getUpdates gu = do
     Result (OutOfDate ts) -> do
       logWarning result
       getUpdates gu { guTs = ts }
-    Result v -> do
-      logWarning v
-      getLongPollServer
-    error -> do
-      logError error
-      logError ("Application shut down" :: Text)
+    Result v -> logWarning v >> getLongPollServer
+    error -> logError error >> logError ("Application shut down" :: Text)
 
 proccessUpdates :: [Aeson.Object] -> App ()
 proccessUpdates xs = logInfo ("Proccessing updates" :: Text)
