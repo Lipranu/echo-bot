@@ -30,7 +30,7 @@ import Internal
 import Control.Concurrent.MVar      ( takeMVar, putMVar )
 import Control.Monad                ( when )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
-import Control.Monad.Reader         ( MonadReader, asks )
+import Control.Monad.Reader         ( MonadReader )
 import Data.Aeson                   ( (.:?), (.!=) )
 import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
@@ -262,7 +262,7 @@ log :: (Has (Logger m) r, MonadReader r m, MonadTime m, Loggable a)
     -> a
     -> m ()
 log lvl msg = do
-  logger <- asks getter
+  logger <- obtain
   runLogger logger message
   where message = Message
           { mPriority = lvl
@@ -309,7 +309,7 @@ concurrentLogger :: (Has Lock r, MonadReader r m, MonadLogger m, MonadIO m)
                  => Logger m
                  -> Logger m
 concurrentLogger logger = Logger $ \m -> do
-  lock <- asks getter
+  lock <- obtain
   _ <- liftIO $ takeMVar lock
   runLogger logger m
   liftIO $ putMVar lock ()

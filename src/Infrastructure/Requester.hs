@@ -21,7 +21,7 @@ module Infrastructure.Requester
 import Infrastructure.Logger        ( Loggable (..) )
 import Internal
 
-import Control.Monad.Reader         ( MonadReader, asks )
+import Control.Monad.Reader         ( MonadReader )
 import Data.Aeson                   ( FromJSON, eitherDecode )
 import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
@@ -71,7 +71,7 @@ request :: (ToRequest m r a, Has (Requester m) r, MonadReader r m)
         => a
         -> m (Result LBS.ByteString)
 request r = do
-  requester <- asks getter
+  requester <- obtain
   request   <- toRequest r
   result    <- unRequester requester request
   case result of
