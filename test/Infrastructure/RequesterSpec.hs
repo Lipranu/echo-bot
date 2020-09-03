@@ -13,7 +13,7 @@ import Internal
 import Infrastructure.Requester
 import Infrastructure.Logger        ( Loggable (..) )
 
-import Control.Monad.Reader         ( Reader, asks, runReader )
+import Control.Monad.Reader         ( MonadReader, Reader, asks, runReader )
 import Control.Monad.IO.Class       ( liftIO )
 import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
@@ -54,8 +54,8 @@ instance Aeson.FromJSON TestBody where
 instance Aeson.ToJSON TestBody where
   toJSON = Aeson.toJsonDrop
 
-instance ToRequest TestBody where
-  toRequest b = HTTP.defaultRequest
+instance MonadReader r m => ToRequest m r TestBody where
+  toRequest b = return $ HTTP.defaultRequest
     { HTTP.requestBody = HTTP.RequestBodyLBS $ Aeson.encode b }
 
 deriving instance Eq a => Eq (Result a)

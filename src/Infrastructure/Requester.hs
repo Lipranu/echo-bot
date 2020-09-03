@@ -2,6 +2,7 @@
 {-# LANGUAGE ExplicitForAll    #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
 
 module Infrastructure.Requester
   ( MonadRequester (..)
@@ -36,8 +37,8 @@ import qualified Network.HTTP.Client.Extended as HTTP
 class Monad m => MonadRequester m where
   requester :: Manager -> Request -> m RequestResult
 
-class ToRequest a where
-  toRequest :: a -> Request
+class MonadReader r m => ToRequest m r a where
+  toRequest :: a -> m Request
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -66,12 +67,13 @@ instance Loggable a => Loggable (Result a) where
 mkRequester :: MonadRequester m => Manager -> Requester m
 mkRequester = Requester . requester
 
-request :: (ToRequest a, Has (Requester m) r, MonadReader r m)
+request :: (ToRequest m r a, Has (Requester m) r, MonadReader r m)
         => a
         -> m (Result LBS.ByteString)
 request r = do
-  req    <- asks getter
-  result <- unRequester req $ toRequest r
+  requester <- asks getter
+  request   <- toRequest r
+  result    <- unRequester requester request
   case result of
     Left  e -> return $ RequestError e
     Right r -> return $ Result $ HTTP.responseBody r
@@ -85,7 +87,7 @@ decode (DecodeError  e t) = DecodeError  e t
 
 requestAndDecode
   :: forall b a r m .
-  ( ToRequest a, FromJSON b, Has (Requester m) r, MonadReader r m )
+  ( ToRequest m r a, FromJSON b, Has (Requester m) r, MonadReader r m )
   => a
   -> m (Result b)
 requestAndDecode req = decode <$> request req
