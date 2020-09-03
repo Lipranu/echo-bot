@@ -6,11 +6,10 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE ExplicitForAll           #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
--- IMPORTS --------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
@@ -36,7 +35,7 @@ import qualified Data.Text.IO                 as TextIO
 import qualified Data.ByteString              as BS
 import qualified Network.HTTP.Client.Extended as HTTP
 
--- TYPES AND INSTANCES --------------------------------------------------------
+-- TYPES AND INSTANCES -----------------------------------------------------
 
 data Config = Config
   { cToken :: Token
@@ -82,7 +81,6 @@ instance MonadRequester App where
 data Response a
   = Succes a
   | Error ErrorResponse
-  deriving Show
 
 instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
   parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
@@ -97,25 +95,23 @@ data ErrorResponse = ErrorResponse
   { eErrorCode     :: Integer
   , eErrorMsg      :: Text
   , eRequestParams :: [RequestParams]
-  } deriving (Generic, Show)
+  } deriving Generic
 
 instance Aeson.FromJSON ErrorResponse where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable ErrorResponse where
   toLog ErrorResponse {..}
-    = "An error occurred as a result of the request\n"
-   <> " | Error Code: "        <> code
-   <> " | Error Message: "     <> message
-   <> " | Request Parameters:" <> params
-    where code    = (Text.pack . show) eErrorCode <> "\n"
-          message = eErrorMsg <> "\n"
-          params  = foldr (<>) "" $ fmap toLog eRequestParams
+    = "An error occurred as a result of the request\n\
+    \ | Error Code: "        <> Text.showt eErrorCode <> "\n\
+    \ | Error Message: "     <> eErrorMsg             <> "\n\
+    \ | Request Parameters:" <> params
+    where params  = foldr (<>) "" $ fmap toLog eRequestParams
 
 data RequestParams = RequestParams
   { rpKey   :: Text
   , rpValue :: Text
-  } deriving (Generic, Show)
+  } deriving Generic
 
 instance Aeson.FromJSON RequestParams where
   parseJSON = Aeson.parseJsonDrop
@@ -134,11 +130,14 @@ instance (Has Token r, Has Group r, MonadReader r m) =>
            $ defaultRequest
            { HTTP.path = "/method/groups.getLongPollServer" }
 
+instance Loggable GetLongPollServer where
+  toLog _ = "Requesting long poll server"
+
 data GetUpdates = GetUpdates
   { guKey    :: Text
   , guTs     :: Text
   , guServer :: Text
-  } deriving (Generic, Show)
+  } deriving Generic
 
 instance Aeson.FromJSON GetUpdates where
   parseJSON = Aeson.parseJsonDrop
@@ -163,14 +162,13 @@ instance MonadReader r m => ToRequest m r GetUpdates where
               ]
 
 instance Loggable GetUpdates where
-  toLog _ = "getUpdates"
+  toLog _ = "Requesting updates from long poll server"
 
 data Updates
   = Updates [Aeson.Object] Text
   | OutOfDateOrLost Text
   | KeyExpired
   | DataLost
-  deriving Show
 
 instance Aeson.FromJSON Updates where
   parseJSON = Aeson.withObject "App.Vk.Updates" $ \o -> do
@@ -186,9 +184,17 @@ instance Aeson.FromJSON Updates where
           e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
 
 instance Loggable Updates where
-  toLog _ = "updates"
+  toLog (Updates upds ts) = "Resived updates: "
+    <> (Text.showt . length) upds
+    <> " | New timestamp: "
+    <> ts
+  toLog (OutOfDateOrLost ts) =
+    "Event history is outdated or partially lost. \
+    \Performing new request for updates with timestamp: " <> ts
+  toLog KeyExpired = "Key expired. Performing request for new key"
+  toLog DataLost   = "Information lost. Performing request for new key"
 
--- FUNCTIONS -----------------------------------------------------------------
+-- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
 app = getLongPollServer
@@ -224,14 +230,14 @@ getUpdates gu = do
     err -> logError err
 
 proccessUpdates :: [Aeson.Object] -> App ()
-proccessUpdates upds = logInfo $ Text.showt $ length upds
+proccessUpdates upds = logInfo ("in proccessUpdates" :: Text)
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
 
 defaultBody :: Token -> Group -> [(BS.ByteString, BS.ByteString)]
-defaultBody t g =
-  [ ("access_token", encodeUtf8 $ unToken t)
-  , ("group_id"    , encodeUtf8 $ unGroup g)
+defaultBody token group =
+  [ ("access_token", encodeUtf8 $ unToken token)
+  , ("group_id"    , encodeUtf8 $ unGroup group)
   , ("v"           , "5.122")
   ]
