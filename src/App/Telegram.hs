@@ -1,5 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE MultiParamTypeClasses  #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -12,21 +13,24 @@ module App.Telegram ( Config, mkApp, runApp ) where
 
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
-import Internal                        ( Lock, Has (..) )
+import Internal
 
 import qualified Infrastructure.Logger as Logger
 
 import Control.Applicative    ( (<|>) )
 import Control.Exception      ( try )
+import Control.Monad          ( foldM )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( ReaderT, MonadReader, asks, runReaderT )
+import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
 import Data.Aeson.Extended    ( (.:) )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Text.Extended     ( Text )
 import Data.Time              ( getCurrentTime )
-import GHC.Generics           ( Generic )
+--import GHC.Generics           ( Generic )
 
 import qualified Data.Aeson.Extended          as Aeson
+import qualified Data.ByteString              as BS
+import qualified Data.ByteString.Lazy         as LBS
 import qualified Data.Text.Extended           as Text
 import qualified Data.Text.IO                 as TextIO
 import qualified Network.HTTP.Client.Extended as HTTP
@@ -39,7 +43,6 @@ newtype Config = Config
   { cToken :: Token
   }
 
-instance Loggable Config where toLog _ = "It's a trap"
 instance Aeson.FromJSON Config where
   parseJSON = Aeson.withObject "Telegram.Config" $ \o -> Config
     <$> (Token <$> o .: "token")
@@ -85,32 +88,52 @@ instance Loggable a => Loggable (Response a) where
   toLog (Error code description)
     = "An error occurred as a result of the request\n\
     \ | Error Code: "        <> Text.showt code <> "\n\
-    \ | Error Message: "     <> description
+    \ | Error Description: " <> description
 
-data GetUpdates = GetUpdates (Maybe Integer) Token
+data GetUpdates = GetUpdates (Maybe Integer)
 
-instance ToRequest GetUpdates where
-  toRequest (GetUpdates Nothing t) = defaultRequest
-    { HTTP.path = "/bot" <> (encodeUtf8 . unToken) t <> "/getUpdates"
-    , HTTP.method = "GET"
-    }
+instance (Has Token r, MonadReader r m) => ToRequest m r GetUpdates where
+  toRequest (GetUpdates Nothing) = do
+    token <- obtain
+    return $
+      HTTP.urlEncodedBody defaultGetUpdatesBody $
+      defaultRequest
+      { HTTP.path = defaultPath token <> "/getUpdates"
+      , HTTP.method = "GET"
+      }
 
-  toRequest (GetUpdates (Just n) t)
-    = HTTP.urlEncodedBody mkBody $ defaultRequest
-    { HTTP.path = "/bot" <> (encodeUtf8 . unToken) t <> "/getUpdates" }
-    where mkBody = [ ("offset" , encodeUtf8 $ Text.pack $ show $ n + 1)
-                   , ("timeout", "25")
-                   ]
+  toRequest (GetUpdates (Just n)) = do
+    token <- obtain
+    return $
+      HTTP.urlEncodedBody mkBody $
+      defaultRequest
+      { HTTP.path = defaultPath token <> "/getUpdates" }
+    where mkBody = ("offset" , encodeUtf8 $ Text.showt $  n + 1)
+                 : defaultGetUpdatesBody
+
+instance Loggable GetUpdates where
+  toLog (GetUpdates Nothing)
+    = "GetUpdates request without offset"
+  toLog (GetUpdates (Just n))
+    = "GetUpdates request with offset: " <> Text.showt (n + 1)
+
+data Update
+  = Post Integer
+
+instance Aeson.FromJSON Update where
+  parseJSON = Aeson.withObject "App.Vk.Update" $ \o -> Post
+    <$> o .: "update_id"
+
+instance Loggable [Update] where
+  toLog v = "Updates resived: " <> (Text.showt $ length v)
+
+instance Loggable Update where
+  toLog (Post i) = "Proccess post with id: " <> Text.showt i
 
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
-app = do
-  t <- asks getter
-  r <- requestAndDecode @(Response Config) $ GetUpdates Nothing t
-  case r of
-    Result (Succes v) -> logDebug ("successful" :: Text)
-    err -> logError err
+app = getUpdates $ GetUpdates Nothing
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
@@ -119,8 +142,37 @@ mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
 
+getUpdates :: GetUpdates -> App ()
+getUpdates gu = do
+  logDebug gu
+  r <- requestAndDecode gu
+  case r of
+    Result (Succes v) -> logDebug v >> proccessUpdates v
+    err -> logError err
+
+proccessUpdates :: [Update] -> App ()
+proccessUpdates xs = do
+  x <- foldM proccessUpdate Nothing xs
+  getUpdates $ GetUpdates x
+
+proccessUpdate :: Maybe Integer -> Update -> App (Maybe Integer)
+proccessUpdate current p@(Post id)
+   = logDebug p
+  >> return (max current $ Just id)
+
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest
   { HTTP.host = "api.telegram.org"
   , HTTP.method = "POST"
   }
+
+defaultPath :: Token -> BS.ByteString
+defaultPath (Token t) = "/bot1" <> encodeUtf8 t
+
+defaultGetUpdatesBody :: [(BS.ByteString, BS.ByteString)]
+defaultGetUpdatesBody =
+  let list :: [Text]
+      list = ["message", "edited_channel_post", "callback_query"]
+   in [ ("timeout", "25")
+      , ("allowed_updates", LBS.toStrict $ Aeson.encode list)
+      ]
