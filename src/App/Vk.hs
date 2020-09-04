@@ -23,7 +23,7 @@ import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
 import Data.Aeson             ( (.:), (.:?) )
 import Data.Foldable          ( traverse_ )
 import Data.Maybe             ( fromMaybe )
-import Data.Text.Encoding     ( encodeUtf8 )
+import Data.Text.Encoding     ( encodeUtf8, decodeUtf8 )
 import Data.Text.Extended     ( Text )
 import Data.Time              ( getCurrentTime )
 import Data.Typeable          ( Typeable, typeOf )
@@ -34,6 +34,7 @@ import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.Text.Extended           as Text
 import qualified Data.Text.IO                 as TextIO
 import qualified Data.ByteString              as BS
+import qualified Data.ByteString.Lazy         as LBS
 import qualified Network.HTTP.Client.Extended as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
@@ -259,6 +260,32 @@ instance Loggable Message where
     \ | geo: "         <> Text.showt mGeo         <> "\n\
     \ | keyboard: "    <> Text.showt mKeyboard
 
+-- SendMessage -------------------------------------------------------------
+
+data SendMessage = SendMessage
+  { smPeerId :: Integer
+  , smRandomId :: Int
+  , smMessage  :: Text
+  } deriving Generic
+
+instance Aeson.ToJSON SendMessage where
+  toJSON = Aeson.toJsonDrop
+
+instance (Has Token r, Has Group r, MonadReader r m)
+  => ToRequest m r SendMessage where
+  toRequest SendMessage {..} = do
+    token <- obtain
+    group <- obtain
+    return $ mkBody token group $ defaultRequest
+      { HTTP.method = "POST"
+      , HTTP.path   = "method/messages.send"
+      }
+    where mkBody token group = HTTP.urlEncodedBody $
+                 [ ("peer_id"  , encodeUtf8 $ Text.showt smPeerId)
+                 , ("random_id", encodeUtf8 $ Text.showt smRandomId)
+                 , ("message"  , encodeUtf8 smMessage)
+                 ] ++ defaultBody token group
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
@@ -298,9 +325,18 @@ getUpdates gu = do
 
 proccessUpdates :: [Update] -> App ()
 proccessUpdates xs = traverse_ f xs
-  where f m = do
+  where f (NewMessage m) = do
+          logDebug m
           id <- liftIO $ randomIO :: App Int
-          logDebug $ toLog m <> "\n | random_id: " <> Text.showt id
+          let sm = SendMessage
+                     { smPeerId = mPeerId m
+                     , smMessage = mText m
+                     , smRandomId = id
+                     }
+          result <- request sm
+          case result of
+            Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
+        f m = logDebug m
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
