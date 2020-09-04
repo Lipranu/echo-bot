@@ -17,16 +17,16 @@ import Internal
 import qualified Infrastructure.Logger as Logger
 
 import Control.Applicative    ( (<|>) )
+import Control.Exception      ( try )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
-import Control.Exception      ( try )
 import Data.Aeson             ( (.:), (.:?) )
-import Data.Text.Extended     ( Text )
+import Data.Foldable          ( traverse_ )
 import Data.Maybe             ( fromMaybe )
 import Data.Text.Encoding     ( encodeUtf8 )
+import Data.Text.Extended     ( Text )
 import Data.Time              ( getCurrentTime )
 import Data.Typeable          ( Typeable, typeOf )
-import Data.Foldable          ( traverse_ )
 import GHC.Generics           ( Generic )
 
 import qualified Data.Aeson.Extended          as Aeson
@@ -96,6 +96,7 @@ instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
 instance Typeable a => Loggable (Response a) where
   toLog (Success x) =
     "Successfully received response of type: " <> Text.showt (typeOf x)
+
   toLog (Error   x) = toLog x
 
 -- ErrorResponse -----------------------------------------------------------
@@ -208,10 +209,13 @@ instance Loggable Updates where
   toLog (Updates upds ts) = "Resived updates:\n\
     \ | Amount: " <> (Text.showt . length) upds <> "\n\
     \ | New timestamp: " <> ts
+
   toLog (OutOfDate ts) =
     "Event history is outdated or partially lost. \
     \Performing new request for updates with timestamp: " <> ts
+
   toLog KeyExpired = "Key expired. Performing request for new key"
+
   toLog DataLost   = "Information lost. Performing request for new key"
 
 -- Update ------------------------------------------------------------------
@@ -234,8 +238,12 @@ instance Loggable Update where
 -- Message -----------------------------------------------------------------
 
 data Message = Message
-  { mId   :: Integer
-  , mText :: Text
+  { mFromId      :: Integer
+  , mPeerId      :: Integer
+  , mText        :: Text
+  , mAttachments :: Maybe [Aeson.Object]
+  , mGeo         :: Maybe Aeson.Object
+  , mKeyboard    :: Maybe Aeson.Object
   } deriving (Generic)
 
 instance Aeson.FromJSON Message where
@@ -243,8 +251,12 @@ instance Aeson.FromJSON Message where
 
 instance Loggable Message where
   toLog Message {..} = "New message recived:\n\
-    \ | Id: " <> Text.showt mId <> "\n\
-    \ | Text: " <> mText
+    \ | from_id: "     <> Text.showt mFromId      <> "\n\
+    \ | peer_id: "     <> Text.showt mPeerId      <> "\n\
+    \ | text: "        <> mText                   <> "\n\
+    \ | attachments: " <> Text.showt mAttachments <> "\n\
+    \ | geo: "         <> Text.showt mGeo         <> "\n\
+    \ | keyboard: "    <> Text.showt mKeyboard
 
 -- FUNCTIONS ---------------------------------------------------------------
 
