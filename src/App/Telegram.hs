@@ -15,15 +15,15 @@ import Internal
 
 import qualified Infrastructure.Logger as Logger
 
-import Control.Applicative    ( (<|>) )
-import Control.Exception      ( try )
-import Control.Monad          ( foldM )
-import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
-import Data.Aeson.Extended    ( (.:) )
-import Data.Text.Encoding     ( encodeUtf8 )
-import Data.Text.Extended     ( Text )
-import Data.Time              ( getCurrentTime )
+import Control.Applicative         ( (<|>) )
+import Control.Exception           ( try )
+import Control.Monad               ( foldM )
+import Control.Monad.IO.Class      ( MonadIO, liftIO )
+import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT )
+import Data.Aeson.Extended         ( (.:) )
+import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
+import Data.Text.Extended          ( Text )
+import Data.Time                   ( getCurrentTime )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.ByteString              as BS
@@ -111,7 +111,7 @@ instance (Has Token r, MonadReader r m) => ToRequest m r GetUpdates where
       HTTP.urlEncodedBody mkBody $
       defaultRequest
       { HTTP.path = defaultPath token <> "/getUpdates" }
-    where mkBody = ("offset" , encodeUtf8 $ Text.showt $  n + 1)
+    where mkBody = ("offset" , encodeShowUtf8 $ n + 1)
                  : defaultGetUpdatesBody
 
 instance Loggable GetUpdates where

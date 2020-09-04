@@ -16,19 +16,19 @@ import Internal
 
 import qualified Infrastructure.Logger as Logger
 
-import Control.Applicative    ( (<|>) )
-import Control.Exception      ( try )
-import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( ReaderT, MonadReader, runReaderT )
-import Data.Aeson             ( (.:), (.:?) )
-import Data.Foldable          ( traverse_ )
-import Data.Maybe             ( fromMaybe )
-import Data.Text.Encoding     ( encodeUtf8, decodeUtf8 )
-import Data.Text.Extended     ( Text )
-import Data.Time              ( getCurrentTime )
-import Data.Typeable          ( Typeable, typeOf )
-import GHC.Generics           ( Generic )
-import System.Random          ( randomIO )
+import Control.Applicative         ( (<|>) )
+import Control.Exception           ( try )
+import Control.Monad.IO.Class      ( MonadIO, liftIO )
+import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT )
+import Data.Aeson                  ( (.:), (.:?) )
+import Data.Foldable               ( traverse_ )
+import Data.Maybe                  ( fromMaybe )
+import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8, decodeUtf8 )
+import Data.Text.Extended          ( Text )
+import Data.Time                   ( getCurrentTime )
+import Data.Typeable               ( Typeable, typeOf )
+import GHC.Generics                ( Generic )
+import System.Random               ( randomIO )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.Text.Extended           as Text
@@ -291,10 +291,10 @@ instance (Has Token r, Has Group r, MonadReader r m)
       }
     where mkBody token group = HTTP.urlEncodedBody
             $ addMaybeToBody ("message", encodeUtf8 <$> smMessage)
-            $ addMaybeToBody ("lat", (encodeUtf8 . Text.showt) <$> smLatitude)
-            $ addMaybeToBody ("long", (encodeUtf8 . Text.showt) <$> smLongitude)
-            $ [ ("peer_id"  , encodeUtf8 $ Text.showt smPeerId)
-              , ("random_id", encodeUtf8 $ Text.showt smRandomId)
+            $ addMaybeToBody ("lat", encodeShowUtf8 <$> smLatitude)
+            $ addMaybeToBody ("long", encodeShowUtf8 <$> smLongitude)
+            $ [ ("peer_id"  , encodeShowUtf8 smPeerId)
+              , ("random_id", encodeShowUtf8  smRandomId)
               ] ++ defaultBody token group
 
 -- FUNCTIONS ---------------------------------------------------------------
@@ -338,9 +338,9 @@ proccessUpdates :: [Result Update] -> App ()
 proccessUpdates = traverse_ handleUpdateErrors
 
 handleUpdateErrors :: Result Update -> App ()
-handleUpdateErrors (Result (NewMessage m))
-  = logDebug m
- >> proccessNewMessage m
+handleUpdateErrors (Result (NewMessage m)) = do
+  logDebug m
+  proccessNewMessage m
 handleUpdateErrors error = logWarning error
 
 proccessNewMessage :: Message -> App ()
