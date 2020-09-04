@@ -37,6 +37,12 @@ import qualified Network.HTTP.Client.Extended as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
+-- Config and Env ----------------------------------------------------------
+
+newtype Token = Token { unToken :: Text }
+
+newtype Group = Group { unGroup :: Text }
+
 data Config = Config
   { cToken :: Token
   , cGroup :: Group
@@ -46,10 +52,6 @@ instance Aeson.FromJSON Config where
   parseJSON = Aeson.withObject "Vk.Config" $ \o -> Config
     <$> (Token <$> o .: "token")
     <*> (Group <$> o .: "group_id")
-
-newtype Token = Token { unToken :: Text }
-
-newtype Group = Group { unGroup :: Text }
 
 data Env = Env
   { envToken     :: Token
@@ -65,6 +67,8 @@ instance Has (Requester App) Env where getter = envRequester
 instance Has Token           Env where getter = envToken
 instance Has Group           Env where getter = envGroup
 
+-- App ---------------------------------------------------------------------
+
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
   (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadFail)
 
@@ -77,6 +81,8 @@ instance MonadTime App where
 
 instance MonadRequester App where
   requester manager req = liftIO $ try $ HTTP.httpLbs req manager
+
+-- Response ----------------------------------------------------------------
 
 data Response a
   = Success a
@@ -91,6 +97,8 @@ instance Typeable a => Loggable (Response a) where
   toLog (Success x) =
     "Successfully received response of type: " <> Text.showt (typeOf x)
   toLog (Error   x) = toLog x
+
+-- ErrorResponse -----------------------------------------------------------
 
 data ErrorResponse = ErrorResponse
   { eErrorCode     :: Integer
@@ -109,6 +117,8 @@ instance Loggable ErrorResponse where
     \ | Request Parameters:" <> params
     where params  = foldr (<>) "" $ fmap toLog eRequestParams
 
+-- RequestParams -----------------------------------------------------------
+
 data RequestParams = RequestParams
   { rpKey   :: Text
   , rpValue :: Text
@@ -119,6 +129,8 @@ instance Aeson.FromJSON RequestParams where
 
 instance Loggable RequestParams where
   toLog RequestParams {..} = "\n | \t" <> rpKey <> ": " <> rpValue
+
+-- GetLongPollServer -------------------------------------------------------
 
 data GetLongPollServer = GetLongPollServer
 
@@ -133,6 +145,8 @@ instance (Has Token r, Has Group r, MonadReader r m) =>
 
 instance Loggable GetLongPollServer where
   toLog _ = "Requesting long poll server"
+
+-- GetUpdates --------------------------------------------------------------
 
 data GetUpdates = GetUpdates
   { guKey  :: Text
@@ -167,6 +181,8 @@ instance MonadReader r m => ToRequest m r GetUpdates where
 instance Loggable GetUpdates where
   toLog _ = "Requesting updates from long poll server"
 
+-- Updates -----------------------------------------------------------------
+
 data Updates
   = Updates [Update] Text
   | OutOfDate Text
@@ -198,6 +214,8 @@ instance Loggable Updates where
   toLog KeyExpired = "Key expired. Performing request for new key"
   toLog DataLost   = "Information lost. Performing request for new key"
 
+-- Update ------------------------------------------------------------------
+
 data Update
   = NewMessage Message
   | NotSupported Text
@@ -213,12 +231,15 @@ instance Loggable Update where
   toLog (NewMessage m) = toLog m
   toLog (NotSupported t) = "Not supprted update of type: " <> t
 
+-- Message -----------------------------------------------------------------
+
 data Message = Message
   { mId   :: Integer
   , mText :: Text
   } deriving (Generic)
 
-instance Aeson.FromJSON Message where parseJSON = Aeson.parseJsonDrop
+instance Aeson.FromJSON Message where
+  parseJSON = Aeson.parseJsonDrop
 
 instance Loggable Message where
   toLog Message {..} = "New message recived:\n\

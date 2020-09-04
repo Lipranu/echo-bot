@@ -34,6 +34,8 @@ import qualified Network.HTTP.Client.Extended as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
+-- Config and Env ----------------------------------------------------------
+
 newtype Token = Token { unToken :: Text }
 
 newtype Config = Config { cToken :: Token }
@@ -54,6 +56,8 @@ instance Has (Logger App)    Env where getter = envLogger
 instance Has (Requester App) Env where getter = envRequester
 instance Has Token           Env where getter = envToken
 
+-- App ---------------------------------------------------------------------
+
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
   (Functor, Applicative, Monad, MonadReader Env, MonadIO)
 
@@ -66,6 +70,8 @@ instance Logger.MonadTime App where
 
 instance MonadRequester App where
   requester manager req = liftIO $ try $ HTTP.httpLbs req manager
+
+-- Response ----------------------------------------------------------------
 
 data Response a
   = Succes a
@@ -84,6 +90,8 @@ instance Loggable a => Loggable (Response a) where
     = "An error occurred as a result of the request\n\
     \ | Error Code: "        <> Text.showt code <> "\n\
     \ | Error Description: " <> description
+
+-- GetUpdates --------------------------------------------------------------
 
 newtype GetUpdates = GetUpdates (Maybe Integer)
 
@@ -111,6 +119,8 @@ instance Loggable GetUpdates where
     = "GetUpdates request without offset"
   toLog (GetUpdates (Just n))
     = "GetUpdates request with offset: " <> Text.showt (n + 1)
+
+-- Update ------------------------------------------------------------------
 
 newtype Update = Post Integer
 
