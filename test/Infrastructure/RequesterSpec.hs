@@ -147,7 +147,7 @@ requestAndDecodeSpec = describe "requestAndDecode" $ do
   it "should return annotated type on successful decoding" $ do
     manager <- liftIO $ HTTP.newManager HTTP.defaultManagerSettings
     test manager (Right succeededResponse) `shouldBe` Result testBody
-  where test = runTest (requestAndDecode @TestBody testBody)
+  where test = runTest (requestAndDecode testBody)
 
 spec :: Spec
 spec = do
