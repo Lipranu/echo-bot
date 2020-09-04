@@ -187,7 +187,7 @@ instance Loggable GetUpdates where
 -- Updates -----------------------------------------------------------------
 
 data Updates
-  = Updates [Update] Text
+  = Updates [Aeson.Value] Text
   | OutOfDate Text
   | KeyExpired
   | DataLost
@@ -326,7 +326,7 @@ getUpdates gu = do
   case result of
     Result (Updates upd ts) -> do
       logDebug result
-      proccessUpdates upd
+      proccessUpdates $ Aeson.fromJSON <$> upd
       getUpdates gu { guTs = ts }
     Result (OutOfDate ts) -> do
       logWarning result
@@ -334,9 +334,9 @@ getUpdates gu = do
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
-proccessUpdates :: [Update] -> App ()
+proccessUpdates :: [Aeson.Result Update] -> App ()
 proccessUpdates xs = traverse_ f xs
-  where f (NewMessage m) = do
+  where f (Aeson.Success (NewMessage m)) = do
           logDebug m
           id <- liftIO $ randomIO :: App Int
           let sm = SendMessage
@@ -349,7 +349,8 @@ proccessUpdates xs = traverse_ f xs
           result <- request sm
           case result of
             Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
-        f m = logDebug m
+        f (Aeson.Error e) = logWarning e
+        --f m = logDebug m
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
