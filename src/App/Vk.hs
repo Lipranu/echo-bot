@@ -25,6 +25,7 @@ import Data.Text.Extended     ( Text )
 import Data.Maybe             ( fromMaybe )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Time              ( getCurrentTime )
+import Data.Typeable          ( Typeable, typeOf )
 import Data.Foldable          ( traverse_ )
 import GHC.Generics           ( Generic )
 
@@ -86,8 +87,9 @@ instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
         Success <$> o .: "response"
     <|> Error   <$> o .: "error"
 
-instance Loggable a => Loggable (Response a) where
-  toLog (Success x) = toLog x
+instance Typeable a => Loggable (Response a) where
+  toLog (Success x) =
+    "Successfully received response of type: " <> Text.showt (typeOf x)
   toLog (Error   x) = toLog x
 
 data ErrorResponse = ErrorResponse
@@ -187,10 +189,9 @@ instance Aeson.FromJSON Updates where
           e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
 
 instance Loggable Updates where
-  toLog (Updates upds ts) = "Resived updates: "
-    <> (Text.showt . length) upds
-    <> " | New timestamp: "
-    <> ts
+  toLog (Updates upds ts) = "Resived updates:\n\
+    \ | Amount: " <> (Text.showt . length) upds <> "\n\
+    \ | New timestamp: " <> ts
   toLog (OutOfDate ts) =
     "Event history is outdated or partially lost. \
     \Performing new request for updates with timestamp: " <> ts
@@ -243,16 +244,16 @@ getLongPollServer = do
   logInfo GetLongPollServer
   result <- requestAndDecode GetLongPollServer
   case result of
-    Result (Success gu) -> getUpdates gu
+    Result (Success gu) -> logDebug result >> getUpdates gu
     error -> logError error >> logError ("Application shut down" :: Text)
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
-  logInfo gu
+  logDebug gu
   result <- requestAndDecode gu
   case result of
     Result (Updates upd ts) -> do
-      logInfo result
+      logDebug result
       proccessUpdates upd
       getUpdates gu { guTs = ts }
     Result (OutOfDate ts) -> do
