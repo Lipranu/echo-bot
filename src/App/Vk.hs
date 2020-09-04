@@ -242,30 +242,39 @@ instance Loggable Update where
 data Message = Message
   { mFromId      :: Integer
   , mPeerId      :: Integer
-  , mText        :: Text
-  , mAttachments :: Maybe [Aeson.Object]
-  , mGeo         :: Maybe Aeson.Object
-  , mKeyboard    :: Maybe Aeson.Object
+  , mText        :: Maybe Text
+  , mLatitude    :: Maybe Double
+  , mLongitude   :: Maybe Double
+--  , mAttachments :: Maybe [Aeson.Object]
+--  , mKeyboard    :: Maybe Aeson.Object
   } deriving (Generic)
 
 instance Aeson.FromJSON Message where
-  parseJSON = Aeson.parseJsonDrop
+  parseJSON = Aeson.withObject "App.Vk.Message" $ \o -> Message
+    <$> o .:  "from_id"
+    <*> o .:  "peer_id"
+    <*> o .:? "text"
+    <*> (coord o "latitude"  <|> pure Nothing)
+    <*> (coord o "longitude" <|> pure Nothing)
+    where coord o t = o .: "geo" >>= (.: "coordinates") >>= (.: t)
 
 instance Loggable Message where
   toLog Message {..} = "New message recived:\n\
     \ | from_id: "     <> Text.showt mFromId      <> "\n\
     \ | peer_id: "     <> Text.showt mPeerId      <> "\n\
-    \ | text: "        <> mText                   <> "\n\
-    \ | attachments: " <> Text.showt mAttachments <> "\n\
-    \ | geo: "         <> Text.showt mGeo         <> "\n\
-    \ | keyboard: "    <> Text.showt mKeyboard
+    \ | text: "        <> fromMaybe "" mText               --    <> "\n\
+--    \ | attachments: " <> Text.showt mAttachments <> "\n\
+--    \ | geo: "         <> Text.showt mGeo         <> "\n\
+--    \ | keyboard: "    <> Text.showt mKeyboard
 
 -- SendMessage -------------------------------------------------------------
 
 data SendMessage = SendMessage
   { smPeerId :: Integer
   , smRandomId :: Int
-  , smMessage  :: Text
+  , smMessage  :: Maybe Text
+  , smLatitude    :: Maybe Double
+  , smLongitude  :: Maybe Double
   } deriving Generic
 
 instance Aeson.ToJSON SendMessage where
@@ -280,11 +289,13 @@ instance (Has Token r, Has Group r, MonadReader r m)
       { HTTP.method = "POST"
       , HTTP.path   = "method/messages.send"
       }
-    where mkBody token group = HTTP.urlEncodedBody $
-                 [ ("peer_id"  , encodeUtf8 $ Text.showt smPeerId)
-                 , ("random_id", encodeUtf8 $ Text.showt smRandomId)
-                 , ("message"  , encodeUtf8 smMessage)
-                 ] ++ defaultBody token group
+    where mkBody token group = HTTP.urlEncodedBody
+            $ addMaybeToBody ("message", encodeUtf8 <$> smMessage)
+            $ addMaybeToBody ("lat", (encodeUtf8 . Text.showt) <$> smLatitude)
+            $ addMaybeToBody ("long", (encodeUtf8 . Text.showt) <$> smLongitude)
+            $ [ ("peer_id"  , encodeUtf8 $ Text.showt smPeerId)
+              , ("random_id", encodeUtf8 $ Text.showt smRandomId)
+              ] ++ defaultBody token group
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -329,9 +340,11 @@ proccessUpdates xs = traverse_ f xs
           logDebug m
           id <- liftIO $ randomIO :: App Int
           let sm = SendMessage
-                     { smPeerId = mPeerId m
-                     , smMessage = mText m
-                     , smRandomId = id
+                     { smPeerId    = mPeerId m
+                     , smMessage   = mText m
+                     , smRandomId  = id
+                     , smLatitude  = mLatitude m
+                     , smLongitude = mLongitude m
                      }
           result <- request sm
           case result of
@@ -347,3 +360,9 @@ defaultBody token group =
   , ("group_id"    , encodeUtf8 $ unGroup group)
   , ("v"           , "5.122")
   ]
+
+addMaybeToBody :: (BS.ByteString, Maybe BS.ByteString)
+               -> [(BS.ByteString, BS.ByteString)]
+               -> [(BS.ByteString, BS.ByteString)]
+addMaybeToBody (_   , Nothing)    body = body
+addMaybeToBody (name, Just value) body = (name, value) : body
