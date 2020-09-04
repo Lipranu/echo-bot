@@ -289,14 +289,15 @@ instance (Has Token r, Has Group r, MonadReader r m)
       { HTTP.method = "POST"
       , HTTP.path   = "method/messages.send"
       }
-    where mkBody token group = HTTP.urlEncodedBody
-            $ addMaybeToBody ("message", encodeUtf8 <$> smMessage)
-            $ addMaybeToBody ("lat", encodeShowUtf8 <$> smLatitude)
-            $ addMaybeToBody ("long", encodeShowUtf8 <$> smLongitude)
-            $ [ ("peer_id"  , encodeShowUtf8 smPeerId)
+    where mkBody token group = HTTP.urlEncodedBody $
+              [ ("peer_id"  , encodeShowUtf8 smPeerId)
               , ("random_id", encodeShowUtf8  smRandomId)
-              ] ++ defaultBody token group
-
+              ] <> defaultBody token group <> maybeBody
+          maybeBody = foldr filterMaybe []
+            [ ("message", encodeUtf8 <$> smMessage)
+            , ("lat", encodeShowUtf8 <$> smLatitude)
+            , ("long", encodeShowUtf8 <$> smLongitude)
+            ]
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
@@ -370,8 +371,6 @@ defaultBody token group =
   , ("v"           , "5.122")
   ]
 
-addMaybeToBody :: (BS.ByteString, Maybe BS.ByteString)
-               -> [(BS.ByteString, BS.ByteString)]
-               -> [(BS.ByteString, BS.ByteString)]
-addMaybeToBody (_   , Nothing)    body = body
-addMaybeToBody (name, Just value) body = (name, value) : body
+filterMaybe :: (a, Maybe b) -> [(a, b)] -> [(a, b)]
+filterMaybe (_, Nothing)       body = body
+filterMaybe (name, Just value) body = (name, value) : body
