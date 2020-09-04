@@ -326,7 +326,7 @@ getUpdates gu = do
   case result of
     Result (Updates upd ts) -> do
       logDebug result
-      proccessUpdates $ Aeson.fromJSON <$> upd
+      proccessUpdates $ parse <$> upd
       getUpdates gu { guTs = ts }
     Result (OutOfDate ts) -> do
       logWarning result
@@ -334,23 +334,31 @@ getUpdates gu = do
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
-proccessUpdates :: [Aeson.Result Update] -> App ()
-proccessUpdates xs = traverse_ f xs
-  where f (Aeson.Success (NewMessage m)) = do
-          logDebug m
-          id <- liftIO $ randomIO :: App Int
-          let sm = SendMessage
-                     { smPeerId    = mPeerId m
-                     , smMessage   = mText m
-                     , smRandomId  = id
-                     , smLatitude  = mLatitude m
-                     , smLongitude = mLongitude m
-                     }
-          result <- request sm
-          case result of
-            Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
-        f (Aeson.Error e) = logWarning e
-        --f m = logDebug m
+proccessUpdates :: [Result Update] -> App ()
+proccessUpdates = traverse_ handleUpdateErrors
+
+handleUpdateErrors :: Result Update -> App ()
+handleUpdateErrors (Result (NewMessage m))
+  = logDebug m
+ >> proccessNewMessage m
+handleUpdateErrors error = logWarning error
+
+proccessNewMessage :: Message -> App ()
+proccessNewMessage message = do
+  id <- liftIO $ randomIO :: App Int
+  result <- request $ convertMessage id message
+  case result of
+    Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
+    RequestError error -> logWarning error
+
+convertMessage :: Int -> Message -> SendMessage
+convertMessage id Message {..} = SendMessage
+  { smPeerId    = mPeerId
+  , smMessage   = mText
+  , smRandomId  = id
+  , smLatitude  = mLatitude
+  , smLongitude = mLongitude
+  }
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
