@@ -28,6 +28,7 @@ import Data.Text.Extended     ( Text )
 import Data.Time              ( getCurrentTime )
 import Data.Typeable          ( Typeable, typeOf )
 import GHC.Generics           ( Generic )
+import System.Random          ( randomIO )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.Text.Extended           as Text
@@ -296,7 +297,10 @@ getUpdates gu = do
     error -> logError error >> logError ("Application shut down" :: Text)
 
 proccessUpdates :: [Update] -> App ()
-proccessUpdates xs = traverse_ logDebug xs
+proccessUpdates xs = traverse_ f xs
+  where f m = do
+          id <- liftIO $ randomIO :: App Int
+          logDebug $ toLog m <> "\n | random_id: " <> Text.showt id
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }

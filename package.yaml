@@ -28,6 +28,7 @@ dependencies:
 - http-client-tls
 - http-types
 - mtl
+- random
 - text
 - time
 - base >= 4.7 && < 5
