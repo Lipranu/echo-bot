@@ -208,12 +208,21 @@ instance Aeson.FromJSON Update where
       "message_new" -> NewMessage <$> (o .: "object" >>= (.: "message"))
       _ -> return $ NotSupported t
 
+instance Loggable Update where
+  toLog (NewMessage m) = toLog m
+  toLog (NotSupported t) = "Not supprted update of type: " <> t
+
 data Message = Message
   { mId   :: Integer
   , mText :: Text
   } deriving (Generic)
 
 instance Aeson.FromJSON Message where parseJSON = Aeson.parseJsonDrop
+
+instance Loggable Message where
+  toLog Message {..} = "New message recived:\n\
+    \ | Id: " <> Text.showt mId <> "\n\
+    \ | Text: " <> mText
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -231,9 +240,8 @@ runApp = runReaderT (unApp app)
 
 getLongPollServer :: App ()
 getLongPollServer = do
-  let lp = GetLongPollServer
-  logInfo lp
-  result <- requestAndDecode lp
+  logInfo GetLongPollServer
+  result <- requestAndDecode GetLongPollServer
   case result of
     Result (Success gu) -> getUpdates gu
     error -> logError error >> logError ("Application shut down" :: Text)
@@ -254,16 +262,7 @@ getUpdates gu = do
     error -> logError error >> logError ("Application shut down" :: Text)
 
 proccessUpdates :: [Update] -> App ()
-proccessUpdates xs = do
-  logInfo ("Proccessing updates" :: Text)
-  traverse_ f xs
-  where f (NewMessage m) =
-          logDebug $ "Update with id: "
-                  <> Text.showt (mId m)
-                  <> " Text: "
-                  <> mText m
-        f (NotSupported t) =
-          logDebug $ "Not supprted update of type: " <> t
+proccessUpdates xs = traverse_ logDebug xs
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
