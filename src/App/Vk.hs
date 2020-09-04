@@ -25,6 +25,7 @@ import Data.Text.Extended     ( Text )
 import Data.Maybe             ( fromMaybe )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Time              ( getCurrentTime )
+import Data.Foldable          ( traverse_ )
 import GHC.Generics           ( Generic )
 
 import qualified Data.Aeson.Extended          as Aeson
@@ -165,19 +166,21 @@ instance Loggable GetUpdates where
   toLog _ = "Requesting updates from long poll server"
 
 data Updates
-  = Updates [Aeson.Object] Text
+  = Updates [Update] Text
   | OutOfDate Text
   | KeyExpired
   | DataLost
 
 instance Aeson.FromJSON Updates where
   parseJSON = Aeson.withObject "App.Vk.Updates" $ \o -> do
-    v <- o .:? "updates"
-    case v of
-      Just r -> Updates r <$> o .: "ts"
+    result <- o .:? "updates"
+    case result of
+      Just updates -> do
+        ts <- o .: "ts"
+        return $ Updates updates ts
       Nothing -> do
-        i <- o .: "failed"
-        case i :: Integer of
+        code <- o .: "failed"
+        case code :: Integer of
           1 -> OutOfDate <$> o .: "ts"
           2 -> return KeyExpired
           3 -> return DataLost
@@ -193,6 +196,24 @@ instance Loggable Updates where
     \Performing new request for updates with timestamp: " <> ts
   toLog KeyExpired = "Key expired. Performing request for new key"
   toLog DataLost   = "Information lost. Performing request for new key"
+
+data Update
+  = NewMessage Message
+  | NotSupported Text
+
+instance Aeson.FromJSON Update where
+  parseJSON = Aeson.withObject "App.Vk.Update" $ \o -> do
+    t <- o .: "type"
+    case t of
+      "message_new" -> NewMessage <$> (o .: "object" >>= (.: "message"))
+      _ -> return $ NotSupported t
+
+data Message = Message
+  { mId   :: Integer
+  , mText :: Text
+  } deriving (Generic)
+
+instance Aeson.FromJSON Message where parseJSON = Aeson.parseJsonDrop
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -232,8 +253,17 @@ getUpdates gu = do
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
-proccessUpdates :: [Aeson.Object] -> App ()
-proccessUpdates xs = logInfo ("Proccessing updates" :: Text)
+proccessUpdates :: [Update] -> App ()
+proccessUpdates xs = do
+  logInfo ("Proccessing updates" :: Text)
+  traverse_ f xs
+  where f (NewMessage m) =
+          logDebug $ "Update with id: "
+                  <> Text.showt (mId m)
+                  <> " Text: "
+                  <> mText m
+        f (NotSupported t) =
+          logDebug $ "Not supprted update of type: " <> t
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
