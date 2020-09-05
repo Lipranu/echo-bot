@@ -139,12 +139,10 @@ data GetLongPollServer = GetLongPollServer
 
 instance (Has Token r, Has Group r, MonadReader r m) =>
   ToRequest m r GetLongPollServer where
-  toRequest GetLongPollServer = do
-    token <- obtain
-    group <- obtain
-    return $ HTTP.urlEncodedBody (defaultBody token group)
-           $ defaultRequest
-           { HTTP.path = "/method/groups.getLongPollServer" }
+  toRequest GetLongPollServer = HTTP.urlEncodedBody
+    <$> defaultBody
+    <*> pure defaultRequest
+          { HTTP.path = "/method/groups.getLongPollServer" }
 
 instance Loggable GetLongPollServer where
   toLog _ = "Requesting long poll server"
@@ -283,21 +281,21 @@ instance Aeson.ToJSON SendMessage where
 instance (Has Token r, Has Group r, MonadReader r m)
   => ToRequest m r SendMessage where
   toRequest SendMessage {..} = do
-    token <- obtain
-    group <- obtain
-    return $ mkBody token group $ defaultRequest
-      { HTTP.method = "POST"
-      , HTTP.path   = "method/messages.send"
-      }
-    where mkBody token group = HTTP.urlEncodedBody $
-              [ ("peer_id"  , encodeShowUtf8 smPeerId)
-              , ("random_id", encodeShowUtf8  smRandomId)
-              ] <> defaultBody token group <> maybeBody
-          maybeBody = foldr filterMaybe []
-            [ ("message", encodeUtf8 <$> smMessage)
-            , ("lat", encodeShowUtf8 <$> smLatitude)
-            , ("long", encodeShowUtf8 <$> smLongitude)
-            ]
+    df <- defaultBody
+    return $ HTTP.urlEncodedBody
+      (mergeBodies mBody $ body <> df)
+      defaultRequest
+        { HTTP.method = "POST"
+        , HTTP.path   = "method/messages.send"
+        }
+    where body  = [ ("peer_id"  , encodeShowUtf8 smPeerId)
+                  , ("random_id", encodeShowUtf8 smRandomId)
+                  ]
+          mBody = [ ("message", encodeUtf8     <$> smMessage)
+                  , ("lat"    , encodeShowUtf8 <$> smLatitude)
+                  , ("long"   , encodeShowUtf8 <$> smLongitude)
+                  ]
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
@@ -346,7 +344,7 @@ handleUpdateErrors error = logWarning error
 
 proccessNewMessage :: Message -> App ()
 proccessNewMessage message = do
-  id <- liftIO $ randomIO :: App Int
+  id <- liftIO randomIO
   result <- request $ convertMessage id message
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
@@ -364,13 +362,18 @@ convertMessage id Message {..} = SendMessage
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
 
-defaultBody :: Token -> Group -> [(BS.ByteString, BS.ByteString)]
-defaultBody token group =
-  [ ("access_token", encodeUtf8 $ unToken token)
-  , ("group_id"    , encodeUtf8 $ unGroup group)
-  , ("v"           , "5.122")
-  ]
+defaultBody :: (Has Token r, Has Group r, MonadReader r m)
+            => m [(BS.ByteString, BS.ByteString)]
+defaultBody = do
+  token <- obtain
+  group <- obtain
+  return
+    [ ("access_token", encodeUtf8 $ unToken token)
+    , ("group_id"    , encodeUtf8 $ unGroup group)
+    , ("v"           , "5.122")
+    ]
 
-filterMaybe :: (a, Maybe b) -> [(a, b)] -> [(a, b)]
-filterMaybe (_, Nothing)       body = body
-filterMaybe (name, Just value) body = (name, value) : body
+mergeBodies :: [(a, Maybe b)] -> [(a, b)] -> [(a, b)]
+mergeBodies mBody body = foldr filterMaybe body mBody
+  where filterMaybe (_, Nothing)       xs = xs
+        filterMaybe (name, Just value) xs = (name, value) : xs
