@@ -18,6 +18,7 @@ import qualified Infrastructure.Logger as Logger
 
 import Control.Applicative         ( (<|>) )
 import Control.Exception           ( try )
+import Control.Monad               ( foldM )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT )
 import Data.Aeson                  ( (.:), (.:?) )
@@ -243,9 +244,9 @@ data Message = Message
   , mText        :: Maybe Text
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
---  , mAttachments :: Maybe [Aeson.Object]
+  , mAttachments :: [Aeson.Value]
 --  , mKeyboard    :: Maybe Aeson.Object
-  } deriving (Generic)
+  }
 
 instance Aeson.FromJSON Message where
   parseJSON = Aeson.withObject "App.Vk.Message" $ \o -> Message
@@ -254,6 +255,7 @@ instance Aeson.FromJSON Message where
     <*> o .:? "text"
     <*> (coord o "latitude"  <|> pure Nothing)
     <*> (coord o "longitude" <|> pure Nothing)
+    <*> o .: "attachments"
     where coord o t = o .: "geo" >>= (.: "coordinates") >>= (.: t)
 
 instance Loggable Message where
@@ -269,10 +271,11 @@ instance Loggable Message where
 
 data SendMessage = SendMessage
   { smPeerId :: Integer
-  , smRandomId :: Int
-  , smMessage  :: Maybe Text
+  , smRandomId    :: Int
+  , smMessage     :: Maybe Text
   , smLatitude    :: Maybe Double
-  , smLongitude  :: Maybe Double
+  , smLongitude   :: Maybe Double
+  , smAttachments :: Maybe Text
   } deriving Generic
 
 instance Aeson.ToJSON SendMessage where
@@ -291,10 +294,37 @@ instance (Has Token r, Has Group r, MonadReader r m)
     where body  = [ ("peer_id"  , encodeShowUtf8 smPeerId)
                   , ("random_id", encodeShowUtf8 smRandomId)
                   ]
-          mBody = [ ("message", encodeUtf8     <$> smMessage)
-                  , ("lat"    , encodeShowUtf8 <$> smLatitude)
-                  , ("long"   , encodeShowUtf8 <$> smLongitude)
+          mBody = [ ("message"   , encodeUtf8     <$> smMessage)
+                  , ("attachment", encodeUtf8     <$> smAttachments)
+                  , ("lat"       , encodeShowUtf8 <$> smLatitude)
+                  , ("long"      , encodeShowUtf8 <$> smLongitude)
                   ]
+
+-- Attachment --------------------------------------------------------------
+
+data Attachment = Attachment
+  { aType      :: Text
+  , aMediaId   :: Integer
+  , aOwnerId   :: Integer
+  , aAccessKey :: Maybe Text
+  }
+
+instance Aeson.FromJSON Attachment where
+  parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
+    aType      <- o .:  "type"
+    aMediaId   <- o .:  aType >>= (.: "id")
+    aOwnerId   <- o .:  aType >>= (.: "owner_id")
+    aAccessKey <- o .:? "access_key"
+    return Attachment {..}
+
+instance Loggable Attachment where
+  toLog Attachment {..} = "Proccessing attachment:\n\
+    \ | Type: "     <> aType               <> "\n\
+    \ | Media Id: " <> Text.showt aMediaId <> "\n\
+    \ | Owner Id: " <> Text.showt aOwnerId <> key
+    where key = case aAccessKey of
+            Just v  -> "\n | Access Key: " <> v
+            Nothing -> mempty
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -344,19 +374,43 @@ handleUpdateErrors error = logWarning error
 
 proccessNewMessage :: Message -> App ()
 proccessNewMessage message = do
-  id <- liftIO randomIO
-  result <- request $ convertMessage id message
+  id     <- liftIO randomIO
+  attach <- proccessAttachments $ mAttachments message
+  result <- request $ convertMessage id attach message
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
 
-convertMessage :: Int -> Message -> SendMessage
-convertMessage id Message {..} = SendMessage
-  { smPeerId    = mPeerId
-  , smMessage   = mText
-  , smRandomId  = id
-  , smLatitude  = mLatitude
-  , smLongitude = mLongitude
+resultAttachments :: [Result Attachment] -> App [Attachment]
+resultAttachments = foldM func []
+  where func xs (Result r) = logDebug r >> return (r : xs)
+        func xs x = logWarning x >> return xs
+
+convertAttachments :: [Attachment] -> Maybe Text
+convertAttachments []     = Nothing
+convertAttachments attach = Just $ Text.intercalate "," $ map convert attach
+  where convert Attachment {..}
+          =  aType
+          <> Text.showt aOwnerId
+          <> "_"
+          <> Text.showt aMediaId
+          <> case aAccessKey of
+          Just v -> "_" <> v
+          Nothing -> mempty
+
+proccessAttachments :: [Aeson.Value] -> App (Maybe Text)
+proccessAttachments xs = do
+  r <- resultAttachments $ parse <$> xs
+  return $ convertAttachments r
+
+convertMessage :: Int -> Maybe Text -> Message -> SendMessage
+convertMessage id attach Message {..} = SendMessage
+  { smPeerId      = mPeerId
+  , smMessage     = mText
+  , smRandomId    = id
+  , smLatitude    = mLatitude
+  , smLongitude   = mLongitude
+  , smAttachments = attach
   }
 
 defaultRequest :: HTTP.Request
