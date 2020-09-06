@@ -16,20 +16,23 @@ import Internal
 
 import qualified Infrastructure.Logger as Logger
 
-import Control.Applicative         ( (<|>) )
-import Control.Exception           ( try )
-import Control.Monad               ( foldM )
-import Control.Monad.IO.Class      ( MonadIO, liftIO )
-import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT )
-import Data.Aeson                  ( (.:), (.:?) )
-import Data.Foldable               ( traverse_ )
-import Data.Maybe                  ( fromMaybe )
-import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8, decodeUtf8 )
-import Data.Text.Extended          ( Text )
-import Data.Time                   ( getCurrentTime )
-import Data.Typeable               ( Typeable, typeOf )
-import GHC.Generics                ( Generic )
-import System.Random               ( randomIO )
+import Control.Applicative                   ( (<|>) )
+import Control.Exception                     ( try )
+import Control.Monad                         ( foldM )
+import Control.Monad.IO.Class                ( MonadIO, liftIO )
+import Control.Monad.Reader                  ( ReaderT, MonadReader
+                                             , runReaderT )
+import Data.Aeson                            ( (.:), (.:?) )
+import Data.Foldable                         ( traverse_ )
+import Data.Maybe                            ( fromMaybe )
+import Data.Text.Encoding.Extended           ( encodeUtf8, encodeShowUtf8
+                                             , decodeUtf8 )
+import Data.Text.Extended                    ( Text )
+import Data.Time                             ( getCurrentTime )
+import Data.Typeable                         ( Typeable, typeOf )
+import GHC.Generics                          ( Generic )
+import Network.HTTP.Client.MultipartFormData ( formDataBody, partFileSource )
+import System.Random                         ( randomIO )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.Text.Extended           as Text
@@ -307,14 +310,16 @@ data Attachment = Attachment
   , aMediaId   :: Integer
   , aOwnerId   :: Integer
   , aAccessKey :: Maybe Text
+  , aUrl       :: Maybe Text
   }
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
-    aType      <- o .:  "type"
-    aMediaId   <- o .:  aType >>= (.: "id")
-    aOwnerId   <- o .:  aType >>= (.: "owner_id")
-    aAccessKey <- o .:? "access_key"
+    aType      <- o .: "type"
+    aMediaId   <- o .: aType >>= (.:  "id")
+    aOwnerId   <- o .: aType >>= (.:  "owner_id")
+    aAccessKey <- o .: aType >>= (.:? "access_key")
+    aUrl       <- o .: aType >>= (.:? "url")
     return Attachment {..}
 
 instance Loggable Attachment where
@@ -325,6 +330,53 @@ instance Loggable Attachment where
     where key = case aAccessKey of
             Just v  -> "\n | Access Key: " <> v
             Nothing -> mempty
+
+-- GetFile -----------------------------------------------------------------
+
+newtype GetFile = GetFile Text
+
+instance MonadReader r m => ToRequest m r GetFile where
+  toRequest (GetFile url) = return $ HTTP.parseRequest_ $ Text.unpack url
+
+-- GetUploadServer ---------------------------------------------------------
+
+data GetUploadServer = GetUploadServer
+  { gusType :: Text
+  , gusPeerId :: Integer
+  }
+
+instance (Has Token r, Has Group r, MonadReader r m)
+  => ToRequest m r GetUploadServer where
+  toRequest GetUploadServer {..} = do
+    df <- defaultBody
+    return $ HTTP.urlEncodedBody (body <> df)
+           $ defaultRequest { HTTP.method = "GET"
+                            , HTTP.path   = "/method/docs.getMessagesUploadServer"
+                            }
+    where body = [ ("type"   , encodeUtf8 gusType)
+                 , ("peer_id", encodeShowUtf8 gusPeerId)
+                 ]
+
+-- UploadServer ------------------------------------------------------------
+
+newtype UploadServer = UploadServer Text
+
+instance Aeson.FromJSON UploadServer where
+  parseJSON = Aeson.withObject "App.Vk.UploadServer" $ \o ->
+    UploadServer <$> o .: "upload_url"
+
+-- UploadDocument ----------------------------------------------------------
+
+data UploadDocument = UploadDocument
+  { udFile :: FilePath --BS.ByteString
+  , udUrl  :: Text
+  }
+
+instance (MonadReader r m, MonadIO m) => ToRequest m r UploadDocument where
+  toRequest UploadDocument {..} =
+    let req = HTTP.parseRequest_ $ Text.unpack udUrl
+     in liftIO $ formDataBody [partFileSource "file" udFile] req
+                                   --partBS "file" udFile] req
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -373,10 +425,10 @@ handleUpdateErrors (Result (NewMessage m)) = do
 handleUpdateErrors error = logWarning error
 
 proccessNewMessage :: Message -> App ()
-proccessNewMessage message = do
-  id     <- liftIO randomIO
-  attach <- proccessAttachments $ mAttachments message
-  result <- request $ convertMessage id attach message
+proccessNewMessage message@Message {..} = do
+  id          <- liftIO randomIO
+  attachments <- proccessAttachments mPeerId mAttachments
+  result      <- request $ convertMessage id attachments message
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
@@ -398,10 +450,11 @@ convertAttachments attach = Just $ Text.intercalate "," $ map convert attach
           Just v -> "_" <> v
           Nothing -> mempty
 
-proccessAttachments :: [Aeson.Value] -> App (Maybe Text)
-proccessAttachments xs = do
-  r <- resultAttachments $ parse <$> xs
-  return $ convertAttachments r
+proccessAttachments :: Integer -> [Aeson.Value] -> App (Maybe Text)
+proccessAttachments peerId rawAttachments = do
+  attachments <- resultAttachments $ parse <$> rawAttachments
+  traverse_ (uploadAttachments peerId) attachments
+  return $ convertAttachments attachments
 
 convertMessage :: Int -> Maybe Text -> Message -> SendMessage
 convertMessage id attach Message {..} = SendMessage
@@ -412,6 +465,25 @@ convertMessage id attach Message {..} = SendMessage
   , smLongitude   = mLongitude
   , smAttachments = attach
   }
+
+uploadAttachments :: Integer -> Attachment -> App ()
+uploadAttachments peerId Attachment {..} = case aType of
+  "doc" -> case aUrl of
+    Nothing -> logWarning ("Empty url in doc file attachment" :: Text)
+    Just url1 -> do
+      file <- request $ GetFile url1
+      uploadServer <- requestAndDecode $ GetUploadServer "doc" peerId
+      case (file, uploadServer) of
+        (Result r, Result (Success (UploadServer url2))) -> do
+            liftIO $ BS.writeFile "lecture-1-sets.pdf" $ LBS.toStrict r
+            req <- request $
+              UploadDocument { udFile = "lecture-1-sets.pdf", udUrl = url2 }
+            case req of
+              Result res -> logDebug $ decodeUtf8 $ LBS.toStrict res
+              RequestError err -> logWarning err
+        (RequestError e1, e2) -> logWarning e1 >> logWarning e2
+        (_, e2) -> logWarning e2
+  _ -> return ()
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
