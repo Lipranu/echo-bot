@@ -305,33 +305,60 @@ instance (Has Token r, Has Group r, MonadReader r m)
 
 -- Attachment --------------------------------------------------------------
 
-data Attachment = Attachment
-  { aType      :: Text
-  , aMediaId   :: Integer
-  , aOwnerId   :: Integer
-  , aAccessKey :: Maybe Text
-  , aUrl       :: Maybe Text
-  , aFileName  :: Maybe Text
-  }
+data Attachment
+  = Attachment AttachmentBody
+  | Document DocumentBody
+--  { aType      :: Text
+--  , aMediaId   :: Integer
+--  , aOwnerId   :: Integer
+--  , aAccessKey :: Maybe Text
+--  , aUrl       :: Maybe Text
+--  , aFileName  :: Maybe Text
+--  }
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
     aType      <- o .: "type"
-    aMediaId   <- o .: aType >>= (.:  "id")
-    aOwnerId   <- o .: aType >>= (.:  "owner_id")
-    aAccessKey <- o .: aType >>= (.:? "access_key")
-    aUrl       <- o .: aType >>= (.:? "url")
-    aFileName  <- o .: aType >>= (.:? "title")
-    return Attachment {..}
+    case aType of
+      "doc" -> Document <$> (Aeson.parseJSON aType)
+      _ -> Attachment <$> (Aeson.parseJSON aType)
+--    aMediaId   <- o .: aType >>= (.:  "id")
+--    aOwnerId   <- o .: aType >>= (.:  "owner_id")
+--    aAccessKey <- o .: aType >>= (.:? "access_key")
+--    aUrl       <- o .: aType >>= (.:? "url")
+--    aFileName  <- o .: aType >>= (.:? "title")
+--    return Attachment {..}
 
 instance Loggable Attachment where
-  toLog Attachment {..} = "Proccessing attachment:\n\
-    \ | Type: "     <> aType               <> "\n\
-    \ | Media Id: " <> Text.showt aMediaId <> "\n\
-    \ | Owner Id: " <> Text.showt aOwnerId <> key
-    where key = case aAccessKey of
-            Just v  -> "\n | Access Key: " <> v
-            Nothing -> mempty
+  toLog _ = "PlaceHolder"--"Proccessing attachment:\n\
+--    \ | Type: "     <> aType               <> "\n\
+--    \ | Media Id: " <> Text.showt aMediaId <> "\n\
+--    \ | Owner Id: " <> Text.showt aOwnerId <> key
+--    where key = case aAccessKey of
+--            Just v  -> "\n | Access Key: " <> v
+--            Nothing -> mempty
+
+-- AttachmentBody ----------------------------------------------------------
+
+data AttachmentBody = AttachmentBody
+  { aType      :: Text
+  , aMediaId   :: Integer
+  , aOwnerId   :: Integer
+  , aAccessKey :: Maybe Text
+  } deriving Generic
+
+instance Aeson.FromJSON AttachmentBody where
+  parseJSON = Aeson.parseJsonDrop
+
+-- AttachmentBody ----------------------------------------------------------
+
+data DocumentBody = DocumentBody
+  { dUrl    :: Text
+  , dTitle  :: Text
+  } deriving Generic
+
+instance Aeson.FromJSON DocumentBody where
+  parseJSON = Aeson.parseJsonDrop
 
 -- GetFile -----------------------------------------------------------------
 
@@ -383,12 +410,6 @@ instance (MonadReader r m, MonadIO m) => ToRequest m r UploadDocument where
         partm = part { MP.partFilename = Text.unpack <$> udFileName }
     r <- liftIO $ MP.formDataBody [partm] req
     return r
-                                   --partBS "file" udFile] req
---part from file:
---file
---Just "lecture-1-sets.pdf"
---Just "application/pdf"
---[]
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -439,8 +460,8 @@ handleUpdateErrors error = logWarning error
 proccessNewMessage :: Message -> App ()
 proccessNewMessage message@Message {..} = do
   id          <- liftIO randomIO
-  attachments <- proccessAttachments mPeerId mAttachments
-  result      <- request $ convertMessage id attachments message
+--  attachments <- proccessAttachments mPeerId mAttachments
+  result      <- request $ convertMessage id Nothing message
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
@@ -450,23 +471,23 @@ resultAttachments = foldM func []
   where func xs (Result r) = logDebug r >> return (r : xs)
         func xs x = logWarning x >> return xs
 
-convertAttachments :: [Attachment] -> Maybe Text
-convertAttachments []     = Nothing
-convertAttachments attach = Just $ Text.intercalate "," $ map convert attach
-  where convert Attachment {..}
-          =  aType
-          <> Text.showt aOwnerId
-          <> "_"
-          <> Text.showt aMediaId
-          <> case aAccessKey of
-          Just v -> "_" <> v
-          Nothing -> mempty
+--convertAttachments :: [Attachment] -> App (Maybe Text)
+--convertAttachments []     = Nothing
+--convertAttachments a = Just $ Text.intercalate "," $ map convert attach
+--  where convert AttachmentBody {..}
+--          =  aType
+--          <> Text.showt aOwnerId
+--          <> "_"
+--          <> Text.showt aMediaId
+--          <> case aAccessKey of
+--          Just v -> "_" <> v
+--          Nothing -> mempty
 
-proccessAttachments :: Integer -> [Aeson.Value] -> App (Maybe Text)
-proccessAttachments peerId rawAttachments = do
-  attachments <- resultAttachments $ parse <$> rawAttachments
-  traverse_ (uploadAttachments peerId) attachments
-  return $ convertAttachments attachments
+--proccessAttachments :: Integer -> [Aeson.Value] -> App (Maybe Text)
+--proccessAttachments peerId rawAttachments = do
+--  attachments <- resultAttachments $ parse <$> rawAttachments
+--  traverse_ (uploadAttachments peerId) attachments
+--  return $ convertAttachments attachments
 
 convertMessage :: Int -> Maybe Text -> Message -> SendMessage
 convertMessage id attach Message {..} = SendMessage
@@ -478,26 +499,26 @@ convertMessage id attach Message {..} = SendMessage
   , smAttachments = attach
   }
 
-uploadAttachments :: Integer -> Attachment -> App ()
-uploadAttachments peerId Attachment {..} = case aType of
-  "doc" -> case aUrl of
-    Nothing -> logWarning ("Empty url in doc file attachment" :: Text)
-    Just url1 -> do
-      file <- request $ GetFile url1
-      uploadServer <- requestAndDecode $ GetUploadServer "doc" peerId
-      case (file, uploadServer) of
-        (Result r, Result (Success (UploadServer url2))) -> do
-            req <- request $ UploadDocument
-              { udFile = LBS.toStrict r
-              , udUrl = url2
-              , udFileName = aFileName
-              }
-            case req of
-              Result res -> logDebug $ decodeUtf8 $ LBS.toStrict res
-              RequestError err -> logWarning err
-        (RequestError e1, e2) -> logWarning e1 >> logWarning e2
-        (_, e2) -> logWarning e2
-  _ -> return ()
+--uploadAttachments :: Integer -> Attachment -> App ()
+--uploadAttachments peerId Attachment {..} = case aType of
+--  "doc" -> case aUrl of
+--    Nothing -> logWarning ("Empty url in doc file attachment" :: Text)
+--    Just url1 -> do
+--      file <- request $ GetFile url1
+--      uploadServer <- requestAndDecode $ GetUploadServer "doc" peerId
+--      case (file, uploadServer) of
+--        (Result r, Result (Success (UploadServer url2))) -> do
+--            req <- request $ UploadDocument
+--              { udFile = LBS.toStrict r
+--              , udUrl = url2
+--              , udFileName = aFileName
+--              }
+--            case req of
+--              Result res -> logDebug $ decodeUtf8 $ LBS.toStrict res
+--              RequestError err -> logWarning err
+--        (RequestError e1, e2) -> logWarning e1 >> logWarning e2
+--        (_, e2) -> logWarning e2
+--  _ -> return ()
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
