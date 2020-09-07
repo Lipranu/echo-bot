@@ -437,6 +437,24 @@ instance (Has Token r, Has Group r, MonadReader r m)
                  , ("title", encodeUtf8 sfTitle)
                  ]
 
+-- SavedFile ---------------------------------------------------------------
+
+data FileSaved = FileSaved
+  { fsType :: Text
+  , fsMediaId :: Integer
+  , fsOwnerId :: Integer
+  }
+
+instance Aeson.FromJSON FileSaved where
+  parseJSON = Aeson.withObject "App.Vk.FileSaved" $ \o -> do
+    fsType    <- o .: "type"
+    fsMediaId <- o .: fsType >>= (.: "id")
+    fsOwnerId <- o .: fsType >>= (.: "owner_id")
+    return FileSaved {..}
+
+instance Loggable FileSaved where
+  toLog _ = "FileSaved placeholder"
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
@@ -533,10 +551,18 @@ convertAttachment (Document (DocumentBody {..})) = do
 saveDocument :: UploadedFile -> Text -> StateT SendMessage App ()
 saveDocument (UploadedFile file) name = do
   lift $ logDebug ("in save document" :: Text)
-  result <- lift $ request $ SaveFile file name
+  result <- lift $ requestAndDecode $ SaveFile file name
   case result of
-    Result x -> lift $ logDebug $ decodeUtf8 $ LBS.toStrict x
-    RequestError error -> lift $ logWarning error
+    Result (Success x) -> lift (logDebug x) >> convertDocument x
+    error -> lift $ logWarning error
+
+convertDocument :: FileSaved -> StateT SendMessage App ()
+convertDocument FileSaved {..} = do
+  modify $ \sm -> sm { smAttachments = convert : smAttachments sm }
+  where convert = fsType
+               <> Text.showt fsOwnerId
+               <> "_"
+               <> Text.showt fsMediaId
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest
