@@ -298,12 +298,15 @@ instance (Has Token r, Has Group r, MonadReader r m)
                        , ("long"      , encodeShowUtf8 <$> smLongitude)
                        ]
           mAttach [] = Nothing
-          mAttach xs = Just $ encodeUtf8 $ Text.intercalate "," xs
+          mAttach xs = Just
+            $ encodeUtf8
+            $ Text.intercalate ","
+            $ reverse xs
 
 -- Attachment --------------------------------------------------------------
 
 data Attachment
-  = Attachment AttachmentBody
+  = Attachment Text AttachmentBody
   | Document DocumentBody
 --  { aType      :: Text
 --  , aMediaId   :: Integer
@@ -317,8 +320,8 @@ instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
     aType      <- o .: "type"
     case aType of
-      "doc" -> Document <$> (Aeson.parseJSON aType)
-      _ -> Attachment <$> (Aeson.parseJSON aType)
+      "doc" -> Document         <$> (o .: aType >>= Aeson.parseJSON)
+      _     -> Attachment aType <$> (o .: aType >>= Aeson.parseJSON)
 --    aMediaId   <- o .: aType >>= (.:  "id")
 --    aOwnerId   <- o .: aType >>= (.:  "owner_id")
 --    aAccessKey <- o .: aType >>= (.:? "access_key")
@@ -338,8 +341,7 @@ instance Loggable Attachment where
 -- AttachmentBody ----------------------------------------------------------
 
 data AttachmentBody = AttachmentBody
-  { aType      :: Text
-  , aMediaId   :: Integer
+  { aId        :: Integer
   , aOwnerId   :: Integer
   , aAccessKey :: Maybe Text
   } deriving Generic
@@ -489,13 +491,13 @@ processAttachments = traverse_ handle
         handle error      = lift $ logWarning error
 
 convertAttachment :: Attachment -> StateT SendMessage App ()
-convertAttachment (Attachment body) = do
+convertAttachment (Attachment aType body) = do
   modify $ \sm -> sm { smAttachments = convert body : smAttachments sm }
   where convert AttachmentBody {..}
           =  aType
           <> Text.showt aOwnerId
           <> "_"
-          <> Text.showt aMediaId
+          <> Text.showt aId
           <> case aAccessKey of
           Just v -> "_" <> v
           Nothing -> mempty
@@ -507,7 +509,7 @@ convertAttachment (Document (DocumentBody {..})) = do
     (Result r, Result (Success (UploadServer url))) -> do
         request <- lift $ requestAndDecode $ UploadDocument r url dTitle
         case request of
-          Result (Success x) -> lift (logDebug x) >> saveDocument x dTitle
+          Result x -> lift (logDebug x) >> saveDocument x dTitle
           error -> lift $ logWarning error
     (Result r, error) -> lift $ logWarning error
 
