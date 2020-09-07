@@ -20,7 +20,7 @@ import Control.Applicative         ( (<|>) )
 import Control.Exception           ( try )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
-import Control.Monad.State         ( StateT, execStateT )
+import Control.Monad.State         ( StateT, execStateT, modify )
 import Data.Aeson                  ( (.:), (.:?) )
 import Data.Foldable               ( traverse_ )
 import Data.Maybe                  ( fromMaybe )
@@ -276,7 +276,7 @@ data SendMessage = SendMessage
   , smMessage     :: Maybe Text
   , smLatitude    :: Maybe Double
   , smLongitude   :: Maybe Double
-  , smAttachments :: Maybe Text
+  , smAttachments :: [Text]
   } deriving Generic
 
 instance (Has Token r, Has Group r, MonadReader r m)
@@ -289,14 +289,16 @@ instance (Has Token r, Has Group r, MonadReader r m)
         { HTTP.method = "POST"
         , HTTP.path   = "method/messages.send"
         }
-    where body  = [ ("peer_id"  , encodeShowUtf8 smPeerId)
-                  , ("random_id", encodeShowUtf8 smRandomId)
-                  ]
-          mBody = [ ("message"   , encodeUtf8     <$> smMessage)
-                  , ("attachment", encodeUtf8     <$> smAttachments)
-                  , ("lat"       , encodeShowUtf8 <$> smLatitude)
-                  , ("long"      , encodeShowUtf8 <$> smLongitude)
-                  ]
+    where body       = [ ("peer_id"  , encodeShowUtf8 smPeerId)
+                       , ("random_id", encodeShowUtf8 smRandomId)
+                       ]
+          mBody      = [ ("attachment", mAttach smAttachments)
+                       , ("message"   , encodeUtf8     <$> smMessage)
+                       , ("lat"       , encodeShowUtf8 <$> smLatitude)
+                       , ("long"      , encodeShowUtf8 <$> smLongitude)
+                       ]
+          mAttach [] = Nothing
+          mAttach xs = Just $ encodeUtf8 $ Text.intercalate "," xs
 
 -- Attachment --------------------------------------------------------------
 
@@ -434,7 +436,7 @@ getUpdates gu = do
   case result of
     Result (Updates upd ts) -> do
       logDebug result
-      proccessUpdates $ parse <$> upd
+      processUpdates $ parse <$> upd
       getUpdates gu { guTs = ts }
     Result (OutOfDate ts) -> do
       logWarning result
@@ -442,19 +444,19 @@ getUpdates gu = do
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
-proccessUpdates :: [Result Update] -> App ()
-proccessUpdates = traverse_ handle
+processUpdates :: [Result Update] -> App ()
+processUpdates = traverse_ handle
   where handle (Result (NewMessage m)) = do
           logDebug m
-          proccessNewMessage m
+          processNewMessage m
         handle error = logWarning error
 
-proccessNewMessage :: Message -> App ()
-proccessNewMessage message = do
+processNewMessage :: Message -> App ()
+processNewMessage message = do
   randomId <- liftIO randomIO
   let attach = parse <$> mAttachments message
       sendm  = convertMessage randomId message
-  result   <- request =<< execStateT (proccessAttachments attach) sendm
+  result   <- request =<< execStateT (processAttachments attach) sendm
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
@@ -466,18 +468,27 @@ convertMessage randomId Message {..} = SendMessage
   , smRandomId    = randomId
   , smLatitude    = mLatitude
   , smLongitude   = mLongitude
-  , smAttachments = Nothing
+  , smAttachments = []
   }
 
-proccessAttachments :: [Result Attachment]
+processAttachments :: [Result Attachment]
                     -> StateT SendMessage App ()
-proccessAttachments = traverse_ handle
+processAttachments = traverse_ handle
   where handle (Result x) = lift (logDebug x) >> convertAttachment x
         handle error      = lift $ logWarning error
 
 convertAttachment :: Attachment -> StateT SendMessage App ()
-convertAttachment _ = return ()
---convertAttachments :: [Attachment] -> App (Maybe Text)
+convertAttachment (Attachment body) = do
+  modify $ \sm -> sm { smAttachments = convert body : smAttachments sm }
+  where convert AttachmentBody {..}
+          =  aType
+          <> Text.showt aOwnerId
+          <> "_"
+          <> Text.showt aMediaId
+          <> case aAccessKey of
+          Just v -> "_" <> v
+          Nothing -> mempty
+convertAttachment (Document body) = return ()
 --convertAttachments []     = Nothing
 --convertAttachments a = Just $ Text.intercalate "," $ map convert attach
 --  where convert AttachmentBody {..}
