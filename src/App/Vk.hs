@@ -16,30 +16,28 @@ import Internal
 
 import qualified Infrastructure.Logger as Logger
 
-import Control.Applicative                   ( (<|>) )
-import Control.Exception                     ( try )
-import Control.Monad                         ( foldM )
-import Control.Monad.IO.Class                ( MonadIO, liftIO )
-import Control.Monad.Reader                  ( ReaderT, MonadReader
-                                             , runReaderT )
-import Data.Aeson                            ( (.:), (.:?) )
-import Data.Foldable                         ( traverse_ )
-import Data.Maybe                            ( fromMaybe )
-import Data.Text.Encoding.Extended           ( encodeUtf8, encodeShowUtf8
-                                             , decodeUtf8 )
-import Data.Text.Extended                    ( Text )
-import Data.Time                             ( getCurrentTime )
-import Data.Typeable                         ( Typeable, typeOf )
-import GHC.Generics                          ( Generic )
-import qualified Network.HTTP.Client.MultipartFormData as MP--( formDataBody, partFileSource )
-import System.Random                         ( randomIO )
+import Control.Applicative         ( (<|>) )
+import Control.Exception           ( try )
+import Control.Monad.IO.Class      ( MonadIO, liftIO )
+import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
+import Control.Monad.State         ( StateT, execStateT )
+import Data.Aeson                  ( (.:), (.:?) )
+import Data.Foldable               ( traverse_ )
+import Data.Maybe                  ( fromMaybe )
+import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8, decodeUtf8 )
+import Data.Text.Extended          ( Text )
+import Data.Time                   ( getCurrentTime )
+import Data.Typeable               ( Typeable, typeOf )
+import GHC.Generics                ( Generic )
+import System.Random               ( randomIO )
 
-import qualified Data.Aeson.Extended          as Aeson
-import qualified Data.Text.Extended           as Text
-import qualified Data.Text.IO                 as TextIO
-import qualified Data.ByteString              as BS
-import qualified Data.ByteString.Lazy         as LBS
-import qualified Network.HTTP.Client.Extended as HTTP
+import qualified Data.Aeson.Extended                   as Aeson
+import qualified Data.ByteString                       as BS
+import qualified Data.ByteString.Lazy                  as LBS
+import qualified Data.Text.Extended                    as Text
+import qualified Data.Text.IO                          as TextIO
+import qualified Network.HTTP.Client.Extended          as HTTP
+import qualified Network.HTTP.Client.MultipartFormData as MP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -76,7 +74,7 @@ instance Has Group           Env where getter = envGroup
 -- App ---------------------------------------------------------------------
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
-  (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadFail)
+  (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadFail )
 
 instance MonadLogger App where
   logConsole   = liftIO . TextIO.putStr
@@ -452,19 +450,33 @@ proccessUpdates = traverse_ handle
         handle error = logWarning error
 
 proccessNewMessage :: Message -> App ()
-proccessNewMessage message@Message {..} = do
-  id          <- liftIO randomIO
---  attachments <- proccessAttachments mPeerId mAttachments
-  result      <- request $ convertMessage id Nothing message
+proccessNewMessage message = do
+  randomId <- liftIO randomIO
+  let attach = parse <$> mAttachments message
+      sendm  = convertMessage randomId message
+  result   <- request =<< execStateT (proccessAttachments attach) sendm
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
 
-resultAttachments :: [Result Attachment] -> App [Attachment]
-resultAttachments = foldM handle []
-  where handle xs (Result x) = logDebug   x >> return (x : xs)
-        handle xs x          = logWarning x >> return xs
+convertMessage :: Int -> Message -> SendMessage
+convertMessage randomId Message {..} = SendMessage
+  { smPeerId      = mPeerId
+  , smMessage     = mText
+  , smRandomId    = randomId
+  , smLatitude    = mLatitude
+  , smLongitude   = mLongitude
+  , smAttachments = Nothing
+  }
 
+proccessAttachments :: [Result Attachment]
+                    -> StateT SendMessage App ()
+proccessAttachments = traverse_ handle
+  where handle (Result x) = lift (logDebug x) >> convertAttachment x
+        handle error      = lift $ logWarning error
+
+convertAttachment :: Attachment -> StateT SendMessage App ()
+convertAttachment _ = return ()
 --convertAttachments :: [Attachment] -> App (Maybe Text)
 --convertAttachments []     = Nothing
 --convertAttachments a = Just $ Text.intercalate "," $ map convert attach
@@ -482,16 +494,6 @@ resultAttachments = foldM handle []
 --  attachments <- resultAttachments $ parse <$> rawAttachments
 --  traverse_ (uploadAttachments peerId) attachments
 --  return $ convertAttachments attachments
-
-convertMessage :: Int -> Maybe Text -> Message -> SendMessage
-convertMessage id attach Message {..} = SendMessage
-  { smPeerId      = mPeerId
-  , smMessage     = mText
-  , smRandomId    = id
-  , smLatitude    = mLatitude
-  , smLongitude   = mLongitude
-  , smAttachments = attach
-  }
 
 --uploadAttachments :: Integer -> Attachment -> App ()
 --uploadAttachments peerId Attachment {..} = case aType of
