@@ -10,6 +10,9 @@ module App.Vk ( Config, mkApp, runApp ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
+import App.Vk.Internal
+--import App.Vk.Requests
+
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
 import Internal
@@ -42,10 +45,6 @@ import qualified Network.HTTP.Client.MultipartFormData as MP
 -- TYPES AND INSTANCES -----------------------------------------------------
 
 -- Config and Env ----------------------------------------------------------
-
-newtype Token = Token { unToken :: Text }
-
-newtype Group = Group { unGroup :: Text }
 
 data Config = Config
   { cToken :: Token
