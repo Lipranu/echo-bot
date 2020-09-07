@@ -20,7 +20,7 @@ import Control.Applicative         ( (<|>) )
 import Control.Exception           ( try )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
-import Control.Monad.State         ( StateT, execStateT, modify )
+import Control.Monad.State         ( StateT, execStateT, modify, gets )
 import Data.Aeson                  ( (.:), (.:?) )
 import Data.Foldable               ( traverse_ )
 import Data.Maybe                  ( fromMaybe )
@@ -395,17 +395,28 @@ instance Aeson.FromJSON UploadServer where
 -- UploadDocument ----------------------------------------------------------
 
 data UploadDocument = UploadDocument
-  { udFile     :: BS.ByteString
+  { udFile     :: LBS.ByteString
   , udUrl      :: Text
-  , udFileName :: Maybe Text
+  , udFileName :: Text
   }
 
 instance (MonadReader r m, MonadIO m) => ToRequest m r UploadDocument where
   toRequest UploadDocument {..} =
     let req   = HTTP.parseRequest_ $ Text.unpack udUrl
-        part  = MP.partBS "file" udFile
-        partm = part { MP.partFilename = Text.unpack <$> udFileName }
+        part  = MP.partLBS "file" udFile
+        partm = part { MP.partFilename = Just $ Text.unpack udFileName }
      in liftIO $ MP.formDataBody [partm] req
+
+-- UploadedFile ------------------------------------------------------------
+
+newtype UploadedFile = UploadedFile Text
+
+instance Aeson.FromJSON UploadedFile where
+  parseJSON = Aeson.withObject "App.Vk.UploadedFile" $ \o ->
+    UploadedFile <$> o .: "file"
+
+instance Loggable UploadedFile where
+  toLog _ = "Uploaded file placeholder"
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -488,44 +499,21 @@ convertAttachment (Attachment body) = do
           <> case aAccessKey of
           Just v -> "_" <> v
           Nothing -> mempty
-convertAttachment (Document body) = return ()
---convertAttachments []     = Nothing
---convertAttachments a = Just $ Text.intercalate "," $ map convert attach
---  where convert AttachmentBody {..}
---          =  aType
---          <> Text.showt aOwnerId
---          <> "_"
---          <> Text.showt aMediaId
---          <> case aAccessKey of
---          Just v -> "_" <> v
---          Nothing -> mempty
+convertAttachment (Document (DocumentBody {..})) = do
+  peerId <- gets smPeerId
+  file <- lift $ request $ GetFile dUrl
+  uploadServer <- lift $ requestAndDecode $ GetUploadServer "doc" peerId
+  case (file, uploadServer) of
+    (Result r, Result (Success (UploadServer url))) -> do
+        request <- lift $ requestAndDecode $ UploadDocument r url dTitle
+        case request of
+          Result (Success x) -> lift (logDebug x) >> saveDocument x dTitle
+          error -> lift $ logWarning error
+    (Result r, error) -> lift $ logWarning error
 
---proccessAttachments :: Integer -> [Aeson.Value] -> App (Maybe Text)
---proccessAttachments peerId rawAttachments = do
---  attachments <- resultAttachments $ parse <$> rawAttachments
---  traverse_ (uploadAttachments peerId) attachments
---  return $ convertAttachments attachments
-
---uploadAttachments :: Integer -> Attachment -> App ()
---uploadAttachments peerId Attachment {..} = case aType of
---  "doc" -> case aUrl of
---    Nothing -> logWarning ("Empty url in doc file attachment" :: Text)
---    Just url1 -> do
---      file <- request $ GetFile url1
---      uploadServer <- requestAndDecode $ GetUploadServer "doc" peerId
---      case (file, uploadServer) of
---        (Result r, Result (Success (UploadServer url2))) -> do
---            req <- request $ UploadDocument
---              { udFile = LBS.toStrict r
---              , udUrl = url2
---              , udFileName = aFileName
---              }
---            case req of
---              Result res -> logDebug $ decodeUtf8 $ LBS.toStrict res
---              RequestError err -> logWarning err
---        (RequestError e1, e2) -> logWarning e1 >> logWarning e2
---        (_, e2) -> logWarning e2
---  _ -> return ()
+saveDocument :: UploadedFile -> Text -> StateT SendMessage App ()
+saveDocument (UploadedFile file) name = do
+  lift $ logDebug ("in save document" :: Text)
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
