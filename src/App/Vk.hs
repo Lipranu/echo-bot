@@ -273,16 +273,13 @@ instance Loggable Message where
 -- SendMessage -------------------------------------------------------------
 
 data SendMessage = SendMessage
-  { smPeerId :: Integer
+  { smPeerId      :: Integer
   , smRandomId    :: Int
   , smMessage     :: Maybe Text
   , smLatitude    :: Maybe Double
   , smLongitude   :: Maybe Double
   , smAttachments :: Maybe Text
   } deriving Generic
-
-instance Aeson.ToJSON SendMessage where
-  toJSON = Aeson.toJsonDrop
 
 instance (Has Token r, Has Group r, MonadReader r m)
   => ToRequest m r SendMessage where
@@ -404,12 +401,11 @@ data UploadDocument = UploadDocument
   }
 
 instance (MonadReader r m, MonadIO m) => ToRequest m r UploadDocument where
-  toRequest UploadDocument {..} = do
-    let req = HTTP.parseRequest_ $ Text.unpack udUrl
-    let part = MP.partBS "file" udFile
+  toRequest UploadDocument {..} =
+    let req   = HTTP.parseRequest_ $ Text.unpack udUrl
+        part  = MP.partBS "file" udFile
         partm = part { MP.partFilename = Text.unpack <$> udFileName }
-    r <- liftIO $ MP.formDataBody [partm] req
-    return r
+     in liftIO $ MP.formDataBody [partm] req
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -449,13 +445,11 @@ getUpdates gu = do
     error -> logError error >> logError ("Application shut down" :: Text)
 
 proccessUpdates :: [Result Update] -> App ()
-proccessUpdates = traverse_ handleUpdateErrors
-
-handleUpdateErrors :: Result Update -> App ()
-handleUpdateErrors (Result (NewMessage m)) = do
-  logDebug m
-  proccessNewMessage m
-handleUpdateErrors error = logWarning error
+proccessUpdates = traverse_ handle
+  where handle (Result (NewMessage m)) = do
+          logDebug m
+          proccessNewMessage m
+        handle error = logWarning error
 
 proccessNewMessage :: Message -> App ()
 proccessNewMessage message@Message {..} = do
@@ -467,9 +461,9 @@ proccessNewMessage message@Message {..} = do
     RequestError error -> logWarning error
 
 resultAttachments :: [Result Attachment] -> App [Attachment]
-resultAttachments = foldM func []
-  where func xs (Result r) = logDebug r >> return (r : xs)
-        func xs x = logWarning x >> return xs
+resultAttachments = foldM handle []
+  where handle xs (Result x) = logDebug   x >> return (x : xs)
+        handle xs x          = logWarning x >> return xs
 
 --convertAttachments :: [Attachment] -> App (Maybe Text)
 --convertAttachments []     = Nothing
