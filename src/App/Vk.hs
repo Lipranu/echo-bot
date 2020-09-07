@@ -31,7 +31,7 @@ import Data.Text.Extended                    ( Text )
 import Data.Time                             ( getCurrentTime )
 import Data.Typeable                         ( Typeable, typeOf )
 import GHC.Generics                          ( Generic )
-import Network.HTTP.Client.MultipartFormData ( formDataBody, partFileSource )
+import qualified Network.HTTP.Client.MultipartFormData as MP--( formDataBody, partFileSource )
 import System.Random                         ( randomIO )
 
 import qualified Data.Aeson.Extended          as Aeson
@@ -311,6 +311,7 @@ data Attachment = Attachment
   , aOwnerId   :: Integer
   , aAccessKey :: Maybe Text
   , aUrl       :: Maybe Text
+  , aFileName  :: Maybe Text
   }
 
 instance Aeson.FromJSON Attachment where
@@ -320,6 +321,7 @@ instance Aeson.FromJSON Attachment where
     aOwnerId   <- o .: aType >>= (.:  "owner_id")
     aAccessKey <- o .: aType >>= (.:? "access_key")
     aUrl       <- o .: aType >>= (.:? "url")
+    aFileName  <- o .: aType >>= (.:? "title")
     return Attachment {..}
 
 instance Loggable Attachment where
@@ -350,9 +352,10 @@ instance (Has Token r, Has Group r, MonadReader r m)
   toRequest GetUploadServer {..} = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (body <> df)
-           $ defaultRequest { HTTP.method = "GET"
-                            , HTTP.path   = "/method/docs.getMessagesUploadServer"
-                            }
+           $ defaultRequest
+      { HTTP.method = "GET"
+      , HTTP.path   = "/method/docs.getMessagesUploadServer"
+      }
     where body = [ ("type"   , encodeUtf8 gusType)
                  , ("peer_id", encodeShowUtf8 gusPeerId)
                  ]
@@ -368,15 +371,24 @@ instance Aeson.FromJSON UploadServer where
 -- UploadDocument ----------------------------------------------------------
 
 data UploadDocument = UploadDocument
-  { udFile :: FilePath --BS.ByteString
-  , udUrl  :: Text
+  { udFile     :: BS.ByteString
+  , udUrl      :: Text
+  , udFileName :: Maybe Text
   }
 
 instance (MonadReader r m, MonadIO m) => ToRequest m r UploadDocument where
-  toRequest UploadDocument {..} =
+  toRequest UploadDocument {..} = do
     let req = HTTP.parseRequest_ $ Text.unpack udUrl
-     in liftIO $ formDataBody [partFileSource "file" udFile] req
+    let part = MP.partBS "file" udFile
+        partm = part { MP.partFilename = Text.unpack <$> udFileName }
+    r <- liftIO $ MP.formDataBody [partm] req
+    return r
                                    --partBS "file" udFile] req
+--part from file:
+--file
+--Just "lecture-1-sets.pdf"
+--Just "application/pdf"
+--[]
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -475,9 +487,11 @@ uploadAttachments peerId Attachment {..} = case aType of
       uploadServer <- requestAndDecode $ GetUploadServer "doc" peerId
       case (file, uploadServer) of
         (Result r, Result (Success (UploadServer url2))) -> do
-            liftIO $ BS.writeFile "lecture-1-sets.pdf" $ LBS.toStrict r
-            req <- request $
-              UploadDocument { udFile = "lecture-1-sets.pdf", udUrl = url2 }
+            req <- request $ UploadDocument
+              { udFile = LBS.toStrict r
+              , udUrl = url2
+              , udFileName = aFileName
+              }
             case req of
               Result res -> logDebug $ decodeUtf8 $ LBS.toStrict res
               RequestError err -> logWarning err
