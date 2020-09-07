@@ -420,6 +420,23 @@ instance Aeson.FromJSON UploadedFile where
 instance Loggable UploadedFile where
   toLog _ = "Uploaded file placeholder"
 
+-- SaveFile ----------------------------------------------------------------
+
+data SaveFile = SaveFile
+  { sfFile  :: Text
+  , sfTitle :: Text
+  }
+
+instance (Has Token r, Has Group r, MonadReader r m)
+  => ToRequest m r SaveFile where
+  toRequest SaveFile {..} = do
+    df <- defaultBody
+    return $ HTTP.urlEncodedBody (body <> df) defaultRequest
+      { HTTP.path = "/method/docs.save" }
+    where body = [ ("file" , encodeUtf8 sfFile)
+                 , ("title", encodeUtf8 sfTitle)
+                 ]
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
@@ -516,9 +533,16 @@ convertAttachment (Document (DocumentBody {..})) = do
 saveDocument :: UploadedFile -> Text -> StateT SendMessage App ()
 saveDocument (UploadedFile file) name = do
   lift $ logDebug ("in save document" :: Text)
+  result <- lift $ request $ SaveFile file name
+  case result of
+    Result x -> lift $ logDebug $ decodeUtf8 $ LBS.toStrict x
+    RequestError error -> lift $ logWarning error
 
 defaultRequest :: HTTP.Request
-defaultRequest = HTTP.defaultRequest { HTTP.host = "api.vk.com" }
+defaultRequest = HTTP.defaultRequest
+  { HTTP.host   = "api.vk.com"
+  , HTTP.method = "POST"
+  }
 
 defaultBody :: (Has Token r, Has Group r, MonadReader r m)
             => m [(BS.ByteString, BS.ByteString)]
