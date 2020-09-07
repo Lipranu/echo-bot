@@ -308,13 +308,6 @@ instance (Has Token r, Has Group r, MonadReader r m)
 data Attachment
   = Attachment Text AttachmentBody
   | Document DocumentBody
---  { aType      :: Text
---  , aMediaId   :: Integer
---  , aOwnerId   :: Integer
---  , aAccessKey :: Maybe Text
---  , aUrl       :: Maybe Text
---  , aFileName  :: Maybe Text
---  }
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
@@ -322,12 +315,6 @@ instance Aeson.FromJSON Attachment where
     case aType of
       "doc" -> Document         <$> (o .: aType >>= Aeson.parseJSON)
       _     -> Attachment aType <$> (o .: aType >>= Aeson.parseJSON)
---    aMediaId   <- o .: aType >>= (.:  "id")
---    aOwnerId   <- o .: aType >>= (.:  "owner_id")
---    aAccessKey <- o .: aType >>= (.:? "access_key")
---    aUrl       <- o .: aType >>= (.:? "url")
---    aFileName  <- o .: aType >>= (.:? "title")
---    return Attachment {..}
 
 instance Loggable Attachment where
   toLog _ = "PlaceHolder"--"Proccessing attachment:\n\
@@ -394,30 +381,30 @@ instance Aeson.FromJSON UploadServer where
   parseJSON = Aeson.withObject "App.Vk.UploadServer" $ \o ->
     UploadServer <$> o .: "upload_url"
 
--- UploadDocument ----------------------------------------------------------
+-- UploadFile ----------------------------------------------------------
 
-data UploadDocument = UploadDocument
+data UploadFile = UploadFile
   { udFile     :: LBS.ByteString
   , udUrl      :: Text
   , udFileName :: Text
   }
 
-instance (MonadReader r m, MonadIO m) => ToRequest m r UploadDocument where
-  toRequest UploadDocument {..} =
+instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
+  toRequest UploadFile {..} =
     let req   = HTTP.parseRequest_ $ Text.unpack udUrl
         part  = MP.partLBS "file" udFile
         partm = part { MP.partFilename = Just $ Text.unpack udFileName }
      in liftIO $ MP.formDataBody [partm] req
 
--- UploadedFile ------------------------------------------------------------
+-- FileUploaded ------------------------------------------------------------
 
-newtype UploadedFile = UploadedFile Text
+newtype FileUploaded = FileUploaded Text
 
-instance Aeson.FromJSON UploadedFile where
-  parseJSON = Aeson.withObject "App.Vk.UploadedFile" $ \o ->
-    UploadedFile <$> o .: "file"
+instance Aeson.FromJSON FileUploaded where
+  parseJSON = Aeson.withObject "App.Vk.FileUploaded" $ \o ->
+    FileUploaded <$> o .: "file"
 
-instance Loggable UploadedFile where
+instance Loggable FileUploaded where
   toLog _ = "Uploaded file placeholder"
 
 -- SaveFile ----------------------------------------------------------------
@@ -437,7 +424,7 @@ instance (Has Token r, Has Group r, MonadReader r m)
                  , ("title", encodeUtf8 sfTitle)
                  ]
 
--- SavedFile ---------------------------------------------------------------
+-- FileSaved ---------------------------------------------------------------
 
 data FileSaved = FileSaved
   { fsType :: Text
@@ -519,8 +506,7 @@ convertMessage randomId Message {..} = SendMessage
   , smAttachments = []
   }
 
-processAttachments :: [Result Attachment]
-                    -> StateT SendMessage App ()
+processAttachments :: [Result Attachment] -> StateT SendMessage App ()
 processAttachments = traverse_ handle
   where handle (Result x) = lift (logDebug x) >> convertAttachment x
         handle error      = lift $ logWarning error
@@ -542,22 +528,22 @@ convertAttachment (Document (DocumentBody {..})) = do
   uploadServer <- lift $ requestAndDecode $ GetUploadServer "doc" peerId
   case (file, uploadServer) of
     (Result r, Result (Success (UploadServer url))) -> do
-        request <- lift $ requestAndDecode $ UploadDocument r url dTitle
+        request <- lift $ requestAndDecode $ UploadFile r url dTitle
         case request of
-          Result x -> lift (logDebug x) >> saveDocument x dTitle
+          Result x -> lift (logDebug x) >> saveFile x dTitle
           error -> lift $ logWarning error
     (Result r, error) -> lift $ logWarning error
 
-saveDocument :: UploadedFile -> Text -> StateT SendMessage App ()
-saveDocument (UploadedFile file) name = do
+saveFile :: FileUploaded -> Text -> StateT SendMessage App ()
+saveFile (FileUploaded file) name = do
   lift $ logDebug ("in save document" :: Text)
   result <- lift $ requestAndDecode $ SaveFile file name
   case result of
-    Result (Success x) -> lift (logDebug x) >> convertDocument x
+    Result (Success x) -> lift (logDebug x) >> convertFile x
     error -> lift $ logWarning error
 
-convertDocument :: FileSaved -> StateT SendMessage App ()
-convertDocument FileSaved {..} = do
+convertFile :: FileSaved -> StateT SendMessage App ()
+convertFile FileSaved {..} = do
   modify $ \sm -> sm { smAttachments = convert : smAttachments sm }
   where convert = fsType
                <> Text.showt fsOwnerId
