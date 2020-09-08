@@ -153,7 +153,7 @@ instance Loggable Update where
 data Message = Message
   { mFromId      :: Integer
   , mPeerId      :: Integer
-  , mText        :: Maybe Text
+  , mMessage     :: Maybe Text
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
   , mAttachments :: [Aeson.Value]
@@ -174,7 +174,7 @@ instance Loggable Message where
   toLog Message {..} = "New message recived:\n\
     \ | from_id: "     <> Text.showt mFromId      <> "\n\
     \ | peer_id: "     <> Text.showt mPeerId      <> "\n\
-    \ | text: "        <> fromMaybe "" mText               --    <> "\n\
+    \ | text: "        <> fromMaybe "" mMessage       --    <> "\n\
 --    \ | attachments: " <> Text.showt mAttachments <> "\n\
 --    \ | geo: "         <> Text.showt mGeo         <> "\n\
 --    \ | keyboard: "    <> Text.showt mKeyboard

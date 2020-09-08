@@ -120,33 +120,34 @@ processUpdates = traverse_ handle
 
 processNewMessage :: Message -> App ()
 processNewMessage message = do
-  randomId <- liftIO randomIO
+  randomId <- liftIO randomIO :: App Int
   let attach = parse <$> mAttachments message
-      sendm  = convertMessage randomId message
-  result   <- request =<< execStateT (processAttachments attach) sendm
+      sendm  = convert message randomId
+      state  = AttachmentsState [] Nothing $ mPeerId message
+  result   <- request . sendm =<< execStateT (processAttachments attach) state
   case result of
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
 
-convertMessage :: Int -> Message -> SendMessage
-convertMessage randomId Message {..} = SendMessage
-  { smPeerId      = mPeerId
-  , smMessage     = mText
-  , smRandomId    = randomId
-  , smLatitude    = mLatitude
-  , smLongitude   = mLongitude
-  , smAttachments = []
-  }
+--convertMessage :: Int -> Message -> SendMessage
+--convertMessage randomId Message {..} = SendMessage
+--  { smPeerId      = mPeerId
+--  , smMessage     = mText
+--  , smRandomId    = randomId
+--  , smLatitude    = mLatitude
+--  , smLongitude   = mLongitude
+--  , smAttachments = []
+--  }
 
-processAttachments :: [Result Attachment] -> StateT SendMessage App ()
+processAttachments :: [Result Attachment] -> StateT AttachmentsState App ()
 processAttachments = traverse_ handle
   where handle (Result x) = lift (logDebug x) >> convertAttachment x
         handle error      = lift $ logWarning error
 
-convertAttachment :: Attachment -> StateT SendMessage App ()
+convertAttachment :: Attachment -> StateT AttachmentsState App ()
 convertAttachment (Attachment aType body) =
-  modify $ \sm -> sm { smAttachments = convert body : smAttachments sm }
-  where convert AttachmentBody {..}
+  modify $ \as -> as { asAttachments = func body : asAttachments as }
+  where func AttachmentBody {..}
           =  aType
           <> Text.showt aOwnerId
           <> "_"
@@ -155,7 +156,7 @@ convertAttachment (Attachment aType body) =
           Just v -> "_" <> v
           Nothing -> mempty
 convertAttachment (Document DocumentBody {..}) = do
-  peerId <- gets smPeerId
+  peerId <- gets asPeerId
   file <- lift $ request $ GetFile dUrl
   uploadServer <- lift $ requestAndDecode $ GetUploadServer "doc" peerId
   case (file, uploadServer) of
@@ -166,7 +167,7 @@ convertAttachment (Document DocumentBody {..}) = do
           error -> lift $ logWarning error
     (Result r, error) -> lift $ logWarning error
 
-saveFile :: Text -> Text -> StateT SendMessage App ()
+saveFile :: Text -> Text -> StateT AttachmentsState App ()
 saveFile file name = do
   lift $ logDebug ("in save document" :: Text)
   result <- lift $ requestAndDecode $ SaveFile file name
@@ -174,10 +175,10 @@ saveFile file name = do
     Result (Success x) -> lift (logDebug x) >> convertFile x
     error -> lift $ logWarning error
 
-convertFile :: FileSaved -> StateT SendMessage App ()
+convertFile :: FileSaved -> StateT AttachmentsState App ()
 convertFile FileSaved {..} =
-  modify $ \sm -> sm { smAttachments = convert : smAttachments sm }
-  where convert = fsType
+  modify $ \as -> as { asAttachments = conv : asAttachments as }
+  where conv = fsType
                <> Text.showt fsOwnerId
                <> "_"
                <> Text.showt fsMediaId

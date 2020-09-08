@@ -75,12 +75,12 @@ instance Loggable GetUpdates where
 -- SendMessage -------------------------------------------------------------
 
 data SendMessage = SendMessage
-  { smPeerId      :: Integer
-  , smRandomId    :: Int
-  , smMessage     :: Maybe Text
-  , smLatitude    :: Maybe Double
-  , smLongitude   :: Maybe Double
-  , smAttachments :: [Text]
+  { smPeerId      :: BS.ByteString
+  , smRandomId    :: BS.ByteString
+  , smMessage     :: Maybe BS.ByteString
+  , smLatitude    :: Maybe BS.ByteString
+  , smLongitude   :: Maybe BS.ByteString
+  , smAttachments :: Maybe BS.ByteString
   }
 
 instance VkReader r m => ToRequest m r SendMessage where
@@ -92,19 +92,19 @@ instance VkReader r m => ToRequest m r SendMessage where
         { HTTP.method = "POST"
         , HTTP.path   = "method/messages.send"
         }
-    where body       = [ ("peer_id"  , encodeShowUtf8 smPeerId)
-                       , ("random_id", encodeShowUtf8 smRandomId)
+    where body       = [ ("peer_id"   , smPeerId)
+                       , ("random_id" , smRandomId)
                        ]
-          mBody      = [ ("attachment", mAttach smAttachments)
-                       , ("message"   , encodeUtf8     <$> smMessage)
-                       , ("lat"       , encodeShowUtf8 <$> smLatitude)
-                       , ("long"      , encodeShowUtf8 <$> smLongitude)
+          mBody      = [ ("attachment", smAttachments)
+                       , ("message"   , smMessage)
+                       , ("lat"       , smLatitude)
+                       , ("long"      , smLongitude)
                        ]
-          mAttach [] = Nothing
-          mAttach xs = Just
-            $ encodeUtf8
-            $ Text.intercalate ","
-            $ reverse xs
+--          mAttach [] = Nothing
+--          mAttach xs = Just
+--            $ encodeUtf8
+--            $ Text.intercalate ","
+--            $ reverse xs
 
 -- GetFile -----------------------------------------------------------------
 
