@@ -50,22 +50,22 @@ instance Loggable GetLongPollServer where
 -- GetUpdates --------------------------------------------------------------
 
 data GetUpdates = GetUpdates
-  { guKey  :: BS.ByteString
-  , guTs   :: BS.ByteString
-  , guPath :: BS.ByteString
-  , guHost :: BS.ByteString
+  { guKey  :: Text
+  , guTs   :: Text
+  , guPath :: Text
+  , guHost :: Text
   }
 
 instance MonadReader r m => ToRequest m r GetUpdates where
   toRequest GetUpdates {..} = return $ mkBody $ defaultRequest
-    { HTTP.path = guPath
-    , HTTP.host = guHost
+    { HTTP.path = encodeUtf8 guPath
+    , HTTP.host = encodeUtf8 guHost
     }
     where mkBody = HTTP.urlEncodedBody
                  [ ("act" , "a_check")
-                 , ("key" , guKey)
+                 , ("key" , encodeUtf8 guKey)
                  , ("wait", "25")
-                 , ("ts"  , guTs)
+                 , ("ts"  , encodeUtf8 guTs)
                  , ("mode", "2")
                  ]
 
@@ -75,12 +75,12 @@ instance Loggable GetUpdates where
 -- SendMessage -------------------------------------------------------------
 
 data SendMessage = SendMessage
-  { smPeerId      :: BS.ByteString
-  , smRandomId    :: BS.ByteString
-  , smMessage     :: Maybe BS.ByteString
-  , smLatitude    :: Maybe BS.ByteString
-  , smLongitude   :: Maybe BS.ByteString
-  , smAttachments :: Maybe BS.ByteString
+  { smPeerId      :: Integer
+  , smRandomId    :: Int
+  , smMessage     :: Maybe Text
+  , smLatitude    :: Maybe Double
+  , smLongitude   :: Maybe Double
+  , smAttachments :: Maybe Text
   }
 
 instance VkReader r m => ToRequest m r SendMessage where
@@ -92,19 +92,14 @@ instance VkReader r m => ToRequest m r SendMessage where
         { HTTP.method = "POST"
         , HTTP.path   = "method/messages.send"
         }
-    where body       = [ ("peer_id"   , smPeerId)
-                       , ("random_id" , smRandomId)
+    where body       = [ ("peer_id"   , encodeShowUtf8 smPeerId)
+                       , ("random_id" , encodeShowUtf8 smRandomId)
                        ]
-          mBody      = [ ("attachment", smAttachments)
-                       , ("message"   , smMessage)
-                       , ("lat"       , smLatitude)
-                       , ("long"      , smLongitude)
+          mBody      = [ ("attachment", encodeUtf8     <$> smAttachments)
+                       , ("message"   , encodeUtf8     <$> smMessage)
+                       , ("lat"       , encodeShowUtf8 <$> smLatitude)
+                       , ("long"      , encodeShowUtf8 <$> smLongitude)
                        ]
---          mAttach [] = Nothing
---          mAttach xs = Just
---            $ encodeUtf8
---            $ Text.intercalate ","
---            $ reverse xs
 
 -- GetFile -----------------------------------------------------------------
 

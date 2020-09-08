@@ -22,7 +22,7 @@ import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
 import Control.Monad.State         ( StateT, execStateT, modify, gets )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
-import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8, decodeUtf8 )
+import Data.Text.Encoding.Extended ( decodeUtf8 )
 import Data.Text.Extended          ( Text )
 import Data.Time                   ( getCurrentTime )
 import System.Random               ( randomIO )
@@ -104,10 +104,10 @@ getUpdates gu = do
     Result (Updates upd ts) -> do
       logDebug result
       processUpdates $ parse <$> upd
-      getUpdates gu { guTs = encodeUtf8 ts }
+      getUpdates gu { guTs = ts }
     Result (OutOfDate ts) -> do
       logWarning result
-      getUpdates gu { guTs = encodeShowUtf8 ts }
+      getUpdates gu { guTs = Text.showt ts }
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
