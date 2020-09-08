@@ -13,6 +13,7 @@ module App.Vk.Responses
   , Update (..)
   , Updates (..)
   , UploadServer (..)
+  , LongPollServer (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -80,11 +81,25 @@ instance Aeson.FromJSON RequestParams where
 instance Loggable RequestParams where
   toLog RequestParams {..} = "\n | \t" <> rpKey <> ": " <> rpValue
 
+-- LongPollServer ----------------------------------------------------------
+
+data LongPollServer = LongPollServer
+ { lpsKey    :: Text
+ , lpsServer :: Text
+ , lpsTs     :: Text
+ } deriving Generic
+
+instance Aeson.FromJSON LongPollServer where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable LongPollServer where
+  toLog _ = "longpollserver placeholder"
+
 -- Updates -----------------------------------------------------------------
 
 data Updates
   = Updates [Aeson.Value] Text
-  | OutOfDate Text
+  | OutOfDate Integer
   | KeyExpired
   | DataLost
 
@@ -105,12 +120,12 @@ instance Aeson.FromJSON Updates where
 
 instance Loggable Updates where
   toLog (Updates upds ts) = "Resived updates:\n\
-    \ | Amount: " <> (Text.showt . length) upds <> "\n\
+    \ | Amount: "        <> (Text.showt . length) upds <> "\n\
     \ | New timestamp: " <> ts
 
   toLog (OutOfDate ts) =
     "Event history is outdated or partially lost. \
-    \Performing new request for updates with timestamp: " <> ts
+    \Performing new request for updates with timestamp: " <> Text.showt ts
 
   toLog KeyExpired = "Key expired. Performing request for new key"
 
@@ -224,7 +239,7 @@ data FileUploaded
 instance Aeson.FromJSON FileUploaded where
   parseJSON = Aeson.withObject "App.Vk.FileUploaded" $ \o ->
         FileUploaded <$> o .: "file"
-    <|> UploadError  <$> (Aeson.parseJSON $ Aeson.Object o)
+    <|> UploadError  <$> Aeson.parseJSON (Aeson.Object o)
 
 instance Loggable FileUploaded where
   toLog _ = "Uploaded file placeholder"

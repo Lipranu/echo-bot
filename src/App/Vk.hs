@@ -28,6 +28,7 @@ import Data.Text.Encoding.Extended ( decodeUtf8 )
 import Data.Text.Extended          ( Text )
 import Data.Time                   ( getCurrentTime )
 import System.Random               ( randomIO )
+import Data.Maybe          ( fromMaybe )
 
 import qualified Data.Aeson.Extended          as Aeson
 import qualified Data.ByteString.Lazy         as LBS
@@ -93,8 +94,19 @@ getLongPollServer = do
   logInfo GetLongPollServer
   result <- requestAndDecode GetLongPollServer
   case result of
-    Result (Success gu) -> logDebug result >> getUpdates gu
+    Result (Success gu) -> do
+      logDebug result
+      getUpdates $ convertLongPollServer gu
     error -> logError error >> logError ("Application shut down" :: Text)
+
+convertLongPollServer :: LongPollServer -> GetUpdates
+convertLongPollServer LongPollServer {..} =
+  let guKey            = lpsKey
+      guTs             = lpsTs
+      (guHost, guPath) = Text.span (/='/')
+                       $ fromMaybe lpsServer
+                       $ Text.stripPrefix "https://" lpsServer
+   in GetUpdates {..}
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
@@ -107,7 +119,7 @@ getUpdates gu = do
       getUpdates gu { guTs = ts }
     Result (OutOfDate ts) -> do
       logWarning result
-      getUpdates gu { guTs = ts }
+      getUpdates gu { guTs = Text.showt ts }
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
@@ -144,7 +156,7 @@ processAttachments = traverse_ handle
         handle error      = lift $ logWarning error
 
 convertAttachment :: Attachment -> StateT SendMessage App ()
-convertAttachment (Attachment aType body) = do
+convertAttachment (Attachment aType body) =
   modify $ \sm -> sm { smAttachments = convert body : smAttachments sm }
   where convert AttachmentBody {..}
           =  aType
@@ -154,7 +166,7 @@ convertAttachment (Attachment aType body) = do
           <> case aAccessKey of
           Just v -> "_" <> v
           Nothing -> mempty
-convertAttachment (Document (DocumentBody {..})) = do
+convertAttachment (Document DocumentBody {..}) = do
   peerId <- gets smPeerId
   file <- lift $ request $ GetFile dUrl
   uploadServer <- lift $ requestAndDecode $ GetUploadServer "doc" peerId
@@ -175,7 +187,7 @@ saveFile file name = do
     error -> lift $ logWarning error
 
 convertFile :: FileSaved -> StateT SendMessage App ()
-convertFile FileSaved {..} = do
+convertFile FileSaved {..} =
   modify $ \sm -> sm { smAttachments = convert : smAttachments sm }
   where convert = fsType
                <> Text.showt fsOwnerId

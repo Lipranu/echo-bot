@@ -23,12 +23,9 @@ import Internal
 
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( MonadReader )
-import Data.Aeson                  ( (.:) )
-import Data.Maybe                  ( fromMaybe )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
 
-import qualified Data.Aeson.Extended                   as Aeson
 import qualified Data.ByteString                       as BS
 import qualified Data.ByteString.Lazy                  as LBS
 import qualified Data.Text.Extended                    as Text
@@ -58,16 +55,6 @@ data GetUpdates = GetUpdates
   , guPath :: Text
   , guHost :: Text
   }
-
-instance Aeson.FromJSON GetUpdates where
-  parseJSON = Aeson.withObject "App.Vk.GetUpdates" $ \o -> do
-    guKey    <- o .: "key"
-    guTs     <- o .: "ts"
-    guServer <- o .: "server"
-    let (guHost,guPath) = Text.span (/='/')
-                        $ fromMaybe guServer
-                        $ Text.stripPrefix "https://" guServer
-    return GetUpdates {..}
 
 instance MonadReader r m => ToRequest m r GetUpdates where
   toRequest GetUpdates {..} = return $ mkBody $ defaultRequest
