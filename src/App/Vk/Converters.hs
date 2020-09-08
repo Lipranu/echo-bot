@@ -2,6 +2,7 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE FlexibleContexts       #-}
 
 module App.Vk.Converters
   ( module App.Vk.Requests
@@ -10,6 +11,8 @@ module App.Vk.Converters
 
   , Convertible (..)
   , AttachmentsState (..)
+
+  , addAttachment
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -18,6 +21,7 @@ import App.Vk.Internal
 import App.Vk.Requests
 import App.Vk.Responses
 
+import Control.Monad.State ( MonadState, modify )
 import Data.Maybe                  ( fromMaybe )
 import Data.Text.Extended          ( Text )
 
@@ -57,3 +61,11 @@ instance Convertible Message (Int -> AttachmentsState -> SendMessage) where
           [] -> Nothing
           xs -> Just $ Text.intercalate "," $ reverse xs
      in SendMessage {..}
+
+-- FUNCTIONS ---------------------------------------------------------------
+
+addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
+              => a
+              -> m ()
+addAttachment x = modify $ \as ->
+  as { asAttachments = convert x : asAttachments as }

@@ -129,16 +129,6 @@ processNewMessage message = do
     Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
     RequestError error -> logWarning error
 
---convertMessage :: Int -> Message -> SendMessage
---convertMessage randomId Message {..} = SendMessage
---  { smPeerId      = mPeerId
---  , smMessage     = mText
---  , smRandomId    = randomId
---  , smLatitude    = mLatitude
---  , smLongitude   = mLongitude
---  , smAttachments = []
---  }
-
 processAttachments :: [Result Attachment] -> StateT AttachmentsState App ()
 processAttachments = traverse_ handle
   where handle (Result x) = lift (logDebug x) >> convertAttachment x
