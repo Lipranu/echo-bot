@@ -217,14 +217,32 @@ instance Aeson.FromJSON UploadServer where
 
 -- FileUploaded ------------------------------------------------------------
 
-newtype FileUploaded = FileUploaded Text
+data FileUploaded
+  = FileUploaded Text
+  | UploadError UploadErrorBody
 
 instance Aeson.FromJSON FileUploaded where
   parseJSON = Aeson.withObject "App.Vk.FileUploaded" $ \o ->
-    FileUploaded <$> o .: "file"
+        FileUploaded <$> o .: "file"
+    <|> UploadError  <$> (Aeson.parseJSON $ Aeson.Object o)
 
 instance Loggable FileUploaded where
   toLog _ = "Uploaded file placeholder"
+
+-- UploadErrorBody ---------------------------------------------------------
+
+data UploadErrorBody = UploadErrorBody
+  { uebError  :: Text
+  , uebBwact  :: Text
+  , uebServer :: Integer
+  , ueb_sig   :: Text
+  } deriving Generic
+
+instance Aeson.FromJSON UploadErrorBody where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable UploadErrorBody where
+  toLog _ = "uploaderrorbody placeholder"
 
 -- FileSaved ---------------------------------------------------------------
 

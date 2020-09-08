@@ -162,12 +162,12 @@ convertAttachment (Document (DocumentBody {..})) = do
     (Result r, Result (Success (UploadServer url))) -> do
         request <- lift $ requestAndDecode $ UploadFile r url dTitle
         case request of
-          Result x -> lift (logDebug x) >> saveFile x dTitle
+          Result f@(FileUploaded x) -> lift (logDebug f) >> saveFile x dTitle
           error -> lift $ logWarning error
     (Result r, error) -> lift $ logWarning error
 
-saveFile :: FileUploaded -> Text -> StateT SendMessage App ()
-saveFile (FileUploaded file) name = do
+saveFile :: Text -> Text -> StateT SendMessage App ()
+saveFile file name = do
   lift $ logDebug ("in save document" :: Text)
   result <- lift $ requestAndDecode $ SaveFile file name
   case result of
