@@ -62,6 +62,12 @@ instance Convertible Message (Int -> AttachmentsState -> SendMessage) where
           xs -> Just $ Text.intercalate "," $ reverse xs
      in SendMessage {..}
 
+instance Convertible FileSaved Text where
+  convert FileSaved {..} = fsType
+                        <> Text.showt fsOwnerId
+                        <> "_"
+                        <> Text.showt fsMediaId
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)

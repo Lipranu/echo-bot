@@ -162,13 +162,5 @@ saveFile file name = do
   lift $ logDebug ("in save document" :: Text)
   result <- lift $ requestAndDecode $ SaveFile file name
   case result of
-    Result (Success x) -> lift (logDebug x) >> convertFile x
+    Result (Success x) -> lift (logDebug x) >> addAttachment x
     error -> lift $ logWarning error
-
-convertFile :: FileSaved -> StateT AttachmentsState App ()
-convertFile FileSaved {..} =
-  modify $ \as -> as { asAttachments = conv : asAttachments as }
-  where conv = fsType
-               <> Text.showt fsOwnerId
-               <> "_"
-               <> Text.showt fsMediaId
