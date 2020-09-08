@@ -9,9 +9,6 @@ module App.Vk ( Config, mkApp, runApp ) where
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Vk.Converters
-import App.Vk.Internal
-import App.Vk.Requests
-import App.Vk.Responses
 
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester

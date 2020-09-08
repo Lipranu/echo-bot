@@ -3,10 +3,17 @@
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RecordWildCards        #-}
 
-module App.Vk.Converters ( Convertible (..) ) where
+module App.Vk.Converters
+  ( module App.Vk.Requests
+  , module App.Vk.Responses
+  , module App.Vk.Internal
+
+  , Convertible (..)
+  ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
+import App.Vk.Internal
 import App.Vk.Requests
 import App.Vk.Responses
 
