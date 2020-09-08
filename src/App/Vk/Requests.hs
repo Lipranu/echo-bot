@@ -50,22 +50,22 @@ instance Loggable GetLongPollServer where
 -- GetUpdates --------------------------------------------------------------
 
 data GetUpdates = GetUpdates
-  { guKey  :: Text
-  , guTs   :: Text
-  , guPath :: Text
-  , guHost :: Text
+  { guKey  :: BS.ByteString
+  , guTs   :: BS.ByteString
+  , guPath :: BS.ByteString
+  , guHost :: BS.ByteString
   }
 
 instance MonadReader r m => ToRequest m r GetUpdates where
   toRequest GetUpdates {..} = return $ mkBody $ defaultRequest
-    { HTTP.path = encodeUtf8 guPath
-    , HTTP.host = encodeUtf8 guHost
+    { HTTP.path = guPath
+    , HTTP.host = guHost
     }
     where mkBody = HTTP.urlEncodedBody
                  [ ("act" , "a_check")
-                 , ("key" , encodeUtf8 guKey)
+                 , ("key" , guKey)
                  , ("wait", "25")
-                 , ("ts"  , encodeUtf8 guTs)
+                 , ("ts"  , guTs)
                  , ("mode", "2")
                  ]
 

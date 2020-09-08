@@ -25,17 +25,16 @@ import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
 import Control.Monad.State         ( StateT, execStateT, modify, gets )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
-import Data.Text.Encoding.Extended ( decodeUtf8 )
+import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8, decodeUtf8 )
 import Data.Text.Extended          ( Text )
 import Data.Time                   ( getCurrentTime )
 import System.Random               ( randomIO )
-import Data.Maybe          ( fromMaybe )
+import Network.HTTP.Client         ( Manager, httpLbs )
 
-import qualified Data.Aeson.Extended          as Aeson
-import qualified Data.ByteString.Lazy         as LBS
-import qualified Data.Text.Extended           as Text
-import qualified Data.Text.IO                 as TextIO
-import qualified Network.HTTP.Client.Extended as HTTP
+import qualified Data.Aeson.Extended  as Aeson
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text.Extended   as Text
+import qualified Data.Text.IO         as TextIO
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -74,7 +73,7 @@ instance MonadTime App where
   getTime = liftIO getCurrentTime
 
 instance MonadRequester App where
-  requester manager req = liftIO $ try $ HTTP.httpLbs req manager
+  requester manager req = liftIO $ try $ httpLbs req manager
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -83,7 +82,7 @@ app = do
   logInfo ("Application getting started" :: Text)
   getLongPollServer
 
-mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
+mkApp :: Config -> Logger.Config -> Lock -> Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
   where logger = mkLogger cLogger "Vk"
 
@@ -95,19 +94,10 @@ getLongPollServer = do
   logInfo GetLongPollServer
   result <- requestAndDecode GetLongPollServer
   case result of
-    Result (Success gu) -> do
+    Result (Success lps) -> do
       logDebug result
-      getUpdates $ convertLongPollServer gu
+      getUpdates $ convert lps
     error -> logError error >> logError ("Application shut down" :: Text)
-
-convertLongPollServer :: LongPollServer -> GetUpdates
-convertLongPollServer LongPollServer {..} =
-  let guKey            = lpsKey
-      guTs             = lpsTs
-      (guHost, guPath) = Text.span (/='/')
-                       $ fromMaybe lpsServer
-                       $ Text.stripPrefix "https://" lpsServer
-   in GetUpdates {..}
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
@@ -117,10 +107,10 @@ getUpdates gu = do
     Result (Updates upd ts) -> do
       logDebug result
       processUpdates $ parse <$> upd
-      getUpdates gu { guTs = ts }
+      getUpdates gu { guTs = encodeUtf8 ts }
     Result (OutOfDate ts) -> do
       logWarning result
-      getUpdates gu { guTs = Text.showt ts }
+      getUpdates gu { guTs = encodeShowUtf8 ts }
     Result v -> logWarning v >> getLongPollServer
     error -> logError error >> logError ("Application shut down" :: Text)
 
