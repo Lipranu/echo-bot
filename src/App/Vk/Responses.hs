@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE FlexibleInstances   #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -182,15 +183,17 @@ instance Loggable Message where
 -- Attachment --------------------------------------------------------------
 
 data Attachment
-  = Attachment Text AttachmentBody
+  = Attachment AttachmentBody
   | Document DocumentBody
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
     aType      <- o .: "type"
     case aType of
-      "doc" -> Document         <$> (o .: aType >>= Aeson.parseJSON)
-      _     -> Attachment aType <$> (o .: aType >>= Aeson.parseJSON)
+      "doc" -> Document <$> (o .: aType >>= Aeson.parseJSON)
+      _     -> do
+        body <- o .: aType >>= Aeson.parseJSON
+        return $ Attachment $ body aType
 
 instance Loggable Attachment where
   toLog _ = "PlaceHolder"--"Proccessing attachment:\n\
@@ -207,10 +210,15 @@ data AttachmentBody = AttachmentBody
   { aId        :: Integer
   , aOwnerId   :: Integer
   , aAccessKey :: Maybe Text
+  , aType      :: Text
   } deriving Generic
 
-instance Aeson.FromJSON AttachmentBody where
-  parseJSON = Aeson.parseJsonDrop
+instance Aeson.FromJSON (Text -> AttachmentBody) where
+  parseJSON = Aeson.withObject "App.Vk.Responses.AttachmenBody"
+    $ \o -> AttachmentBody
+    <$> o .:  "id"
+    <*> o .:  "owner_id"
+    <*> o .:? "aaccess_key"
 
 -- AttachmentBody ----------------------------------------------------------
 

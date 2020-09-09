@@ -29,7 +29,7 @@ import qualified Data.Text.Extended as Text
 
 -- CLASSES -----------------------------------------------------------------
 
-class Convertible a b | b -> a, a -> b where
+class Convertible a b | a -> b where
   convert :: a -> b
 
 -- TYPES AND INSTANCES -----------------------------------------------------
@@ -67,6 +67,15 @@ instance Convertible FileSaved Text where
                         <> Text.showt fsOwnerId
                         <> "_"
                         <> Text.showt fsMediaId
+
+instance Convertible AttachmentBody Text where
+  convert AttachmentBody {..} = aType
+                             <> Text.showt aOwnerId
+                             <> "_"
+                             <> Text.showt aId
+                             <> case aAccessKey of
+                                  Just v -> "_" <> v
+                                  Nothing -> mempty
 
 -- FUNCTIONS ---------------------------------------------------------------
 
