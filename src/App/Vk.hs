@@ -3,6 +3,8 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TypeApplications           #-}
+{-# LANGUAGE DataKinds           #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
@@ -19,7 +21,7 @@ import qualified Infrastructure.Logger as Logger
 import Control.Exception           ( try )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
-import Control.Monad.State         ( StateT, execStateT, modify, gets )
+import Control.Monad.State         ( StateT, execStateT, gets )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
 import Data.Text.Encoding.Extended ( decodeUtf8 )
@@ -76,7 +78,7 @@ instance MonadRequester App where
 
 app :: App ()
 app = do
-  logInfo ("Application getting started" :: Text)
+  logInfo start
   getLongPollServer
 
 mkApp :: Config -> Logger.Config -> Lock -> Manager -> Env
@@ -89,31 +91,40 @@ runApp = runReaderT (unApp app)
 getLongPollServer :: App ()
 getLongPollServer = do
   logInfo GetLongPollServer
-  result <- requestAndDecode GetLongPollServer
-  case result of
-    Result (Success lps) -> do
-      logDebug result
-      getUpdates $ convert lps
-    error -> logError error >> logError ("Application shut down" :: Text)
+  requestAndDecode GetLongPollServer >>= handle
+  where handle :: Result (Response LongPollServer) -> App ()
+        handle result@(Result (Success lps)) = do
+          logDebug result
+          logDebug lps
+          getUpdates $ convert lps
+        handle error = logError error >> logError shutdown
 
 getUpdates :: GetUpdates -> App ()
 getUpdates gu = do
-  logDebug gu
-  result <- requestAndDecode gu
-  case result of
-    Result (Updates upd ts) -> do
-      logDebug result
-      processUpdates $ parse <$> upd
-      getUpdates gu { guTs = ts }
-    Result (OutOfDate ts) -> do
-      logWarning result
-      getUpdates gu { guTs = Text.showt ts }
-    Result v -> logWarning v >> getLongPollServer
-    error -> logError error >> logError ("Application shut down" :: Text)
+  logInfo gu
+  requestAndDecode gu >>= handle
+  where handle :: Result Updates -> App ()
+        handle r@(Result u@(Updates upd ts)) = do
+          logDebug r
+          logDebug u
+          processUpdates $ parse <$> upd
+          getUpdates gu { guTs = ts }
+        handle r@(Result u@(OutOfDate ts)) = do
+          logDebug r
+          logWarning u
+          getUpdates gu { guTs = Text.showt ts }
+        handle r@(Result v) = do
+          logDebug r
+          logWarning v
+          getLongPollServer
+        handle error = do
+          logError error
+          logError shutdown
 
 processUpdates :: [Result Update] -> App ()
 processUpdates = traverse_ handle
-  where handle (Result (NewMessage m)) = do
+  where handle r@(Result (NewMessage m)) = do
+          logDebug r
           logDebug m
           processNewMessage m
         handle error = logWarning error
@@ -124,10 +135,10 @@ processNewMessage message = do
   let attach = parse <$> mAttachments message
       sendm  = convert message randomId
       state  = AttachmentsState [] Nothing $ mPeerId message
-  result   <- request . sendm =<< execStateT (processAttachments attach) state
-  case result of
-    Result v -> logDebug $ decodeUtf8 $ LBS.toStrict v
-    RequestError error -> logWarning error
+  handle =<< request . sendm =<< execStateT (processAttachments attach) state
+  where handle :: Result LBS.ByteString -> App ()
+        handle (Result v) = logDebug $ decodeUtf8 $ LBS.toStrict v
+        handle (RequestError error) = logWarning error
 
 processAttachments :: [Result Attachment] -> StateT AttachmentsState App ()
 processAttachments = traverse_ handle
@@ -135,16 +146,7 @@ processAttachments = traverse_ handle
         handle error      = lift $ logWarning error
 
 convertAttachment :: Attachment -> StateT AttachmentsState App ()
-convertAttachment (Attachment aType body) =
-  modify $ \as -> as { asAttachments = func body : asAttachments as }
-  where func AttachmentBody {..}
-          =  aType
-          <> Text.showt aOwnerId
-          <> "_"
-          <> Text.showt aId
-          <> case aAccessKey of
-          Just v -> "_" <> v
-          Nothing -> mempty
+convertAttachment (Attachment body) = addAttachment body
 convertAttachment (Document DocumentBody {..}) = do
   peerId <- gets asPeerId
   file <- lift $ request $ GetFile dUrl
@@ -160,7 +162,15 @@ convertAttachment (Document DocumentBody {..}) = do
 saveFile :: Text -> Text -> StateT AttachmentsState App ()
 saveFile file name = do
   lift $ logDebug ("in save document" :: Text)
-  result <- lift $ requestAndDecode $ SaveFile file name
-  case result of
-    Result (Success x) -> lift (logDebug x) >> addAttachment x
-    error -> lift $ logWarning error
+  lift (requestAndDecode $ SaveFile file name) >>= handle
+  where handle :: Result (Response FileSaved)
+               -> StateT AttachmentsState App ()
+        handle r@(Result (Success x)) = do
+          lift $ logDebug r
+          lift $ logDebug x
+          addAttachment x
+        handle error = lift $ logWarning error
+
+start, shutdown :: Text
+start    = "Application getting started"
+shutdown = "Application shut down"
