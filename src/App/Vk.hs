@@ -93,8 +93,7 @@ getLongPollServer = do
   logInfo GetLongPollServer
   requestAndDecode GetLongPollServer >>= handle
   where handle :: Result (Response LongPollServer) -> App ()
-        handle result@(Result (Success lps)) = do
-          logDebug result
+        handle (Result (Success lps)) = do
           logDebug lps
           getUpdates $ convert lps
         handle error = logError error >> logError shutdown
@@ -104,27 +103,20 @@ getUpdates gu = do
   logInfo gu
   requestAndDecode gu >>= handle
   where handle :: Result Updates -> App ()
-        handle r@(Result u@(Updates upd ts)) = do
-          logDebug r
-          logDebug u
+        handle (Result u) = logDebug u >> route u
+        handle error      = logError error >> logError shutdown
+
+        route :: Updates -> App ()
+        route (Updates upd ts) = do
           processUpdates $ parse <$> upd
           getUpdates gu { guTs = ts }
-        handle r@(Result u@(OutOfDate ts)) = do
-          logDebug r
-          logWarning u
-          getUpdates gu { guTs = Text.showt ts }
-        handle r@(Result v) = do
-          logDebug r
-          logWarning v
-          getLongPollServer
-        handle error = do
-          logError error
-          logError shutdown
+        route (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
+        route rest           = getLongPollServer
 
 processUpdates :: [Result Update] -> App ()
 processUpdates = traverse_ handle
-  where handle r@(Result (NewMessage m)) = do
-          logDebug r
+  where handle :: Result Update -> App ()
+        handle (Result (NewMessage m)) = do
           logDebug m
           processNewMessage m
         handle error = logWarning error
@@ -133,42 +125,69 @@ processNewMessage :: Message -> App ()
 processNewMessage message = do
   randomId <- liftIO randomIO :: App Int
   let attach = parse <$> mAttachments message
-      sendm  = convert message randomId
       state  = AttachmentsState [] Nothing $ mPeerId message
-  handle =<< request . sendm =<< execStateT (processAttachments attach) state
+  result <- execStateT (processAttachments attach) state
+  let sendm  = convert message randomId result
+  logInfo sendm
+  handle =<< request sendm
   where handle :: Result LBS.ByteString -> App ()
         handle (Result v) = logDebug $ decodeUtf8 $ LBS.toStrict v
         handle (RequestError error) = logWarning error
 
 processAttachments :: [Result Attachment] -> StateT AttachmentsState App ()
 processAttachments = traverse_ handle
-  where handle (Result x) = lift (logDebug x) >> convertAttachment x
-        handle error      = lift $ logWarning error
+  where handle :: Result Attachment -> StateT AttachmentsState App ()
+        handle (Result r) = lift (logDebug r) >> route r
+        handle error = lift $ logWarning error
 
-convertAttachment :: Attachment -> StateT AttachmentsState App ()
-convertAttachment (Attachment body) = addAttachment body
-convertAttachment (Document DocumentBody {..}) = do
-  peerId <- gets asPeerId
-  file <- lift $ request $ GetFile dUrl
-  uploadServer <- lift $ requestAndDecode $ GetUploadServer "doc" peerId
-  case (file, uploadServer) of
-    (Result r, Result (Success (UploadServer url))) -> do
-        request <- lift $ requestAndDecode $ UploadFile r url dTitle
-        case request of
-          Result f@(FileUploaded x) -> lift (logDebug f) >> saveFile x dTitle
-          error -> lift $ logWarning error
-    (Result r, error) -> lift $ logWarning error
+        route :: Attachment -> StateT AttachmentsState App ()
+        route (Attachment body) = do
+          lift $ logDebug body
+          addAttachment body
+        route (Document   body) = do
+          lift $ logDebug body
+          processDocument body
 
-saveFile :: Text -> Text -> StateT AttachmentsState App ()
-saveFile file name = do
-  lift $ logDebug ("in save document" :: Text)
-  lift (requestAndDecode $ SaveFile file name) >>= handle
+processDocument :: DocumentBody -> StateT AttachmentsState App ()
+processDocument DocumentBody {..} = do
+  peerId       <- gets asPeerId
+  let gf  = GetFile dUrl
+      gus = GetUploadServer "doc" peerId
+  lift $ logInfo gf
+  file         <- lift $ request gf
+  lift $ logInfo gus
+  uploadServer <- lift $ requestAndDecode gus
+  handle file uploadServer
+  where handle :: Result LBS.ByteString
+               -> Result (Response UploadServer)
+               -> StateT AttachmentsState App ()
+        handle (Result file) (Result (Success us@(UploadServer url))) = do
+          lift $ logDebug us
+          uploadDocument $ UploadFile file url dTitle
+        handle (Result _) error = lift $ logWarning error
+        handle (RequestError error) (Result (Success _)) =
+          lift $ logWarning error
+        handle (RequestError error1) error2 = do
+          lift $ logWarning error1
+          lift $ logWarning error2
+
+uploadDocument :: UploadFile -> StateT AttachmentsState App ()
+uploadDocument uf@UploadFile {..} = do
+  lift $ logInfo uf
+  lift (requestAndDecode uf) >>= handle
+  where handle :: Result FileUploaded -> StateT AttachmentsState App ()
+        handle (Result f@(FileUploaded file)) = do
+          lift $ logDebug f
+          saveFile $ SaveFile file ufTitle
+        handle error = lift $ logWarning error
+
+saveFile :: SaveFile -> StateT AttachmentsState App ()
+saveFile sf = do
+  lift $ logInfo sf
+  lift (requestAndDecode sf) >>= handle
   where handle :: Result (Response FileSaved)
                -> StateT AttachmentsState App ()
-        handle r@(Result (Success x)) = do
-          lift $ logDebug r
-          lift $ logDebug x
-          addAttachment x
+        handle (Result (Success x)) = lift (logDebug x) >> addAttachment x
         handle error = lift $ logWarning error
 
 start, shutdown :: Text
