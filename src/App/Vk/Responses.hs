@@ -196,7 +196,7 @@ instance Aeson.FromJSON Attachment where
         return $ Attachment $ body aType
 
 instance Loggable Attachment where
-  toLog _ = "PlaceHolder"--"Proccessing attachment:\n\
+  toLog _ = "attachment PlaceHolder"--"Proccessing attachment:\n\
 --    \ | Type: "     <> aType               <> "\n\
 --    \ | Media Id: " <> Text.showt aMediaId <> "\n\
 --    \ | Owner Id: " <> Text.showt aOwnerId <> key
@@ -220,7 +220,10 @@ instance Aeson.FromJSON (Text -> AttachmentBody) where
     <*> o .:  "owner_id"
     <*> o .:? "aaccess_key"
 
--- AttachmentBody ----------------------------------------------------------
+instance Loggable AttachmentBody where
+  toLog _ = "attachmentbody placeholder"
+
+-- DocumentBody ------------------------------------------------------------
 
 data DocumentBody = DocumentBody
   { dUrl    :: Text
@@ -230,6 +233,9 @@ data DocumentBody = DocumentBody
 instance Aeson.FromJSON DocumentBody where
   parseJSON = Aeson.parseJsonDrop
 
+instance Loggable DocumentBody where
+  toLog _ = "documentbody placeholder"
+
 -- UploadServer ------------------------------------------------------------
 
 newtype UploadServer = UploadServer Text
@@ -237,6 +243,9 @@ newtype UploadServer = UploadServer Text
 instance Aeson.FromJSON UploadServer where
   parseJSON = Aeson.withObject "App.Vk.UploadServer" $ \o ->
     UploadServer <$> o .: "upload_url"
+
+instance Loggable UploadServer where
+  toLog _ = "uploadserver placeholder"
 
 -- FileUploaded ------------------------------------------------------------
 

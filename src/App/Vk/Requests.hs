@@ -101,12 +101,18 @@ instance VkReader r m => ToRequest m r SendMessage where
                        , ("long"      , encodeShowUtf8 <$> smLongitude)
                        ]
 
+instance Loggable SendMessage where
+  toLog _ = "sendmessage placeholder"
+
 -- GetFile -----------------------------------------------------------------
 
 newtype GetFile = GetFile Text
 
 instance MonadReader r m => ToRequest m r GetFile where
   toRequest (GetFile url) = return $ HTTP.parseRequest_ $ Text.unpack url
+
+instance Loggable GetFile where
+  toLog _ = "getfile placeholder"
 
 -- GetUploadServer ---------------------------------------------------------
 
@@ -127,20 +133,26 @@ instance VkReader r m => ToRequest m r GetUploadServer where
                  , ("peer_id", encodeShowUtf8 gusPeerId)
                  ]
 
+instance Loggable GetUploadServer where
+  toLog _ = "getUploadserver placeholder"
+
 -- UploadFile ----------------------------------------------------------
 
 data UploadFile = UploadFile
-  { udFile     :: LBS.ByteString
-  , udUrl      :: Text
-  , udFileName :: Text
+  { ufFile     :: LBS.ByteString
+  , ufUrl      :: Text
+  , ufTitle :: Text
   }
 
 instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
   toRequest UploadFile {..} =
-    let req   = HTTP.parseRequest_ $ Text.unpack udUrl
-        part  = MP.partLBS "file" udFile
-        partm = part { MP.partFilename = Just $ Text.unpack udFileName }
+    let req   = HTTP.parseRequest_ $ Text.unpack ufUrl
+        part  = MP.partLBS "file" ufFile
+        partm = part { MP.partFilename = Just $ Text.unpack ufTitle }
      in liftIO $ MP.formDataBody [partm] req
+
+instance Loggable UploadFile where
+  toLog _ = "uploadfile placeholder"
 
 -- SaveFile ----------------------------------------------------------------
 
@@ -157,6 +169,9 @@ instance VkReader r m => ToRequest m r SaveFile where
     where body = [ ("file" , encodeUtf8 sfFile)
                  , ("title", encodeUtf8 sfTitle)
                  ]
+
+instance Loggable SaveFile where
+  toLog _ = "savefile placeholder"
 
 -- FUNCTIONS ---------------------------------------------------------------
 
