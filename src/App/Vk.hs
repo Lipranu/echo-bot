@@ -19,7 +19,7 @@ import qualified Infrastructure.Logger as Logger
 import Control.Exception           ( try )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
-import Control.Monad.State         ( StateT, execStateT, gets )
+import Control.Monad.State         ( StateT, execStateT )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
 import Data.Text.Encoding.Extended ( decodeUtf8 )
@@ -123,8 +123,7 @@ processNewMessage :: Message -> App ()
 processNewMessage message = do
   randomId <- liftIO randomIO :: App Int
   let attach = parse <$> mAttachments message
-      state  = AttachmentsState [] Nothing $ mPeerId message
-  result <- execStateT (processAttachments attach) state
+  result <- execStateT (processAttachments attach) $ mkState message
   let sendm  = convert message randomId result
   logInfo sendm
   handle =<< request sendm
@@ -147,21 +146,19 @@ processAttachments = traverse_ handle
           processDocument body
 
 processDocument :: DocumentBody -> StateT AttachmentsState App ()
-processDocument db@DocumentBody {..} = do
-  peerId       <- gets asPeerId
-  let gf  = GetFile dUrl
-      gus = GetUploadServer "doc" peerId
-  lift $ logInfo gf
-  file         <- lift $ request gf
-  lift $ logInfo gus
-  uploadServer <- lift $ requestAndDecode gus
+processDocument doc = do
+  (gFile, gUploadServer) <- mkUploadRequests doc
+  lift $ logInfo gFile
+  file <- lift $ request gFile
+  lift $ logInfo gUploadServer
+  uploadServer <- lift $ requestAndDecode gUploadServer
   handle file uploadServer
   where handle :: Result LBS.ByteString
                -> Result (Response UploadServer)
                -> StateT AttachmentsState App ()
         handle (Result file) (Result (Success us)) = do
           lift $ logDebug us
-          uploadDocument $ convert us file db
+          uploadDocument $ convert us file doc
         handle (Result _) error = lift $ logWarning error
         handle (RequestError error) (Result (Success _)) =
           lift $ logWarning error
@@ -170,13 +167,13 @@ processDocument db@DocumentBody {..} = do
           lift $ logWarning error2
 
 uploadDocument :: UploadFile -> StateT AttachmentsState App ()
-uploadDocument uf = do
-  lift $ logInfo uf
-  lift (requestAndDecode uf) >>= handle
+uploadDocument uFile = do
+  lift $ logInfo uFile
+  lift (requestAndDecode uFile) >>= handle
   where handle :: Result FileUploaded -> StateT AttachmentsState App ()
-        handle (Result f@(FileUploaded file)) = do
-          lift $ logDebug f
-          saveFile $ convert uf file
+        handle (Result result@(FileUploaded file)) = do
+          lift $ logDebug result
+          saveFile $ convert uFile file
         handle error = lift $ logWarning error
 
 saveFile :: SaveFile -> StateT AttachmentsState App ()

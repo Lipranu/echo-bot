@@ -13,6 +13,8 @@ module App.Vk.Converters
   , AttachmentsState (..)
 
   , addAttachment
+  , mkState
+  , mkUploadRequests
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -21,7 +23,7 @@ import App.Vk.Internal
 import App.Vk.Requests
 import App.Vk.Responses
 
-import Control.Monad.State ( MonadState, modify )
+import Control.Monad.State ( MonadState, modify, gets )
 import Data.Maybe          ( fromMaybe )
 import Data.Text.Extended  ( Text )
 
@@ -64,18 +66,12 @@ instance Convertible Message (Int -> AttachmentsState -> SendMessage) where
      in SendMessage {..}
 
 instance Convertible FileSaved Text where
-  convert FileSaved {..} = fsType
-                        <> Text.showt fsOwnerId
-                        <> "_"
-                        <> Text.showt fsMediaId
+  convert FileSaved {..} = toAttachment fsType fsOwnerId fsMediaId
 
 instance Convertible AttachmentBody Text where
-  convert AttachmentBody {..} = aType
-                             <> Text.showt aOwnerId
-                             <> "_"
-                             <> Text.showt aId
+  convert AttachmentBody {..} = toAttachment aType aOwnerId aId
                              <> case aAccessKey of
-                                  Just v -> "_" <> v
+                                  Just v  -> "_" <> v
                                   Nothing -> mempty
 
 instance Convertible UploadServer
@@ -93,6 +89,23 @@ instance Convertible UploadFile (Text -> SaveFile) where
      in SaveFile {..}
 
 -- FUNCTIONS ---------------------------------------------------------------
+
+toAttachment :: Text -> Integer -> Integer -> Text
+toAttachment t oid mid = t <> Text.showt oid <> "_" <> Text.showt mid
+
+mkState :: Message -> AttachmentsState
+mkState Message {..} =
+  let asPeerId      = mPeerId
+      asAttachments = []
+      asSticker     = Nothing
+   in AttachmentsState {..}
+
+mkUploadRequests :: MonadState AttachmentsState m
+                 => DocumentBody
+                 -> m (GetFile, GetUploadServer)
+mkUploadRequests DocumentBody {..} = do
+  id <- gets asPeerId
+  return (GetFile dUrl, GetUploadServer "doc" id)
 
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
               => a
