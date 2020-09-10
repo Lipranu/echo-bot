@@ -141,6 +141,9 @@ processAttachments = traverse_ handle
         route (Attachment body) = do
           lift $ logDebug body
           addAttachment body
+        route (Wall body) = do
+          lift $ logDebug body
+          addAttachment body
         route (Document   body) = do
           lift $ logDebug body
           processDocument body

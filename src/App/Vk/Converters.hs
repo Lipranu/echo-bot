@@ -49,18 +49,27 @@ data AttachmentsState = AttachmentsState
   }
 
 instance Convertible FileSaved Text where
-  convert FileSaved {..} = toAttachment fsType fsOwnerId fsMediaId
+  convert FileSaved {..}
+    = toAttachment fsType fsOwnerId fsMediaId
 
 instance Convertible AttachmentBody Text where
-  convert AttachmentBody {..} = toAttachment aType aOwnerId aId
-                             <> case aAccessKey of
-                                  Just v  -> "_" <> v
-                                  Nothing -> mempty
+  convert AttachmentBody {..}
+    = toAttachmentWithKey aType aOwnerId aId aAccessKey
+
+instance Convertible WallBody Text where
+  convert WallBody {..}
+    = toAttachmentWithKey wType wToId wId wAccessKey
 
 -- FUNCTIONS ---------------------------------------------------------------
 
 toAttachment :: Text -> Integer -> Integer -> Text
 toAttachment t oid mid = t <> Text.showt oid <> "_" <> Text.showt mid
+
+toAttachmentWithKey :: Text -> Integer -> Integer -> Maybe Text -> Text
+toAttachmentWithKey t oid mid key = (toAttachment t oid mid) <>
+  case key of
+    Just v  -> "_" <> v
+    Nothing -> ""
 
 mkGetUpdates :: LongPollServer -> GetUpdates
 mkGetUpdates LongPollServer {..} =

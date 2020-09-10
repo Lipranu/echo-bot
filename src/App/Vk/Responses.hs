@@ -6,6 +6,7 @@
 module App.Vk.Responses
   ( Attachment (..)
   , AttachmentBody (..)
+  , WallBody (..)
   , DocumentBody (..)
   , FileSaved (..)
   , FileUploaded (..)
@@ -186,6 +187,7 @@ data Attachment
   = Attachment AttachmentBody
   | Document DocumentBody
   | Sticker Integer
+  | Wall WallBody
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
@@ -193,7 +195,10 @@ instance Aeson.FromJSON Attachment where
     case aType of
       "doc"     -> Document <$> (o .: aType >>= Aeson.parseJSON)
       "sticker" -> Sticker  <$> (o .: aType >>= (.: "sticker_id"))
-      _     -> do
+      "wall"    -> do
+        body <- o .: aType >>= Aeson.parseJSON
+        return $ Wall $ body aType
+      _         -> do
         body <- o .: aType >>= Aeson.parseJSON
         return $ Attachment $ body aType
 
@@ -201,6 +206,7 @@ instance Loggable Attachment where
   toLog (Attachment _) = "Processing attachment of type: Attachment"
   toLog (Document   _) = "Processing attachment of type: Document"
   toLog (Sticker    _) = "Processing attachment of type: Sticker"
+  toLog (Wall       _) = "Processing attachment of type: Wall"
 
 -- AttachmentBody ----------------------------------------------------------
 
@@ -224,6 +230,29 @@ instance Loggable AttachmentBody where
     \ | Owner id: " <> Text.showt aOwnerId <> "\n\
     \ | Media id: " <> Text.showt aId      <>
     maybeLoggable "Access Key" aAccessKey
+
+-- WallBody ----------------------------------------------------------------
+
+data WallBody = WallBody
+  { wId        :: Integer
+  , wToId   :: Integer
+  , wAccessKey :: Maybe Text
+  , wType      :: Text
+  } deriving Generic
+
+instance Aeson.FromJSON (Text -> WallBody) where
+  parseJSON = Aeson.withObject "App.Vk.Responses.WallBody"
+    $ \o -> WallBody
+    <$> o .:  "id"
+    <*> o .:  "to_id"
+    <*> o .:? "access_key"
+
+instance Loggable WallBody where
+  toLog WallBody {..} = "Processing WallBody:\n\
+    \ | Type: "     <> wType               <> "\n\
+    \ | To id: "    <> Text.showt wToId    <> "\n\
+    \ | Media id: " <> Text.showt wId      <>
+    maybeLoggable "Access Key" wAccessKey
 
 -- DocumentBody ------------------------------------------------------------
 
