@@ -27,7 +27,6 @@ import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
 
 import qualified Data.ByteString                       as BS
-import qualified Data.ByteString.Lazy                  as LBS
 import qualified Data.Text.Extended                    as Text
 import qualified Network.HTTP.Client                   as HTTP
 import qualified Network.HTTP.Client.MultipartFormData as MP
@@ -145,7 +144,7 @@ instance Loggable GetUploadServer where
 -- UploadFile ----------------------------------------------------------
 
 data UploadFile = UploadFile
-  { ufFile  :: LBS.ByteString
+  { ufFile  :: BS.ByteString
   , ufUrl   :: Text
   , ufTitle :: Text
   }
@@ -153,7 +152,7 @@ data UploadFile = UploadFile
 instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
   toRequest UploadFile {..} =
     let request = HTTP.parseRequest_ $ Text.unpack ufUrl
-        part    = MP.partLBS "file" ufFile
+        part    = MP.partBS "file" ufFile
      in liftIO $ MP.formDataBody
         [part { MP.partFilename = Just $ Text.unpack ufTitle }]
         request

@@ -147,7 +147,7 @@ processAttachments = traverse_ handle
           processDocument body
 
 processDocument :: DocumentBody -> StateT AttachmentsState App ()
-processDocument DocumentBody {..} = do
+processDocument db@DocumentBody {..} = do
   peerId       <- gets asPeerId
   let gf  = GetFile dUrl
       gus = GetUploadServer "doc" peerId
@@ -159,9 +159,9 @@ processDocument DocumentBody {..} = do
   where handle :: Result LBS.ByteString
                -> Result (Response UploadServer)
                -> StateT AttachmentsState App ()
-        handle (Result file) (Result (Success us@(UploadServer url))) = do
+        handle (Result file) (Result (Success us)) = do
           lift $ logDebug us
-          uploadDocument $ UploadFile file url dTitle
+          uploadDocument $ convert us file db
         handle (Result _) error = lift $ logWarning error
         handle (RequestError error) (Result (Success _)) =
           lift $ logWarning error

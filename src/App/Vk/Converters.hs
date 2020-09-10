@@ -22,10 +22,11 @@ import App.Vk.Requests
 import App.Vk.Responses
 
 import Control.Monad.State ( MonadState, modify )
-import Data.Maybe                  ( fromMaybe )
-import Data.Text.Extended          ( Text )
+import Data.Maybe          ( fromMaybe )
+import Data.Text.Extended  ( Text )
 
-import qualified Data.Text.Extended as Text
+import qualified Data.Text.Extended   as Text
+import qualified Data.ByteString.Lazy as LBS
 
 -- CLASSES -----------------------------------------------------------------
 
@@ -76,6 +77,14 @@ instance Convertible AttachmentBody Text where
                              <> case aAccessKey of
                                   Just v -> "_" <> v
                                   Nothing -> mempty
+
+instance Convertible UploadServer
+  (LBS.ByteString -> DocumentBody -> UploadFile) where
+  convert (UploadServer url) file DocumentBody {..} =
+    let ufFile  = LBS.toStrict file
+        ufUrl   = url
+        ufTitle = dTitle
+     in UploadFile {..}
 
 instance Convertible UploadFile (Text -> SaveFile) where
   convert UploadFile {..} file =
