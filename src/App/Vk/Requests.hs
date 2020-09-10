@@ -85,6 +85,7 @@ data SendMessage = SendMessage
   , smLatitude    :: Maybe Double
   , smLongitude   :: Maybe Double
   , smAttachments :: Maybe Text
+  , smSticker     :: Maybe Integer
   }
 
 instance VkReader r m => ToRequest m r SendMessage where
@@ -98,6 +99,7 @@ instance VkReader r m => ToRequest m r SendMessage where
                     , ("message"   , encodeUtf8     <$> smMessage)
                     , ("lat"       , encodeShowUtf8 <$> smLatitude)
                     , ("long"      , encodeShowUtf8 <$> smLongitude)
+                    , ("sticker_id", encodeShowUtf8 <$> smSticker)
                     ]
           request = defaultRequest
                     { HTTP.method = "POST"

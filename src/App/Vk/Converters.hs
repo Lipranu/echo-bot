@@ -13,8 +13,13 @@ module App.Vk.Converters
   , AttachmentsState (..)
 
   , addAttachment
+  , addSticker
   , mkState
+  , mkSaveFile
+  , mkUploadFile
   , mkUploadRequests
+  , mkSendMessage
+  , mkGetUpdates
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -37,33 +42,11 @@ class Convertible a b | a -> b where
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
-instance Convertible LongPollServer GetUpdates where
-  convert LongPollServer {..} =
-    let guKey            = lpsKey
-        guTs             = lpsTs
-        (guHost, guPath) = Text.span (/='/')
-                         $ fromMaybe lpsServer
-                         $ Text.stripPrefix "https://" lpsServer
-     in GetUpdates {..}
-
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
   , asSticker     :: Maybe Integer
   , asPeerId      :: Integer
   }
-
-instance Convertible Message (Int -> AttachmentsState -> SendMessage) where
-  convert Message {..} randomId AttachmentsState {..} =
-    let smPeerId      = mPeerId
-        smRandomId    = randomId
-        smMessage     = mMessage
-        smLatitude    = mLatitude
-        smLongitude   = mLongitude
-        smSticker     = asSticker
-        smAttachments = case asAttachments of
-          [] -> Nothing
-          xs -> Just $ Text.intercalate "," $ reverse xs
-     in SendMessage {..}
 
 instance Convertible FileSaved Text where
   convert FileSaved {..} = toAttachment fsType fsOwnerId fsMediaId
@@ -74,24 +57,19 @@ instance Convertible AttachmentBody Text where
                                   Just v  -> "_" <> v
                                   Nothing -> mempty
 
-instance Convertible UploadServer
-  (LBS.ByteString -> DocumentBody -> UploadFile) where
-  convert (UploadServer url) file DocumentBody {..} =
-    let ufFile  = LBS.toStrict file
-        ufUrl   = url
-        ufTitle = dTitle
-     in UploadFile {..}
-
-instance Convertible UploadFile (Text -> SaveFile) where
-  convert UploadFile {..} file =
-    let sfFile  = file
-        sfTitle = ufTitle
-     in SaveFile {..}
-
 -- FUNCTIONS ---------------------------------------------------------------
 
 toAttachment :: Text -> Integer -> Integer -> Text
 toAttachment t oid mid = t <> Text.showt oid <> "_" <> Text.showt mid
+
+mkGetUpdates :: LongPollServer -> GetUpdates
+mkGetUpdates LongPollServer {..} =
+  let guKey            = lpsKey
+      guTs             = lpsTs
+      (guHost, guPath) = Text.span (/='/')
+                       $ fromMaybe lpsServer
+                       $ Text.stripPrefix "https://" lpsServer
+   in GetUpdates {..}
 
 mkState :: Message -> AttachmentsState
 mkState Message {..} =
@@ -100,6 +78,26 @@ mkState Message {..} =
       asSticker     = Nothing
    in AttachmentsState {..}
 
+mkSendMessage :: Message -> AttachmentsState -> Int -> SendMessage
+mkSendMessage Message {..} AttachmentsState {..} randomId =
+  let smPeerId      = mPeerId
+      smRandomId    = randomId
+      smMessage     = mMessage
+      smLatitude    = mLatitude
+      smLongitude   = mLongitude
+      smSticker     = asSticker
+      smAttachments = case asAttachments of
+        [] -> Nothing
+        xs -> Just $ Text.intercalate "," $ reverse xs
+   in SendMessage {..}
+
+mkUploadFile :: UploadServer -> LBS.ByteString -> DocumentBody -> UploadFile
+mkUploadFile (UploadServer url) file DocumentBody {..} =
+  let ufFile  = LBS.toStrict file
+      ufUrl   = url
+      ufTitle = dTitle
+   in UploadFile {..}
+
 mkUploadRequests :: MonadState AttachmentsState m
                  => DocumentBody
                  -> m (GetFile, GetUploadServer)
@@ -107,8 +105,17 @@ mkUploadRequests DocumentBody {..} = do
   id <- gets asPeerId
   return (GetFile dUrl, GetUploadServer "doc" id)
 
+mkSaveFile :: UploadFile -> Text -> SaveFile
+mkSaveFile UploadFile {..} file =
+  let sfFile  = file
+      sfTitle = ufTitle
+   in SaveFile {..}
+
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
               => a
               -> m ()
 addAttachment x = modify $ \as ->
   as { asAttachments = convert x : asAttachments as }
+
+addSticker :: MonadState AttachmentsState m => Integer -> m ()
+addSticker id = modify $ \as -> as { asSticker = Just id }

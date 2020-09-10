@@ -185,12 +185,14 @@ instance Loggable Message where
 data Attachment
   = Attachment AttachmentBody
   | Document DocumentBody
+  | Sticker Integer
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject "App.Vk.Attachment" $ \o -> do
     aType      <- o .: "type"
     case aType of
-      "doc" -> Document <$> (o .: aType >>= Aeson.parseJSON)
+      "doc"     -> Document <$> (o .: aType >>= Aeson.parseJSON)
+      "sticker" -> Sticker  <$> (o .: aType >>= (.: "sticker_id"))
       _     -> do
         body <- o .: aType >>= Aeson.parseJSON
         return $ Attachment $ body aType
@@ -198,6 +200,7 @@ instance Aeson.FromJSON Attachment where
 instance Loggable Attachment where
   toLog (Attachment _) = "Processing attachment of type: Attachment"
   toLog (Document   _) = "Processing attachment of type: Document"
+  toLog (Sticker    _) = "Processing attachment of type: Sticker"
 
 -- AttachmentBody ----------------------------------------------------------
 

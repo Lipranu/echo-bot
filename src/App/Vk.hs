@@ -93,7 +93,7 @@ getLongPollServer = do
   where handle :: Result (Response LongPollServer) -> App ()
         handle (Result (Success lps)) = do
           logDebug lps
-          getUpdates $ convert lps
+          getUpdates $ mkGetUpdates lps
         handle error = logError error >> logError shutdown
 
 getUpdates :: GetUpdates -> App ()
@@ -121,12 +121,12 @@ processUpdates = traverse_ handle
 
 processNewMessage :: Message -> App ()
 processNewMessage message = do
+  let attachments = parse <$> mAttachments message
+  aState   <- execStateT (processAttachments attachments) $ mkState message
   randomId <- liftIO randomIO :: App Int
-  let attach = parse <$> mAttachments message
-  result <- execStateT (processAttachments attach) $ mkState message
-  let sendm  = convert message randomId result
-  logInfo sendm
-  handle =<< request sendm
+  let sendMessage = mkSendMessage message aState randomId
+  logInfo sendMessage
+  handle =<< request sendMessage
   where handle :: Result LBS.ByteString -> App ()
         handle (Result v) = logDebug $ decodeUtf8 $ LBS.toStrict v
         handle (RequestError error) = logWarning error
@@ -144,6 +144,7 @@ processAttachments = traverse_ handle
         route (Document   body) = do
           lift $ logDebug body
           processDocument body
+        route (Sticker id) = addSticker id
 
 processDocument :: DocumentBody -> StateT AttachmentsState App ()
 processDocument doc = do
@@ -158,7 +159,7 @@ processDocument doc = do
                -> StateT AttachmentsState App ()
         handle (Result file) (Result (Success us)) = do
           lift $ logDebug us
-          uploadDocument $ convert us file doc
+          uploadDocument $ mkUploadFile us file doc
         handle (Result _) error = lift $ logWarning error
         handle (RequestError error) (Result (Success _)) =
           lift $ logWarning error
@@ -173,7 +174,7 @@ uploadDocument uFile = do
   where handle :: Result FileUploaded -> StateT AttachmentsState App ()
         handle (Result result@(FileUploaded file)) = do
           lift $ logDebug result
-          saveFile $ convert uFile file
+          saveFile $ mkSaveFile uFile file
         handle error = lift $ logWarning error
 
 saveFile :: SaveFile -> StateT AttachmentsState App ()
