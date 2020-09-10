@@ -75,7 +75,7 @@ instance MonadReader r m => ToRequest m r GetUpdates where
                     }
 
 instance Loggable GetUpdates where
-  toLog _ = "Requesting updates from long poll server"
+  toLog GetUpdates {..} = "Requesting updates with ts: " <> guTs
 
 -- SendMessage -------------------------------------------------------------
 
@@ -106,7 +106,8 @@ instance VkReader r m => ToRequest m r SendMessage where
                     }
 
 instance Loggable SendMessage where
-  toLog _ = "sendmessage placeholder"
+  toLog SendMessage {..} = "Sending message with peer id: "
+    <> Text.showt smPeerId
 
 -- GetFile -----------------------------------------------------------------
 
@@ -116,7 +117,7 @@ instance MonadReader r m => ToRequest m r GetFile where
   toRequest (GetFile url) = return $ HTTP.parseRequest_ $ Text.unpack url
 
 instance Loggable GetFile where
-  toLog _ = "getfile placeholder"
+  toLog _ = "Downloading file from attachment url"
 
 -- GetUploadServer ---------------------------------------------------------
 
@@ -138,7 +139,8 @@ instance VkReader r m => ToRequest m r GetUploadServer where
                     }
 
 instance Loggable GetUploadServer where
-  toLog _ = "getUploadserver placeholder"
+  toLog GetUploadServer {..} = "Requesting upload server of type: "
+    <> gusType
 
 -- UploadFile ----------------------------------------------------------
 
@@ -157,7 +159,7 @@ instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
         request
 
 instance Loggable UploadFile where
-  toLog _ = "uploadfile placeholder"
+  toLog UploadFile {..} = "Uploading file: " <> ufTitle
 
 -- SaveFile ----------------------------------------------------------------
 
@@ -179,7 +181,7 @@ instance VkReader r m => ToRequest m r SaveFile where
                     }
 
 instance Loggable SaveFile where
-  toLog _ = "savefile placeholder"
+  toLog SaveFile {..} = "Saving file: " <> sfTitle
 
 -- FUNCTIONS ---------------------------------------------------------------
 
