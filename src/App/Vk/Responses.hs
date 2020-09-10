@@ -23,9 +23,7 @@ import Infrastructure.Logger ( Loggable (..) )
 
 import Control.Applicative ( (<|>) )
 import Data.Aeson          ( (.:), (.:?) )
-import Data.Maybe          ( fromMaybe )
 import Data.Text.Extended  ( Text )
-import Data.Typeable       ( Typeable, typeOf )
 import GHC.Generics        ( Generic )
 
 import qualified Data.Aeson.Extended as Aeson
@@ -44,10 +42,8 @@ instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
         Success <$> o .: "response"
     <|> Error   <$> o .: "error"
 
-instance Typeable a => Loggable (Response a) where
-  toLog (Success x) =
-    "Successfully received response of type: " <> Text.showt (typeOf x)
-
+instance Loggable a => Loggable (Response a) where
+  toLog (Success x) = toLog x
   toLog (Error   x) = toLog x
 
 -- ErrorResponse -----------------------------------------------------------
@@ -94,7 +90,10 @@ instance Aeson.FromJSON LongPollServer where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable LongPollServer where
-  toLog _ = "longpollserver placeholder"
+  toLog LongPollServer {..} = "Recived Long Poll Server:\n\
+    \ | Server: "    <> lpsServer <> "\n\
+    \ | Timestamp: " <> lpsTs     <> "\n\
+    \ | Key: "       <> lpsKey
 
 -- Updates -----------------------------------------------------------------
 
@@ -146,7 +145,7 @@ instance Aeson.FromJSON Update where
       _ -> return $ NotSupported t
 
 instance Loggable Update where
-  toLog (NewMessage m) = toLog m
+  toLog (NewMessage _)   = "Resived update of type: NewMessage"
   toLog (NotSupported t) = "Not supprted update of type: " <> t
 
 -- Message -----------------------------------------------------------------
@@ -172,13 +171,14 @@ instance Aeson.FromJSON Message where
     where coord o t = o .: "geo" >>= (.: "coordinates") >>= (.: t)
 
 instance Loggable Message where
-  toLog Message {..} = "New message recived:\n\
-    \ | from_id: "     <> Text.showt mFromId      <> "\n\
-    \ | peer_id: "     <> Text.showt mPeerId      <> "\n\
-    \ | text: "        <> fromMaybe "" mMessage       --    <> "\n\
---    \ | attachments: " <> Text.showt mAttachments <> "\n\
---    \ | geo: "         <> Text.showt mGeo         <> "\n\
---    \ | keyboard: "    <> Text.showt mKeyboard
+  toLog Message {..} = "Message data:\n\
+    \ | From id: "     <> Text.showt mFromId              <> "\n\
+    \ | Peer id: "     <> Text.showt mPeerId              <>
+    maybeLoggable "Message" mMessage                      <>
+    maybeLoggable "Latitude" (Text.showt <$> mLatitude)   <>
+    maybeLoggable "Longitude" (Text.showt <$> mLongitude) <> "\n\
+    \ | Attachments: " <> Text.showt (length mAttachments) -- <> "\n\
+--    \ | Keyboard: "    <> Text.showt mKeyboard
 
 -- Attachment --------------------------------------------------------------
 
@@ -196,13 +196,8 @@ instance Aeson.FromJSON Attachment where
         return $ Attachment $ body aType
 
 instance Loggable Attachment where
-  toLog _ = "attachment PlaceHolder"--"Proccessing attachment:\n\
---    \ | Type: "     <> aType               <> "\n\
---    \ | Media Id: " <> Text.showt aMediaId <> "\n\
---    \ | Owner Id: " <> Text.showt aOwnerId <> key
---    where key = case aAccessKey of
---            Just v  -> "\n | Access Key: " <> v
---            Nothing -> mempty
+  toLog (Attachment _) = "Processing attachment of type: Attachment"
+  toLog (Document   _) = "Processing attachment of type: Document"
 
 -- AttachmentBody ----------------------------------------------------------
 
@@ -218,10 +213,14 @@ instance Aeson.FromJSON (Text -> AttachmentBody) where
     $ \o -> AttachmentBody
     <$> o .:  "id"
     <*> o .:  "owner_id"
-    <*> o .:? "aaccess_key"
+    <*> o .:? "access_key"
 
 instance Loggable AttachmentBody where
-  toLog _ = "attachmentbody placeholder"
+  toLog AttachmentBody {..} = "Processing AttachmentBody:\n\
+    \ | Type: "     <> aType               <> "\n\
+    \ | Owner id: " <> Text.showt aOwnerId <> "\n\
+    \ | Media id: " <> Text.showt aId      <>
+    maybeLoggable "Access Key" aAccessKey
 
 -- DocumentBody ------------------------------------------------------------
 
@@ -234,7 +233,9 @@ instance Aeson.FromJSON DocumentBody where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable DocumentBody where
-  toLog _ = "documentbody placeholder"
+  toLog DocumentBody {..} = "Processing DocumentBody:\n\
+    \ | Title: " <> dTitle <> "\n\
+    \ | Url: "   <> dUrl
 
 -- UploadServer ------------------------------------------------------------
 
@@ -245,7 +246,8 @@ instance Aeson.FromJSON UploadServer where
     UploadServer <$> o .: "upload_url"
 
 instance Loggable UploadServer where
-  toLog _ = "uploadserver placeholder"
+  toLog (UploadServer url) = "Recived upload server:\n\
+    \ | Url: " <> url
 
 -- FileUploaded ------------------------------------------------------------
 
@@ -259,7 +261,9 @@ instance Aeson.FromJSON FileUploaded where
     <|> UploadError  <$> Aeson.parseJSON (Aeson.Object o)
 
 instance Loggable FileUploaded where
-  toLog _ = "Uploaded file placeholder"
+  toLog (FileUploaded text) = "File uploaded:\n\
+    \ | Response body: " <> text
+  toLog (UploadError body) = toLog body
 
 -- UploadErrorBody ---------------------------------------------------------
 
@@ -274,7 +278,11 @@ instance Aeson.FromJSON UploadErrorBody where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable UploadErrorBody where
-  toLog _ = "uploaderrorbody placeholder"
+  toLog UploadErrorBody {..} = "Error occurred during upload file:\n\
+    \ | Error: "  <> uebError             <> "\n\
+    \ | Bwact: "  <> uebBwact             <> "\n\
+    \ | Server: " <> Text.showt uebServer <> "\n\
+    \ | _sig: "   <> ueb_sig
 
 -- FileSaved ---------------------------------------------------------------
 
@@ -292,4 +300,15 @@ instance Aeson.FromJSON FileSaved where
     return FileSaved {..}
 
 instance Loggable FileSaved where
-  toLog _ = "FileSaved placeholder"
+  toLog FileSaved {..} = "File saved:\n\
+    \ | Type: "     <> fsType               <> "\n\
+    \ | Media id: " <> Text.showt fsMediaId <> "\n\
+    \ | Owner id: " <> Text.showt fsOwnerId
+
+-- FUNCTIONS ---------------------------------------------------------------
+
+maybeLoggable :: Text -> Maybe Text -> Text
+maybeLoggable _ Nothing = ""
+maybeLoggable key (Just value)
+  | Text.null value = ""
+  | otherwise       = "\n | " <> key <> ": " <> value
