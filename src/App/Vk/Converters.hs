@@ -77,6 +77,12 @@ instance Convertible AttachmentBody Text where
                                   Just v -> "_" <> v
                                   Nothing -> mempty
 
+instance Convertible UploadFile (Text -> SaveFile) where
+  convert UploadFile {..} file =
+    let sfFile  = file
+        sfTitle = ufTitle
+     in SaveFile {..}
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)

@@ -3,8 +3,6 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TypeApplications           #-}
-{-# LANGUAGE DataKinds           #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
@@ -172,13 +170,13 @@ processDocument DocumentBody {..} = do
           lift $ logWarning error2
 
 uploadDocument :: UploadFile -> StateT AttachmentsState App ()
-uploadDocument uf@UploadFile {..} = do
+uploadDocument uf = do
   lift $ logInfo uf
   lift (requestAndDecode uf) >>= handle
   where handle :: Result FileUploaded -> StateT AttachmentsState App ()
         handle (Result f@(FileUploaded file)) = do
           lift $ logDebug f
-          saveFile $ SaveFile file ufTitle
+          saveFile $ convert uf file
         handle error = lift $ logWarning error
 
 saveFile :: SaveFile -> StateT AttachmentsState App ()
