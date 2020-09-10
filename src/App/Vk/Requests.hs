@@ -29,7 +29,7 @@ import Data.Text.Extended          ( Text )
 import qualified Data.ByteString                       as BS
 import qualified Data.ByteString.Lazy                  as LBS
 import qualified Data.Text.Extended                    as Text
-import qualified Network.HTTP.Client.Extended          as HTTP
+import qualified Network.HTTP.Client                   as HTTP
 import qualified Network.HTTP.Client.MultipartFormData as MP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
@@ -41,8 +41,11 @@ data GetLongPollServer = GetLongPollServer
 instance VkReader r m => ToRequest m r GetLongPollServer where
   toRequest GetLongPollServer = HTTP.urlEncodedBody
     <$> defaultBody
-    <*> pure defaultRequest
-          { HTTP.path = "/method/groups.getLongPollServer" }
+    <*> pure request
+    where request = defaultRequest
+                    { HTTP.path   = "/method/groups.getLongPollServer"
+                    , HTTP.method = "GET"
+                    }
 
 instance Loggable GetLongPollServer where
   toLog _ = "Requesting long poll server"
@@ -57,17 +60,19 @@ data GetUpdates = GetUpdates
   }
 
 instance MonadReader r m => ToRequest m r GetUpdates where
-  toRequest GetUpdates {..} = return $ mkBody $ defaultRequest
-    { HTTP.path = encodeUtf8 guPath
-    , HTTP.host = encodeUtf8 guHost
-    }
-    where mkBody = HTTP.urlEncodedBody
-                 [ ("act" , "a_check")
-                 , ("key" , encodeUtf8 guKey)
-                 , ("wait", "25")
-                 , ("ts"  , encodeUtf8 guTs)
-                 , ("mode", "2")
-                 ]
+  toRequest GetUpdates {..} = return $ body request
+    where body    = HTTP.urlEncodedBody
+                    [ ("act" , "a_check")
+                    , ("key" , encodeUtf8 guKey)
+                    , ("wait", "25")
+                    , ("ts"  , encodeUtf8 guTs)
+                    , ("mode", "2")
+                    ]
+          request = defaultRequest
+                    { HTTP.path   = encodeUtf8 guPath
+                    , HTTP.host   = encodeUtf8 guHost
+                    , HTTP.method = "GET"
+                    }
 
 instance Loggable GetUpdates where
   toLog _ = "Requesting updates from long poll server"
@@ -86,20 +91,19 @@ data SendMessage = SendMessage
 instance VkReader r m => ToRequest m r SendMessage where
   toRequest SendMessage {..} = do
     df <- defaultBody
-    return $ HTTP.urlEncodedBody
-      (mergeBodies mBody $ body <> df)
-      defaultRequest
-        { HTTP.method = "POST"
-        , HTTP.path   = "method/messages.send"
-        }
-    where body       = [ ("peer_id"   , encodeShowUtf8 smPeerId)
-                       , ("random_id" , encodeShowUtf8 smRandomId)
-                       ]
-          mBody      = [ ("attachment", encodeUtf8     <$> smAttachments)
-                       , ("message"   , encodeUtf8     <$> smMessage)
-                       , ("lat"       , encodeShowUtf8 <$> smLatitude)
-                       , ("long"      , encodeShowUtf8 <$> smLongitude)
-                       ]
+    return $ HTTP.urlEncodedBody (mergeBodies mBody $ body <> df) request
+    where body    = [ ("peer_id"   , encodeShowUtf8 smPeerId)
+                    , ("random_id" , encodeShowUtf8 smRandomId)
+                    ]
+          mBody   = [ ("attachment", encodeUtf8     <$> smAttachments)
+                    , ("message"   , encodeUtf8     <$> smMessage)
+                    , ("lat"       , encodeShowUtf8 <$> smLatitude)
+                    , ("long"      , encodeShowUtf8 <$> smLongitude)
+                    ]
+          request = defaultRequest
+                    { HTTP.method = "POST"
+                    , HTTP.path   = "method/messages.send"
+                    }
 
 instance Loggable SendMessage where
   toLog _ = "sendmessage placeholder"
@@ -117,21 +121,21 @@ instance Loggable GetFile where
 -- GetUploadServer ---------------------------------------------------------
 
 data GetUploadServer = GetUploadServer
-  { gusType :: Text
+  { gusType   :: Text
   , gusPeerId :: Integer
   }
 
 instance VkReader r m => ToRequest m r GetUploadServer where
   toRequest GetUploadServer {..} = do
     df <- defaultBody
-    return $ HTTP.urlEncodedBody (body <> df)
-           $ defaultRequest
-      { HTTP.method = "GET"
-      , HTTP.path   = "/method/docs.getMessagesUploadServer"
-      }
-    where body = [ ("type"   , encodeUtf8 gusType)
-                 , ("peer_id", encodeShowUtf8 gusPeerId)
-                 ]
+    return $ HTTP.urlEncodedBody (body <> df) request
+    where body    = [ ("type"   , encodeUtf8     gusType)
+                    , ("peer_id", encodeShowUtf8 gusPeerId)
+                    ]
+          request = defaultRequest
+                    { HTTP.method = "GET"
+                    , HTTP.path   = "/method/docs.getMessagesUploadServer"
+                    }
 
 instance Loggable GetUploadServer where
   toLog _ = "getUploadserver placeholder"
@@ -139,17 +143,18 @@ instance Loggable GetUploadServer where
 -- UploadFile ----------------------------------------------------------
 
 data UploadFile = UploadFile
-  { ufFile     :: LBS.ByteString
-  , ufUrl      :: Text
+  { ufFile  :: LBS.ByteString
+  , ufUrl   :: Text
   , ufTitle :: Text
   }
 
 instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
   toRequest UploadFile {..} =
-    let req   = HTTP.parseRequest_ $ Text.unpack ufUrl
-        part  = MP.partLBS "file" ufFile
-        partm = part { MP.partFilename = Just $ Text.unpack ufTitle }
-     in liftIO $ MP.formDataBody [partm] req
+    let request = HTTP.parseRequest_ $ Text.unpack ufUrl
+        part    = MP.partLBS "file" ufFile
+     in liftIO $ MP.formDataBody
+        [part { MP.partFilename = Just $ Text.unpack ufTitle }]
+        request
 
 instance Loggable UploadFile where
   toLog _ = "uploadfile placeholder"
@@ -164,11 +169,14 @@ data SaveFile = SaveFile
 instance VkReader r m => ToRequest m r SaveFile where
   toRequest SaveFile {..} = do
     df <- defaultBody
-    return $ HTTP.urlEncodedBody (body <> df) defaultRequest
-      { HTTP.path = "/method/docs.save" }
-    where body = [ ("file" , encodeUtf8 sfFile)
-                 , ("title", encodeUtf8 sfTitle)
-                 ]
+    return $ HTTP.urlEncodedBody (body <> df) request
+    where body    = [ ("file" , encodeUtf8 sfFile)
+                    , ("title", encodeUtf8 sfTitle)
+                    ]
+          request = defaultRequest
+                    { HTTP.path   = "/method/docs.save"
+                    , HTTP.method = "POST"
+                    }
 
 instance Loggable SaveFile where
   toLog _ = "savefile placeholder"
@@ -184,14 +192,15 @@ defaultBody :: VkReader r m => m [(BS.ByteString, BS.ByteString)]
 defaultBody = do
   token <- obtain
   group <- obtain
-  return
-    [ ("access_token", encodeUtf8 $ unToken token)
-    , ("group_id"    , encodeUtf8 $ unGroup group)
-    , ("v"           , "5.122")
-    ]
+  return [ ("access_token", encodeUtf8 $ unToken token)
+         , ("group_id"    , encodeUtf8 $ unGroup group)
+         , ("v"           , "5.122")
+         ]
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest
   { HTTP.host   = "api.vk.com"
   , HTTP.method = "POST"
+  , HTTP.secure = True
+  , HTTP.port   = 443
   }
