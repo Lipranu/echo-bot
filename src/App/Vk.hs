@@ -1,3 +1,6 @@
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE ExplicitForAll             #-}
+{-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
@@ -18,8 +21,9 @@ import qualified Infrastructure.Logger as Logger
 
 import Control.Exception           ( try )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
-import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT, lift )
-import Control.Monad.State         ( StateT, execStateT )
+import Control.Monad.Reader        ( ReaderT (..), MonadReader
+                                   , runReaderT, lift )
+import Control.Monad.State         ( StateT (..), execStateT )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
 import Data.Text.Encoding.Extended ( decodeUtf8 )
@@ -34,6 +38,16 @@ import qualified Data.Text.Extended   as Text
 import qualified Data.Text.IO         as TextIO
 
 -- TYPES AND INSTANCES -----------------------------------------------------
+
+type HasLogger r m = (Has (Logger m) r, MonadReader r m, MonadTime m)
+
+type MonadEffects r m =
+  ( Has (Logger m) r
+  , Has (Requester m) r
+  , MonadTime m
+  , MonadRequester m
+  , MonadReader r m
+  )
 
 data Config = Config
   { cToken :: Token
@@ -75,9 +89,7 @@ instance MonadRequester App where
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App ()
-app = do
-  logInfo start
-  getLongPollServer
+app = logInfo start >> getLongPollServer
 
 mkApp :: Config -> Logger.Config -> Lock -> Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
@@ -87,29 +99,19 @@ runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
 
 getLongPollServer :: App ()
-getLongPollServer = do
-  logInfo GetLongPollServer
-  requestAndDecode GetLongPollServer >>= handle
-  where handle :: Result (Response LongPollServer) -> App ()
-        handle (Result (Success lps)) = do
-          logDebug lps
-          getUpdates $ mkGetUpdates lps
-        handle error = logError error >> logError shutdown
+getLongPollServer = handleErrorRequest
+  GetLongPollServer
+  (getUpdates . mkGetUpdates)
 
 getUpdates :: GetUpdates -> App ()
-getUpdates gu = do
-  logInfo gu
-  requestAndDecode gu >>= handle
-  where handle :: Result Updates -> App ()
-        handle (Result u) = logDebug u >> route u
-        handle error      = logError error >> logError shutdown
+getUpdates gu = handleErrorRequest gu (routeUpdates gu)
 
-        route :: Updates -> App ()
-        route (Updates upd ts) = do
-          processUpdates $ parse <$> upd
-          getUpdates gu { guTs = ts }
-        route (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
-        route rest           = getLongPollServer
+routeUpdates :: GetUpdates -> Updates -> App ()
+routeUpdates gu (Updates upd ts) = do
+    processUpdates $ parse <$> upd
+    getUpdates gu { guTs = ts }
+routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
+routeUpdates _ _               = getLongPollServer
 
 processUpdates :: [Result Update] -> App ()
 processUpdates = traverse_ handle
@@ -131,23 +133,15 @@ processNewMessage message = do
         handle (Result v) = logDebug $ decodeUtf8 $ LBS.toStrict v
         handle (RequestError error) = logWarning error
 
-processAttachments :: [Result Attachment] -> StateT AttachmentsState App ()
-processAttachments = traverse_ handle
-  where handle :: Result Attachment -> StateT AttachmentsState App ()
-        handle (Result r) = lift (logDebug r) >> route r
-        handle error = lift $ logWarning error
+processAttachments :: [Result (Response Attachment)]
+                   -> StateT AttachmentsState App ()
+processAttachments = traverse_ (handleWarning routeAttachment)
 
-        route :: Attachment -> StateT AttachmentsState App ()
-        route (Attachment body) = do
-          lift $ logDebug body
-          addAttachment body
-        route (Wall body) = do
-          lift $ logDebug body
-          addAttachment body
-        route (Document   body) = do
-          lift $ logDebug body
-          processDocument body
-        route (Sticker id) = addSticker id
+routeAttachment :: Attachment -> StateT AttachmentsState App ()
+routeAttachment (Attachment body) = logDebug body >> addAttachment body
+routeAttachment (Wall       body) = logDebug body >> addAttachment body
+routeAttachment (Document   body) = logDebug body >> processDocument body
+routeAttachment (Sticker      id) = addSticker id
 
 processDocument :: DocumentBody -> StateT AttachmentsState App ()
 processDocument doc = do
@@ -188,6 +182,45 @@ saveFile sf = do
                -> StateT AttachmentsState App ()
         handle (Result (Success x)) = lift (logDebug x) >> addAttachment x
         handle error = lift $ logWarning error
+
+-- TODO: move all handlers to shared module
+handle :: ( HasLogger r m, Loggable a)
+       => (Result (Response a) -> m ())  -- logger for input
+       -> m ()                           -- additional logger
+       -> (a -> m ())                    -- function for handled input
+       -> Result (Response a)            -- input
+       -> m ()                           -- phantom result
+handle _ _ route (Result (Success x)) = logDebug x >> route x
+handle logger1 logger2 _ error = logger1 error >> logger2
+
+handleError, handleWarning
+  :: ( HasLogger r m, Loggable input)
+  => (input -> m ())
+  -> Result (Response input)
+  -> m ()
+handleError   = handle logError (logError shutdown)
+handleWarning = handle logWarning (return ())
+
+requestWithLog ::
+  ( MonadEffects r m
+  , Loggable input
+  , ToRequest m r input
+  , Aeson.FromJSON output
+  ) => input
+    -> m (Result (Response output))
+requestWithLog x = logInfo x >> requestAndDecode x
+
+handleErrorRequest, handleWarningRequest ::
+  ( MonadEffects r m
+  , Loggable input
+  , Loggable output
+  , ToRequest m r input
+  , Aeson.FromJSON output
+  ) => input
+    -> (output -> m ())
+    -> m ()
+handleErrorRequest   x f = requestWithLog x >>= handleError f
+handleWarningRequest x f = requestWithLog x >>= handleWarning f
 
 start, shutdown :: Text
 start    = "Application getting started"
