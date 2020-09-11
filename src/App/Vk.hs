@@ -108,34 +108,26 @@ getUpdates gu = handleErrorRequest gu (routeUpdates gu)
 
 routeUpdates :: GetUpdates -> Updates -> App ()
 routeUpdates gu (Updates upd ts) = do
-    processUpdates $ parse <$> upd
+    traverseHandle processUpdate $ parse <$> upd
     getUpdates gu { guTs = ts }
 routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
 routeUpdates _ _               = getLongPollServer
 
-processUpdates :: [Result Update] -> App ()
-processUpdates = traverse_ handle
-  where handle :: Result Update -> App ()
-        handle (Result (NewMessage m)) = do
-          logDebug m
-          processNewMessage m
-        handle error = logWarning error
+processUpdate :: Update -> App ()
+processUpdate (NewMessage m) = processNewMessage m
+processUpdate err = logWarning err
 
 processNewMessage :: Message -> App ()
 processNewMessage message = do
-  let attachments = parse <$> mAttachments message
-  aState   <- execStateT (processAttachments attachments) $ mkState message
-  randomId <- liftIO randomIO :: App Int
-  let sendMessage = mkSendMessage message aState randomId
+  aState   <- execStateT
+    (traverseHandle routeAttachment $ parse <$> mAttachments message) $
+    mkState message
+  sendMessage <- mkSendMessage message aState <$> liftIO randomIO
   logInfo sendMessage
   handle =<< request sendMessage
   where handle :: Result LBS.ByteString -> App ()
         handle (Result v) = logDebug $ decodeUtf8 $ LBS.toStrict v
         handle (RequestError error) = logWarning error
-
-processAttachments :: [Result (Response Attachment)]
-                   -> StateT AttachmentsState App ()
-processAttachments = traverse_ (handleWarning routeAttachment)
 
 routeAttachment :: Attachment -> StateT AttachmentsState App ()
 routeAttachment (Attachment body) = logDebug body >> addAttachment body
@@ -193,6 +185,21 @@ handle :: ( HasLogger r m, Loggable a)
 handle _ _ route (Result (Success x)) = logDebug x >> route x
 handle logger1 logger2 _ error = logger1 error >> logger2
 
+handleR :: ( HasLogger r m, Loggable a)
+       => (Result a -> m ())  -- logger for input
+       -> m ()                           -- additional logger
+       -> (a -> m ())                    -- function for handled input
+       -> Result a            -- input
+       -> m ()                           -- phantom result
+handleR _ _ route (Result x) = logDebug x >> route x
+handleR logger1 logger2 _ error = logger1 error >> logger2
+
+handleWarningR :: ( HasLogger r m, Loggable a)
+       => (a -> m ())                    -- function for handled input
+       -> Result a
+       -> m ()                           -- phantom result
+handleWarningR = handleR logWarning (return ())
+
 handleError, handleWarning
   :: ( HasLogger r m, Loggable input)
   => (input -> m ())
@@ -222,6 +229,13 @@ handleErrorRequest, handleWarningRequest ::
 handleErrorRequest   x f = requestWithLog x >>= handleError f
 handleWarningRequest x f = requestWithLog x >>= handleWarning f
 
+traverseHandle ::
+  ( HasLogger r m
+  , Loggable input
+  ) => (input -> m ())
+    -> [Result input]
+    -> m ()
+traverseHandle f = traverse_ (handleWarningR f)
 start, shutdown :: Text
 start    = "Application getting started"
 shutdown = "Application shut down"
