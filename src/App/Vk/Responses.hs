@@ -1,7 +1,8 @@
 {-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE FlexibleInstances   #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE DeriveFunctor     #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -37,10 +38,12 @@ import qualified Data.Text.Extended  as Text
 data Response a
   = Success a
   | Error ErrorResponse
+  deriving Functor
 
 instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
   parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
-        Success <$> o .: "response"
+    Success <$> Aeson.parseJSON (Aeson.Object o)
+    <|> Success <$> o .: "response"
     <|> Error   <$> o .: "error"
 
 instance Loggable a => Loggable (Response a) where
