@@ -5,10 +5,11 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TupleSections              #-}
 
 module Infrastructure.Logger
   ( Config (..)
-  , Logger
+  , Logger (..)
   , Loggable (..)
   , MonadLogger (..)
   , MonadTime (..)
@@ -30,7 +31,8 @@ import Internal
 import Control.Concurrent.MVar      ( takeMVar, putMVar )
 import Control.Monad                ( when )
 import Control.Monad.IO.Class       ( MonadIO, liftIO )
-import Control.Monad.Reader         ( MonadReader )
+import Control.Monad.Reader         ( MonadReader, lift )
+import Control.Monad.State          ( StateT (..) )
 import Data.Aeson                   ( (.:?), (.!=) )
 import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
@@ -254,6 +256,18 @@ instance Applicative m => Semigroup (Logger m) where
 
 instance Applicative m => Monoid (Logger m) where
   mempty = Logger $ \_ -> pure ()
+
+instance (Has (Logger m) r, MonadReader r m)
+  => Has (Logger (StateT s m)) r where
+  getter env = Logger $ \message ->  StateT $ \s ->
+    (,s) <$> runLogger (getter env) message
+
+instance MonadLogger m => MonadLogger (StateT s m) where
+  logConsole   = lift . logConsole
+  logFile path = lift . logFile path
+
+instance MonadTime m => MonadTime (StateT s m) where
+   getTime = lift $ getTime
 
 -- FUNCTIONS ---------------------------------------------------------------
 
