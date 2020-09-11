@@ -1,10 +1,13 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE TupleSections         #-}
 
 module Infrastructure.Requester
   ( MonadRequester (..)
-  , Requester
+  , Requester (..)
   , ToRequest (..)
   , Result (..)
 
@@ -20,9 +23,10 @@ module Infrastructure.Requester
 import Infrastructure.Logger        ( Loggable (..) )
 import Internal
 
-import Control.Monad.Reader         ( MonadReader )
-import Data.Text.Extended           ( Text )
+import Control.Monad.Reader         ( MonadReader, lift )
+import Control.Monad.State          ( StateT (..) )
 import Data.Text.Encoding           ( decodeUtf8 )
+import Data.Text.Extended           ( Text )
 
 import qualified Data.Aeson                   as Aeson
 import qualified Data.ByteString.Lazy         as LBS
@@ -43,13 +47,21 @@ type RequestResult
   = Either HTTP.HttpException (HTTP.Response LBS.ByteString)
 
 newtype Requester m
-  = Requester { unRequester :: HTTP.Request -> m RequestResult }
+  = Requester { runRequester :: HTTP.Request -> m RequestResult }
+
+instance MonadRequester m => MonadRequester (StateT s m) where
+   requester m = lift . requester m
+
+instance (Has (Requester m) r, MonadReader r m)
+  => Has (Requester (StateT s m)) r where
+  getter env = Requester $ \req ->  StateT $ \s ->
+    (,s) <$> runRequester (getter env) req
 
 data Result a
   = Result a
   | DecodeError Text Text
   | RequestError HTTP.HttpException
-  deriving Show
+  deriving (Show, Functor)
 
 instance Loggable a => Loggable (Result a) where
   toLog (Result result) = toLog result
@@ -72,7 +84,7 @@ request :: (ToRequest m r a, Has (Requester m) r, MonadReader r m)
 request r = do
   requester <- obtain
   request   <- toRequest r
-  result    <- unRequester requester request
+  result    <- runRequester requester request
   case result of
     Left  e -> return $ RequestError e
     Right r -> return $ Result $ HTTP.responseBody r
