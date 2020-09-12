@@ -22,7 +22,10 @@ module App.Vk.Responses
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Infrastructure.Logger ( Loggable (..) )
+import Infrastructure.Logger ( Loggable (..), HasPriority (..)
+                             , logDebug, logWarning, logInfo
+                             , mkToLog, mkLogLine
+                             )
 
 import Control.Applicative  ( (<|>) )
 import Data.Aeson           ( (.:), (.:?) )
@@ -55,6 +58,11 @@ instance Loggable a => Loggable (Response a) where
   toLog (Error       x) = toLog x
   toLog (UploadError x) = toLog x
 
+instance HasPriority a => HasPriority (Response a) where
+  logData (Success     x) = logData x
+  logData (Error       x) = logData x
+  logData (UploadError x) = logData x
+
 -- ErrorBody ---------------------------------------------------------------
 
 data ErrorBody = ErrorBody
@@ -68,11 +76,14 @@ instance Aeson.FromJSON ErrorBody where
 
 instance Loggable ErrorBody where
   toLog ErrorBody {..}
-    = "An error occurred as a result of the request\n\
-    \ | Error Code: "        <> Text.showt eErrorCode <> "\n\
-    \ | Error Message: "     <> eErrorMsg             <> "\n\
-    \ | Request Parameters:" <> params
-    where params  = foldr (<>) "" $ fmap toLog eRequestParams
+    = mkToLog "An error occurred as a result of the request:"
+    [ ("Error Code"        , Text.showt eErrorCode)
+    , ("Error Message"     , eErrorMsg)
+    , ("Request Parameters", params)
+    ] []
+    where params = Text.concat $ fmap toLog eRequestParams
+
+instance HasPriority ErrorBody where logData = logWarning . toLog
 
 -- UploadErrorBody ---------------------------------------------------------
 
@@ -87,11 +98,14 @@ instance Aeson.FromJSON UploadErrorBody where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable UploadErrorBody where
-  toLog UploadErrorBody {..} = "Error occurred during upload file:\n\
-    \ | Error: "  <> uebError             <> "\n\
-    \ | Bwact: "  <> uebBwact             <> "\n\
-    \ | Server: " <> Text.showt uebServer <> "\n\
-    \ | _sig: "   <> ueb_sig
+  toLog UploadErrorBody {..} = mkToLog "Error occurred during upload file:"
+    [ ("Error" , uebError)
+    , ("Bwact" , uebBwact)
+    , ("Server", Text.showt uebServer)
+    , ("_sig"  , ueb_sig)
+    ] []
+
+instance HasPriority UploadErrorBody where logData = logWarning . toLog
 
 -- RequestParams -----------------------------------------------------------
 
@@ -104,7 +118,7 @@ instance Aeson.FromJSON RequestParams where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable RequestParams where
-  toLog RequestParams {..} = "\n | \t" <> rpKey <> ": " <> rpValue
+  toLog RequestParams {..} = mkLogLine ("\t" <> rpKey, rpValue)
 
 -- LongPollServer ----------------------------------------------------------
 
@@ -118,10 +132,13 @@ instance Aeson.FromJSON LongPollServer where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable LongPollServer where
-  toLog LongPollServer {..} = "Recived Long Poll Server:\n\
-    \ | Server: "    <> lpsServer <> "\n\
-    \ | Timestamp: " <> lpsTs     <> "\n\
-    \ | Key: "       <> lpsKey
+  toLog LongPollServer {..} = mkToLog "Recived Long Poll Server:"
+    [ ("Server"   , lpsServer)
+    , ("Timestamp", lpsTs)
+    , ("Key"      , lpsKey)
+    ] []
+
+instance HasPriority LongPollServer where logData = logDebug . toLog
 
 -- Updates -----------------------------------------------------------------
 
@@ -147,17 +164,24 @@ instance Aeson.FromJSON Updates where
           e -> fail $ "App.Vk.Updates: Unknown error key: " <> show e
 
 instance Loggable Updates where
-  toLog (Updates upds ts) = "Resived updates:\n\
-    \ | Amount: "        <> (Text.showt . length) upds <> "\n\
-    \ | New timestamp: " <> ts
+  toLog (Updates upds ts) = mkToLog "Resived updates:"
+    [ ("Amount"       , Text.showt $ length upds)
+    , ("New timestamp", ts)
+    ] []
 
-  toLog (OutOfDate ts) =
-    "Event history is outdated or partially lost. \
-    \Performing new request for updates with timestamp: " <> Text.showt ts
+  toLog (OutOfDate ts) = mkToLog
+    "Event history is outdated or partially lost:"
+    [("New Timestamp", Text.showt ts)] []
 
-  toLog KeyExpired = "Key expired. Performing request for new key"
+  toLog KeyExpired = "Key expired"
 
-  toLog DataLost   = "Information lost. Performing request for new key"
+  toLog DataLost   = "Information lost"
+
+instance HasPriority Updates where
+  logData u@(Updates _ _) = logDebug   $ toLog u
+  logData u@(OutOfDate _) = logWarning $ toLog u
+  logData KeyExpired      = logDebug   $ toLog KeyExpired
+  logData DataLost        = logWarning $ toLog DataLost
 
 -- Update ------------------------------------------------------------------
 
@@ -175,6 +199,10 @@ instance Aeson.FromJSON Update where
 instance Loggable Update where
   toLog (NewMessage _)   = "Resived update of type: NewMessage"
   toLog (NotSupported t) = "Not supprted update of type: " <> t
+
+instance HasPriority Update where
+  logData u@(NewMessage   _) = logInfo    $ toLog u
+  logData u@(NotSupported _) = logWarning $ toLog u
 
 -- Message -----------------------------------------------------------------
 
@@ -199,14 +227,17 @@ instance Aeson.FromJSON Message where
     where coord o t = o .: "geo" >>= (.: "coordinates") >>= (.: t)
 
 instance Loggable Message where
-  toLog Message {..} = "Message data:\n\
-    \ | From id: "     <> Text.showt mFromId              <> "\n\
-    \ | Peer id: "     <> Text.showt mPeerId              <>
-    maybeLoggable "Message" mMessage                      <>
-    maybeLoggable "Latitude" (Text.showt <$> mLatitude)   <>
-    maybeLoggable "Longitude" (Text.showt <$> mLongitude) <> "\n\
-    \ | Attachments: " <> Text.showt (length mAttachments) -- <> "\n\
---    \ | Keyboard: "    <> Text.showt mKeyboard
+  toLog Message {..} = mkToLog "Message data:"
+    [ ("From id"    , Text.showt mFromId)
+    , ("Peer id"    , Text.showt mPeerId)
+    , ("Attachments", Text.showt $ length mAttachments)
+    ]
+    [ ("Message"    , mMessage)
+    , ("Latitude"   , Text.showt <$> mLatitude)
+    , ("Longitude"  , Text.showt <$> mLongitude)
+    ]
+
+instance HasPriority Message where logData = logDebug . toLog
 
 -- Attachment --------------------------------------------------------------
 
@@ -235,6 +266,8 @@ instance Loggable Attachment where
   toLog (Sticker    _) = "Processing attachment of type: Sticker"
   toLog (Wall       _) = "Processing attachment of type: Wall"
 
+instance HasPriority Attachment where logData = logDebug . toLog
+
 -- AttachmentBody ----------------------------------------------------------
 
 data AttachmentBody = AttachmentBody
@@ -252,11 +285,13 @@ instance Aeson.FromJSON (Text -> AttachmentBody) where
     <*> o .:? "access_key"
 
 instance Loggable AttachmentBody where
-  toLog AttachmentBody {..} = "Processing AttachmentBody:\n\
-    \ | Type: "     <> aType               <> "\n\
-    \ | Owner id: " <> Text.showt aOwnerId <> "\n\
-    \ | Media id: " <> Text.showt aId      <>
-    maybeLoggable "Access Key" aAccessKey
+  toLog AttachmentBody {..} = mkToLog "Processing AttachmentBody:"
+    [ ("Type"    , aType)
+    , ("Owner id", Text.showt aOwnerId)
+    , ("Media id", Text.showt aId)
+    ] [("Access Key", aAccessKey)]
+
+instance HasPriority AttachmentBody where logData = logDebug . toLog
 
 -- WallBody ----------------------------------------------------------------
 
@@ -275,11 +310,13 @@ instance Aeson.FromJSON (Text -> WallBody) where
     <*> o .:? "access_key"
 
 instance Loggable WallBody where
-  toLog WallBody {..} = "Processing WallBody:\n\
-    \ | Type: "     <> wType               <> "\n\
-    \ | To id: "    <> Text.showt wToId    <> "\n\
-    \ | Media id: " <> Text.showt wId      <>
-    maybeLoggable "Access Key" wAccessKey
+  toLog WallBody {..} = mkToLog "Processing WallBody:"
+    [ ("Type"    , wType)
+    , ("To id"   , Text.showt wToId)
+    , ("Media id", Text.showt wId)
+    ] [("Access Key", wAccessKey)]
+
+instance HasPriority WallBody where logData = logDebug . toLog
 
 -- DocumentBody ------------------------------------------------------------
 
@@ -292,9 +329,12 @@ instance Aeson.FromJSON DocumentBody where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable DocumentBody where
-  toLog DocumentBody {..} = "Processing DocumentBody:\n\
-    \ | Title: " <> dTitle <> "\n\
-    \ | Url: "   <> dUrl
+  toLog DocumentBody {..} = mkToLog "Processing DocumentBody:"
+    [ ("Title", dTitle)
+    , ("Url"  ,dUrl)
+    ] []
+
+instance HasPriority DocumentBody where logData = logDebug . toLog
 
 -- UploadServer ------------------------------------------------------------
 
@@ -305,8 +345,10 @@ instance Aeson.FromJSON UploadServer where
     UploadServer <$> o .: "upload_url"
 
 instance Loggable UploadServer where
-  toLog (UploadServer url) = "Recived upload server:\n\
-    \ | Url: " <> url
+  toLog (UploadServer url) = mkToLog "Recived upload server:"
+    [("Url", url)] []
+
+instance HasPriority UploadServer where logData = logDebug . toLog
 
 -- RawFile -----------------------------------------------------------------
 
@@ -314,6 +356,8 @@ newtype RawFile = RawFile ByteString
 
 instance Loggable RawFile where
   toLog _ = "File downloaded successfully"
+
+instance HasPriority RawFile where logData = logDebug . toLog
 
 -- FileUploaded ------------------------------------------------------------
 
@@ -324,8 +368,10 @@ instance Aeson.FromJSON FileUploaded where
     FileUploaded <$> o .: "file"
 
 instance Loggable FileUploaded where
-  toLog (FileUploaded text) = "File uploaded:\n\
-    \ | Response body: " <> text
+  toLog (FileUploaded text) = mkToLog "File uploaded:"
+    [("Response body", text)] []
+
+instance HasPriority FileUploaded where logData = logDebug . toLog
 
 -- FileSaved ---------------------------------------------------------------
 
@@ -343,15 +389,10 @@ instance Aeson.FromJSON FileSaved where
     return FileSaved {..}
 
 instance Loggable FileSaved where
-  toLog FileSaved {..} = "File saved:\n\
-    \ | Type: "     <> fsType               <> "\n\
-    \ | Media id: " <> Text.showt fsMediaId <> "\n\
-    \ | Owner id: " <> Text.showt fsOwnerId
+  toLog FileSaved {..} = mkToLog "File saved:"
+    [ ("Type"    , fsType)
+    , ("Media id", Text.showt fsMediaId)
+    , ("Owner id", Text.showt fsOwnerId)
+    ] []
 
--- FUNCTIONS ---------------------------------------------------------------
-
-maybeLoggable :: Text -> Maybe Text -> Text
-maybeLoggable _ Nothing = ""
-maybeLoggable key (Just value)
-  | Text.null value = ""
-  | otherwise       = "\n | " <> key <> ": " <> value
+instance HasPriority FileSaved where logData = logDebug . toLog

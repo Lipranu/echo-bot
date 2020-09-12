@@ -24,6 +24,7 @@ module Infrastructure.Logger
   , logInfo
   , logWarning
   , mkLogger
+  , mkLogLine
   , mkToLog
   ) where
 
