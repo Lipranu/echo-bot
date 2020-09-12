@@ -142,7 +142,7 @@ processDocument doc = do
 getFile :: DocumentBody -> UploadServer -> StateT AttachmentsState App ()
 getFile doc us = do
   file <- request $ mkGetFile doc
-  handleWarningR (uploadDocument . mkUploadFile doc us) file
+  handleWarningR (uploadDocument . mkUploadFile doc us) $ RawFile <$>file
 
 uploadDocument :: UploadFile -> StateT AttachmentsState App ()
 uploadDocument uFile = handleWarningRequest uFile

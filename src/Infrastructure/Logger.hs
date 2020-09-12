@@ -62,8 +62,8 @@ class Loggable a where
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
-instance Loggable Text   where toLog = id
-instance Loggable String where toLog = Text.pack
+instance Loggable Text           where toLog   = id
+instance Loggable String         where toLog   = Text.pack
 
 instance Loggable HttpException where
   toLog (HttpExceptionRequest _ content) = toLog content
@@ -267,7 +267,7 @@ instance MonadLogger m => MonadLogger (StateT s m) where
   logFile path = lift . logFile path
 
 instance MonadTime m => MonadTime (StateT s m) where
-   getTime = lift $ getTime
+   getTime = lift getTime
 
 -- FUNCTIONS ---------------------------------------------------------------
 

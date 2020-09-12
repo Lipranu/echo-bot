@@ -7,26 +7,28 @@
 module App.Vk.Responses
   ( Attachment (..)
   , AttachmentBody (..)
-  , WallBody (..)
   , DocumentBody (..)
   , FileSaved (..)
   , FileUploaded (..)
+  , LongPollServer (..)
   , Message (..)
+  , RawFile (..)
   , Response (..)
   , Update (..)
   , Updates (..)
   , UploadServer (..)
-  , LongPollServer (..)
+  , WallBody (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
 import Infrastructure.Logger ( Loggable (..) )
 
-import Control.Applicative ( (<|>) )
-import Data.Aeson          ( (.:), (.:?) )
-import Data.Text.Extended  ( Text )
-import GHC.Generics        ( Generic )
+import Control.Applicative  ( (<|>) )
+import Data.Aeson           ( (.:), (.:?) )
+import Data.Text.Extended   ( Text )
+import GHC.Generics         ( Generic )
+import Data.ByteString.Lazy ( ByteString )
 
 import qualified Data.Aeson.Extended as Aeson
 import qualified Data.Text.Extended  as Text
@@ -305,6 +307,13 @@ instance Aeson.FromJSON UploadServer where
 instance Loggable UploadServer where
   toLog (UploadServer url) = "Recived upload server:\n\
     \ | Url: " <> url
+
+-- RawFile -----------------------------------------------------------------
+
+newtype RawFile = RawFile ByteString
+
+instance Loggable RawFile where
+  toLog _ = "File downloaded successfully"
 
 -- FileUploaded ------------------------------------------------------------
 

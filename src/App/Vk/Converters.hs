@@ -99,8 +99,8 @@ mkSendMessage Message {..} AttachmentsState {..} randomId =
         xs -> Just $ Text.intercalate "," $ reverse xs
    in SendMessage {..}
 
-mkUploadFile :: DocumentBody -> UploadServer -> LBS.ByteString -> UploadFile
-mkUploadFile DocumentBody {..} (UploadServer url) file =
+mkUploadFile :: DocumentBody -> UploadServer -> RawFile -> UploadFile
+mkUploadFile DocumentBody {..} (UploadServer url) (RawFile file) =
   let ufFile  = LBS.toStrict file
       ufUrl   = url
       ufTitle = dTitle
