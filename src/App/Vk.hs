@@ -110,7 +110,7 @@ routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
 routeUpdates _ _               = getLongPollServer
 
 processUpdate :: Update -> App ()
-processUpdate (NewMessage m) = processNewMessage m
+processUpdate (NewMessage m) = logInfo m >> processNewMessage m
 processUpdate err = logWarning err
 
 processNewMessage :: Message -> App ()
@@ -149,32 +149,32 @@ saveFile :: SaveFile -> StateT AttachmentsState App ()
 saveFile sf = handleWarningRequest @FileSaved sf addAttachment
 
 -- TODO: move all handlers to shared module
-handle :: ( HasLogger r m, Loggable a)
+handle :: ( HasLogger r m, HasPriority a)
        => (Result (Response a) -> m ())  -- logger for input
        -> m ()                           -- additional logger
        -> (a -> m ())                    -- function for handled input
        -> Result (Response a)            -- input
        -> m ()                           -- phantom result
-handle _ _ route (Result (Success x)) = logDebug x >> route x
+handle _ _ route (Result (Success x)) = logData x >> route x
 handle logger1 logger2 _ error = logger1 error >> logger2
 
-handleR :: ( HasLogger r m, Loggable a)
+handleR :: ( HasLogger r m, HasPriority a)
        => (Result a -> m ())  -- logger for input
        -> m ()                           -- additional logger
        -> (a -> m ())                    -- function for handled input
        -> Result a            -- input
        -> m ()                           -- phantom result
-handleR _ _ route (Result x) = logDebug x >> route x
+handleR _ _ route (Result x) = logData x >> route x
 handleR logger1 logger2 _ error = logger1 error >> logger2
 
-handleWarningR :: ( HasLogger r m, Loggable a)
+handleWarningR :: ( HasLogger r m, HasPriority a)
        => (a -> m ())                    -- function for handled input
        -> Result a
        -> m ()                           -- phantom result
 handleWarningR = handleR logWarning (return ())
 
 handleError, handleWarning
-  :: ( HasLogger r m, Loggable input)
+  :: ( HasLogger r m, HasPriority input)
   => (input -> m ())
   -> Result (Response input)
   -> m ()
@@ -183,17 +183,17 @@ handleWarning = handle logWarning (return ())
 
 requestWithLog ::
   ( MonadEffects r m
-  , Loggable input
+  , HasPriority input
   , ToRequest m r input
   , Aeson.FromJSON output
   ) => input
     -> m (Result (Response output))
-requestWithLog x = logInfo x >> requestAndDecode x
+requestWithLog x = logData x >> requestAndDecode x
 
 handleErrorRequest, handleWarningRequest :: forall output input r m .
   ( MonadEffects r m
-  , Loggable input
-  , Loggable output
+  , HasPriority input
+  , HasPriority output
   , ToRequest m r input
   , Aeson.FromJSON output
   ) => input
@@ -204,7 +204,7 @@ handleWarningRequest x f = requestWithLog x >>= handleWarning f
 
 traverseHandle ::
   ( HasLogger r m
-  , Loggable input
+  , HasPriority input
   ) => (input -> m ())
     -> [Result input]
     -> m ()

@@ -50,6 +50,8 @@ instance VkReader r m => ToRequest m r GetLongPollServer where
 instance Loggable GetLongPollServer where
   toLog _ = "Requesting long poll server"
 
+instance HasPriority GetLongPollServer where logData = logInfo . toLog
+
 -- GetUpdates --------------------------------------------------------------
 
 data GetUpdates = GetUpdates
