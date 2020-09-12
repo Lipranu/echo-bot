@@ -3,6 +3,7 @@
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE DeriveFunctor     #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving     #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -18,6 +19,7 @@ module App.Vk.Responses
   , Updates (..)
   , UploadServer (..)
   , WallBody (..)
+  , MessageSended (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -396,3 +398,14 @@ instance Loggable FileSaved where
     ] []
 
 instance HasPriority FileSaved where logData = logDebug . toLog
+
+-- MessageSended -----------------------------------------------------------
+
+newtype MessageSended = MessageSended Integer
+  deriving (Generic, Aeson.FromJSON)
+
+instance Loggable MessageSended where
+  toLog (MessageSended id) = "Successfully sent message with id: "
+    <> Text.showt id
+
+instance HasPriority MessageSended where logData = logInfo . toLog

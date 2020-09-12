@@ -26,14 +26,12 @@ import Control.Monad.Reader        ( ReaderT (..), MonadReader, runReaderT )
 import Control.Monad.State         ( StateT (..), execStateT )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
-import Data.Text.Encoding.Extended ( decodeUtf8 )
 import Data.Text.Extended          ( Text )
 import Data.Time                   ( getCurrentTime )
 import System.Random               ( randomIO )
 import Network.HTTP.Client         ( Manager, httpLbs )
 
 import qualified Data.Aeson.Extended  as Aeson
-import qualified Data.ByteString.Lazy as LBS
 import qualified Data.Text.Extended   as Text
 import qualified Data.Text.IO         as TextIO
 
@@ -110,7 +108,7 @@ routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
 routeUpdates _ _               = getLongPollServer
 
 processUpdate :: Update -> App ()
-processUpdate (NewMessage m) = logInfo m >> processNewMessage m
+processUpdate (NewMessage m) = processNewMessage m
 processUpdate err = logWarning err
 
 processNewMessage :: Message -> App ()
@@ -119,11 +117,7 @@ processNewMessage message = do
     (traverseHandle routeAttachment $ parse <$> mAttachments message) $
     mkState message
   sendMessage <- mkSendMessage message aState <$> liftIO randomIO
-  logInfo sendMessage
-  handle =<< request sendMessage
-  where handle :: Result LBS.ByteString -> App ()
-        handle (Result v) = logDebug $ decodeUtf8 $ LBS.toStrict v
-        handle (RequestError error) = logWarning error
+  handleWarningRequest @MessageSended sendMessage endRoute
 
 routeAttachment :: Attachment -> StateT AttachmentsState App ()
 routeAttachment (Attachment body) = logDebug body >> addAttachment body
@@ -148,6 +142,8 @@ uploadDocument uFile = handleWarningRequest uFile
 saveFile :: SaveFile -> StateT AttachmentsState App ()
 saveFile sf = handleWarningRequest @FileSaved sf addAttachment
 
+endRoute :: Monad m => a -> m ()
+endRoute = const (return ())
 -- TODO: move all handlers to shared module
 handle :: ( HasLogger r m, HasPriority a)
        => (Result (Response a) -> m ())  -- logger for input
