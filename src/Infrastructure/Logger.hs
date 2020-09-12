@@ -24,6 +24,7 @@ module Infrastructure.Logger
   , logInfo
   , logWarning
   , mkLogger
+  , mkToLog
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -107,8 +108,11 @@ instance Loggable HttpExceptionContent where
   toLog ResponseTimeout = "ResponseTimeout\n\
     \ | Description: The server took too long to return a response"
 
-  toLog ConnectionTimeout = "ConnectionTimeout\n\
-    \ | Description: Attempting to connect to the server timed out"
+  toLog ConnectionTimeout = mkToLog "ConnectionTimeout"
+    [("Description", "Attempting to connect to the server timed out")] []
+
+--  toLog ConnectionTimeout = "ConnectionTimeout\n\
+--    \ | Description: Attempting to connect to the server timed out"
 
   toLog (ConnectionFailure e) = "ConnectionFailure\n\
     \ | Description: An exception occurred when trying \
@@ -349,3 +353,17 @@ mkLogger Config {..} mode
                              . modeLogger   oShowMode mode
                              . timeLogger   oShowTime
                              . concurrentLogger
+
+mkToLog :: Text -> [(Text, Text)] -> [(Text, Maybe Text)] -> Text
+mkToLog text lines maybeLines = text
+  <> Text.concat (mkLogLine <$> lines)
+  <> Text.concat (maybeLine <$> maybeLines)
+
+mkLogLine :: (Text, Text) -> Text
+mkLogLine (key, value) = "\n | " <> key <> ": " <> value
+
+maybeLine :: (Text, Maybe Text) -> Text
+maybeLine (_, Nothing) = ""
+maybeLine (key, Just value)
+  | Text.null value = ""
+  | otherwise       = mkLogLine (key, value)
