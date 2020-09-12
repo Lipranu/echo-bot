@@ -108,8 +108,8 @@ routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
 routeUpdates _ _               = getLongPollServer
 
 processUpdate :: Update -> App ()
-processUpdate (NewMessage m) = processNewMessage m
-processUpdate err = logWarning err
+processUpdate (NewMessage m) = withLog processNewMessage m
+processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
 
 processNewMessage :: Message -> App ()
 processNewMessage message = do
@@ -120,9 +120,9 @@ processNewMessage message = do
   handleWarningRequest @MessageSended sendMessage endRoute
 
 routeAttachment :: Attachment -> StateT AttachmentsState App ()
-routeAttachment (Attachment body) = logDebug body >> addAttachment body
-routeAttachment (Wall       body) = logDebug body >> addAttachment body
-routeAttachment (Document   body) = logDebug body >> processDocument body
+routeAttachment (Attachment body) = withLog addAttachment body
+routeAttachment (Wall       body) = withLog addAttachment body
+routeAttachment (Document   body) = withLog processDocument body
 routeAttachment (Sticker      id) = addSticker id
 
 processDocument :: DocumentBody -> StateT AttachmentsState App ()
@@ -155,18 +155,18 @@ handle _ _ route (Result (Success x)) = logData x >> route x
 handle logger1 logger2 _ error = logger1 error >> logger2
 
 handleR :: ( HasLogger r m, HasPriority a)
-       => (Result a -> m ())  -- logger for input
-       -> m ()                           -- additional logger
-       -> (a -> m ())                    -- function for handled input
-       -> Result a            -- input
-       -> m ()                           -- phantom result
+       => (Result a -> m ())
+       -> m ()
+       -> (a -> m ())
+       -> Result a
+       -> m ()
 handleR _ _ route (Result x) = logData x >> route x
 handleR logger1 logger2 _ error = logger1 error >> logger2
 
 handleWarningR :: ( HasLogger r m, HasPriority a)
-       => (a -> m ())                    -- function for handled input
+       => (a -> m ())
        -> Result a
-       -> m ()                           -- phantom result
+       -> m ()
 handleWarningR = handleR logWarning (return ())
 
 handleError, handleWarning
@@ -177,6 +177,9 @@ handleError, handleWarning
 handleError   = handle logError (logError shutdown)
 handleWarning = handle logWarning (return ())
 
+withLog :: (HasLogger r m, HasPriority a) => (a -> m b) -> a -> m b
+withLog f x = logData x >> f x
+
 requestWithLog ::
   ( MonadEffects r m
   , HasPriority input
@@ -184,7 +187,7 @@ requestWithLog ::
   , Aeson.FromJSON output
   ) => input
     -> m (Result (Response output))
-requestWithLog x = logData x >> requestAndDecode x
+requestWithLog = withLog requestAndDecode
 
 handleErrorRequest, handleWarningRequest :: forall output input r m .
   ( MonadEffects r m
