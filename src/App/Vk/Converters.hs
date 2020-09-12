@@ -112,8 +112,8 @@ mkGetFile DocumentBody {..} = GetFile dUrl
 mkGetUploadServer :: MonadState AttachmentsState m => m GetUploadServer
 mkGetUploadServer = GetUploadServer "doc" <$> gets asPeerId
 
-mkSaveFile :: UploadFile -> Text -> SaveFile
-mkSaveFile UploadFile {..} file =
+mkSaveFile :: UploadFile -> FileUploaded -> SaveFile
+mkSaveFile UploadFile {..} (FileUploaded file) =
   let sfFile  = file
       sfTitle = ufTitle
    in SaveFile {..}

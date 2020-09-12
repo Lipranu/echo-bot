@@ -37,37 +37,59 @@ import qualified Data.Text.Extended  as Text
 
 data Response a
   = Success a
-  | Error ErrorResponse
+  | Error ErrorBody
+  | UploadError UploadErrorBody
   deriving Functor
 
 instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
   parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
-    Success <$> Aeson.parseJSON (Aeson.Object o)
-    <|> Success <$> o .: "response"
-    <|> Error   <$> o .: "error"
+        Error       <$> o .: "error"
+    <|> UploadError <$> Aeson.parseJSON (Aeson.Object o)
+    <|> Success     <$> o .: "response"
+    <|> Success     <$> Aeson.parseJSON (Aeson.Object o)
 
 instance Loggable a => Loggable (Response a) where
-  toLog (Success x) = toLog x
-  toLog (Error   x) = toLog x
+  toLog (Success     x) = toLog x
+  toLog (Error       x) = toLog x
+  toLog (UploadError x) = toLog x
 
--- ErrorResponse -----------------------------------------------------------
+-- ErrorBody ---------------------------------------------------------------
 
-data ErrorResponse = ErrorResponse
+data ErrorBody = ErrorBody
   { eErrorCode     :: Integer
   , eErrorMsg      :: Text
   , eRequestParams :: [RequestParams]
   } deriving Generic
 
-instance Aeson.FromJSON ErrorResponse where
+instance Aeson.FromJSON ErrorBody where
   parseJSON = Aeson.parseJsonDrop
 
-instance Loggable ErrorResponse where
-  toLog ErrorResponse {..}
+instance Loggable ErrorBody where
+  toLog ErrorBody {..}
     = "An error occurred as a result of the request\n\
     \ | Error Code: "        <> Text.showt eErrorCode <> "\n\
     \ | Error Message: "     <> eErrorMsg             <> "\n\
     \ | Request Parameters:" <> params
     where params  = foldr (<>) "" $ fmap toLog eRequestParams
+
+-- UploadErrorBody ---------------------------------------------------------
+
+data UploadErrorBody = UploadErrorBody
+  { uebError  :: Text
+  , uebBwact  :: Text
+  , uebServer :: Integer
+  , ueb_sig   :: Text
+  } deriving Generic
+
+instance Aeson.FromJSON UploadErrorBody where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable UploadErrorBody where
+  toLog UploadErrorBody {..} = "Error occurred during upload file:\n\
+    \ | Error: "  <> uebError             <> "\n\
+    \ | Bwact: "  <> uebBwact             <> "\n\
+    \ | Server: " <> Text.showt uebServer <> "\n\
+    \ | _sig: "   <> ueb_sig
 
 -- RequestParams -----------------------------------------------------------
 
@@ -286,38 +308,15 @@ instance Loggable UploadServer where
 
 -- FileUploaded ------------------------------------------------------------
 
-data FileUploaded
-  = FileUploaded Text
-  | UploadError UploadErrorBody
+newtype FileUploaded = FileUploaded Text
 
 instance Aeson.FromJSON FileUploaded where
   parseJSON = Aeson.withObject "App.Vk.FileUploaded" $ \o ->
-        FileUploaded <$> o .: "file"
-    <|> UploadError  <$> Aeson.parseJSON (Aeson.Object o)
+    FileUploaded <$> o .: "file"
 
 instance Loggable FileUploaded where
   toLog (FileUploaded text) = "File uploaded:\n\
     \ | Response body: " <> text
-  toLog (UploadError body) = toLog body
-
--- UploadErrorBody ---------------------------------------------------------
-
-data UploadErrorBody = UploadErrorBody
-  { uebError  :: Text
-  , uebBwact  :: Text
-  , uebServer :: Integer
-  , ueb_sig   :: Text
-  } deriving Generic
-
-instance Aeson.FromJSON UploadErrorBody where
-  parseJSON = Aeson.parseJsonDrop
-
-instance Loggable UploadErrorBody where
-  toLog UploadErrorBody {..} = "Error occurred during upload file:\n\
-    \ | Error: "  <> uebError             <> "\n\
-    \ | Bwact: "  <> uebBwact             <> "\n\
-    \ | Server: " <> Text.showt uebServer <> "\n\
-    \ | _sig: "   <> ueb_sig
 
 -- FileSaved ---------------------------------------------------------------
 
