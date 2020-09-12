@@ -39,14 +39,11 @@ import qualified Data.Text.IO         as TextIO
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
-type HasLogger r m = (Has (Logger m) r, MonadReader r m, MonadTime m)
-
 type MonadEffects r m =
-  ( Has (Logger m) r
-  , Has (Requester m) r
-  , MonadTime m
+  ( Has (Requester m) r
   , MonadRequester m
   , MonadReader r m
+  , HasLogger r m
   )
 
 data Config = Config

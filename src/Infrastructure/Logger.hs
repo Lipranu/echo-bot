@@ -9,8 +9,10 @@
 
 module Infrastructure.Logger
   ( Config (..)
-  , Logger (..)
+  , HasLogger
+  , HasPriority (..)
   , Loggable (..)
+  , Logger (..)
   , MonadLogger (..)
   , MonadTime (..)
   , Options (..)
@@ -28,20 +30,20 @@ module Infrastructure.Logger
 
 import Internal
 
-import Control.Concurrent.MVar      ( takeMVar, putMVar )
-import Control.Monad                ( when )
-import Control.Monad.IO.Class       ( MonadIO, liftIO )
-import Control.Monad.Reader         ( MonadReader, lift )
-import Control.Monad.State          ( StateT (..) )
-import Data.Aeson                   ( (.:?), (.!=) )
-import Data.Text.Extended           ( Text )
-import Data.Text.Encoding           ( decodeUtf8 )
-import Data.Time                    ( UTCTime )
-import Network.HTTP.Client.Extended ( HttpException (..)
-                                    , HttpExceptionContent (..)
-                                    , responseStatus
-                                    )
-import Network.HTTP.Types.Status    ( Status (..) )
+import Control.Concurrent.MVar   ( takeMVar, putMVar )
+import Control.Monad             ( when )
+import Control.Monad.IO.Class    ( MonadIO, liftIO )
+import Control.Monad.Reader      ( MonadReader, lift )
+import Control.Monad.State       ( StateT (..) )
+import Data.Aeson                ( (.:?), (.!=) )
+import Data.Text.Extended        ( Text )
+import Data.Text.Encoding        ( decodeUtf8 )
+import Data.Time                 ( UTCTime )
+import Network.HTTP.Client       ( HttpException (..)
+                                 , HttpExceptionContent (..)
+                                 , responseStatus
+                                 )
+import Network.HTTP.Types.Status ( Status (..) )
 
 import qualified Data.Aeson         as Aeson
 import qualified Data.Text.Extended as Text
@@ -60,7 +62,17 @@ class Monad m => MonadLogger m where
 class Loggable a where
   toLog :: a -> Text
 
+class Loggable a => HasPriority a where
+  logData :: HasLogger r m => a -> m ()
+
 -- TYPES AND INSTANCES -----------------------------------------------------
+
+type HasLogger r m =
+  ( Has (Logger m) r
+  , MonadReader r m
+  , MonadTime m
+  , MonadLogger m
+  )
 
 instance Loggable Text           where toLog   = id
 instance Loggable String         where toLog   = Text.pack
@@ -72,6 +84,8 @@ instance Loggable HttpException where
     \ | Description: A URL is invalid for a given reason\n\
     \ | URL: "    <> Text.pack url <> "\n\
     \ | Reason: " <> Text.pack reason
+
+instance HasPriority HttpException where logData = logError . toLog
 
 instance Loggable HttpExceptionContent where
   toLog (StatusCodeException response _) = "StatusCodeException\n\
@@ -176,6 +190,8 @@ instance Loggable HttpExceptionContent where
     \ | Description: Proxy settings are not valid\n\
     \ | Content: " <> content
 
+instance HasPriority HttpExceptionContent where logData = logError . toLog
+
 data Priority
   = Debug
   | Info
@@ -237,14 +253,11 @@ instance Loggable Message where
   toLog Message {..} = priority <> mode <> time <> message
     where
       priority = "[" <> Text.showt mPriority <> "]"
-
       message  = ": " <> mText <> "\n"
-
       mode     = case mMode of
         Nothing -> ""
         Just "" -> ""
         Just m  -> " {" <> m <> "}"
-
       time     = case mTime of
         Nothing -> ""
         Just t  -> " (" <> Text.showt t <> ")"
@@ -257,8 +270,7 @@ instance Applicative m => Semigroup (Logger m) where
 instance Applicative m => Monoid (Logger m) where
   mempty = Logger $ \_ -> pure ()
 
-instance (Has (Logger m) r, MonadReader r m)
-  => Has (Logger (StateT s m)) r where
+instance (HasLogger r m) => Has (Logger (StateT s m)) r where
   getter env = Logger $ \message ->  StateT $ \s ->
     (,s) <$> runLogger (getter env) message
 
@@ -271,10 +283,7 @@ instance MonadTime m => MonadTime (StateT s m) where
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-log :: (Has (Logger m) r, MonadReader r m, MonadTime m, Loggable a)
-    => Priority
-    -> a
-    -> m ()
+log :: (HasLogger r m, Loggable a) => Priority -> a -> m ()
 log lvl msg = do
   logger <- obtain
   runLogger logger message
@@ -286,7 +295,7 @@ log lvl msg = do
           }
 
 logDebug, logInfo, logWarning, logError
-  :: (Has (Logger m) r, MonadReader r m, MonadTime m, Loggable a)
+  :: (HasLogger r m, Loggable a)
   => a
   -> m ()
 logDebug   = log Debug
@@ -302,7 +311,7 @@ timeLogger False logger = logger
 
 modeLogger :: Bool -> Text -> Logger m -> Logger m
 modeLogger True  t logger = Logger $ \m ->
-  runLogger logger $ m { mMode = Just t }
+  runLogger logger m { mMode = Just t }
 modeLogger False _ logger = logger
 
 filterLogger :: Monad m => Priority -> Logger m -> Logger m
@@ -328,12 +337,7 @@ concurrentLogger logger = Logger $ \m -> do
   runLogger logger m
   liftIO $ putMVar lock ()
 
-mkLogger :: ( Has Lock r
-            , MonadReader r m
-            , MonadLogger m
-            , MonadTime m
-            , MonadIO m
-            )
+mkLogger :: (Has Lock r, HasLogger r m, MonadIO m)
          => Config
          -> Text
          -> Logger m
