@@ -1,8 +1,7 @@
-{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE FlexibleContexts       #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE FlexibleContexts       #-}
 
 module App.Vk.Converters
   ( module App.Vk.Requests
@@ -14,12 +13,13 @@ module App.Vk.Converters
 
   , addAttachment
   , addSticker
-  , mkState
-  , mkSaveFile
-  , mkUploadFile
-  , mkUploadRequests
-  , mkSendMessage
+  , mkGetFile
   , mkGetUpdates
+  , mkGetUploadServer
+  , mkSaveFile
+  , mkSendMessage
+  , mkState
+  , mkUploadFile
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -66,10 +66,9 @@ toAttachment :: Text -> Integer -> Integer -> Text
 toAttachment t oid mid = t <> Text.showt oid <> "_" <> Text.showt mid
 
 toAttachmentWithKey :: Text -> Integer -> Integer -> Maybe Text -> Text
-toAttachmentWithKey t oid mid key = (toAttachment t oid mid) <>
-  case key of
-    Just v  -> "_" <> v
-    Nothing -> ""
+toAttachmentWithKey t oid mid key = toAttachment t oid mid <> case key of
+  Just v  -> "_" <> v
+  Nothing -> ""
 
 mkGetUpdates :: LongPollServer -> GetUpdates
 mkGetUpdates LongPollServer {..} =
@@ -100,19 +99,18 @@ mkSendMessage Message {..} AttachmentsState {..} randomId =
         xs -> Just $ Text.intercalate "," $ reverse xs
    in SendMessage {..}
 
-mkUploadFile :: UploadServer -> LBS.ByteString -> DocumentBody -> UploadFile
-mkUploadFile (UploadServer url) file DocumentBody {..} =
+mkUploadFile :: DocumentBody -> UploadServer -> LBS.ByteString -> UploadFile
+mkUploadFile DocumentBody {..} (UploadServer url) file =
   let ufFile  = LBS.toStrict file
       ufUrl   = url
       ufTitle = dTitle
    in UploadFile {..}
 
-mkUploadRequests :: MonadState AttachmentsState m
-                 => DocumentBody
-                 -> m (GetFile, GetUploadServer)
-mkUploadRequests DocumentBody {..} = do
-  id <- gets asPeerId
-  return (GetFile dUrl, GetUploadServer "doc" id)
+mkGetFile :: DocumentBody -> GetFile
+mkGetFile DocumentBody {..} = GetFile dUrl
+
+mkGetUploadServer :: MonadState AttachmentsState m => m GetUploadServer
+mkGetUploadServer = GetUploadServer "doc" <$> gets asPeerId
 
 mkSaveFile :: UploadFile -> Text -> SaveFile
 mkSaveFile UploadFile {..} file =
