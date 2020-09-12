@@ -17,8 +17,9 @@ module App.Vk.Requests
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Vk.Internal
-import Infrastructure.Logger       (Loggable (..))
-import Infrastructure.Requester    (ToRequest (..))
+import Infrastructure.Logger       ( Loggable (..), HasPriority (..)
+                                   , logInfo )
+import Infrastructure.Requester    ( ToRequest (..) )
 import Internal
 
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
@@ -76,6 +77,8 @@ instance MonadReader r m => ToRequest m r GetUpdates where
 instance Loggable GetUpdates where
   toLog GetUpdates {..} = "Requesting updates with ts: " <> guTs
 
+instance HasPriority GetUpdates where logData = logInfo . toLog
+
 -- SendMessage -------------------------------------------------------------
 
 data SendMessage = SendMessage
@@ -110,6 +113,8 @@ instance Loggable SendMessage where
   toLog SendMessage {..} = "Sending message with peer id: "
     <> Text.showt smPeerId
 
+instance HasPriority SendMessage where logData = logInfo . toLog
+
 -- GetFile -----------------------------------------------------------------
 
 newtype GetFile = GetFile Text
@@ -119,6 +124,8 @@ instance MonadReader r m => ToRequest m r GetFile where
 
 instance Loggable GetFile where
   toLog _ = "Downloading file from attachment url"
+
+instance HasPriority GetFile where logData = logInfo . toLog
 
 -- GetUploadServer ---------------------------------------------------------
 
@@ -143,6 +150,8 @@ instance Loggable GetUploadServer where
   toLog GetUploadServer {..} = "Requesting upload server of type: "
     <> gusType
 
+instance HasPriority GetUploadServer where logData = logInfo . toLog
+
 -- UploadFile ----------------------------------------------------------
 
 data UploadFile = UploadFile
@@ -161,6 +170,8 @@ instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
 
 instance Loggable UploadFile where
   toLog UploadFile {..} = "Uploading file: " <> ufTitle
+
+instance HasPriority UploadFile where logData = logInfo . toLog
 
 -- SaveFile ----------------------------------------------------------------
 
@@ -183,6 +194,8 @@ instance VkReader r m => ToRequest m r SaveFile where
 
 instance Loggable SaveFile where
   toLog SaveFile {..} = "Saving file: " <> sfTitle
+
+instance HasPriority SaveFile where logData = logInfo . toLog
 
 -- FUNCTIONS ---------------------------------------------------------------
 
