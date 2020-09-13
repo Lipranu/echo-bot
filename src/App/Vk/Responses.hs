@@ -215,6 +215,7 @@ data Message = Message
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
   , mAttachments :: [Aeson.Value]
+  , mPayload     :: Maybe Text
 --  , mKeyboard    :: Maybe Aeson.Object
   }
 
@@ -225,7 +226,8 @@ instance Aeson.FromJSON Message where
     <*> o .:? "text"
     <*> (coord o "latitude"  <|> pure Nothing)
     <*> (coord o "longitude" <|> pure Nothing)
-    <*> o .: "attachments"
+    <*> o .:  "attachments"
+    <*> o .:? "payload"
     where coord o t = o .: "geo" >>= (.: "coordinates") >>= (.: t)
 
 instance Loggable Message where
@@ -237,6 +239,7 @@ instance Loggable Message where
     [ ("Message"    , mMessage)
     , ("Latitude"   , Text.showt <$> mLatitude)
     , ("Longitude"  , Text.showt <$> mLongitude)
+    , ("Payload"    , mPayload)
     ]
 
 instance HasPriority Message where logData = logDebug . toLog
@@ -299,7 +302,7 @@ instance HasPriority AttachmentBody where logData = logDebug . toLog
 
 data WallBody = WallBody
   { wId        :: Integer
-  , wToId   :: Integer
+  , wToId      :: Integer
   , wAccessKey :: Maybe Text
   , wType      :: Text
   } deriving Generic
