@@ -86,18 +86,62 @@ mkState Message {..} =
       asSticker     = Nothing
    in AttachmentsState {..}
 
-mkSendMessage :: Message -> AttachmentsState -> Int -> SendMessage
-mkSendMessage Message {..} AttachmentsState {..} randomId =
+mkSendMessage :: Message -> AttachmentsState -> Int -> Int -> SendMessage
+mkSendMessage Message {..} AttachmentsState {..} currentRepeat randomId =
   let smPeerId      = mPeerId
       smRandomId    = randomId
       smMessage     = mMessage
       smLatitude    = mLatitude
       smLongitude   = mLongitude
       smSticker     = asSticker
+      smKeyboard    = mkKeyboard currentRepeat
       smAttachments = case asAttachments of
         [] -> Nothing
         xs -> Just $ Text.intercalate "," $ reverse xs
    in SendMessage {..}
+
+mkKeyboard :: Int -> Keyboard
+mkKeyboard currentRepeat =
+  let kOneTime = False
+      kButtons = [helpButton, repeatButtons currentRepeat]
+      kInline  = False
+   in Keyboard {..}
+
+helpButton :: [Button]
+helpButton =
+  let bColor  = "primary"
+      bAction = helpAction
+   in [Button {..}]
+
+helpAction :: Action
+helpAction =
+  let abType    = "text"
+      abLabel   = "Help"
+      abPayload = "0"
+   in Action {..}
+
+repeatButtons :: Int -> [Button]
+repeatButtons currentRepeat =
+  [ repeatButton 1 currentRepeat
+  , repeatButton 2 currentRepeat
+  , repeatButton 3 currentRepeat
+  , repeatButton 4 currentRepeat
+  , repeatButton 5 currentRepeat
+  ]
+
+repeatButton :: Int -> Int -> Button
+repeatButton index currentRepeat =
+  let bAction = repeatAction $ Text.showt index
+      bColor  | index == currentRepeat = "positive"
+              | otherwise              = "secondary"
+   in Button {..}
+
+repeatAction :: Text -> Action
+repeatAction index =
+  let abType    = "text"
+      abLabel   = index
+      abPayload = index
+   in Action {..}
 
 mkUploadFile :: DocumentBody -> UploadServer -> RawFile -> UploadFile
 mkUploadFile DocumentBody {..} (UploadServer url) (RawFile file) =
