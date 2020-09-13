@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE DeriveGeneric            #-}
 
 module App.Vk.Requests
   ( GetFile (..)
@@ -11,7 +12,11 @@ module App.Vk.Requests
   , GetUploadServer (..)
   , SaveFile (..)
   , SendMessage (..)
+  --, SendMessage' (..)
   , UploadFile (..)
+  , Keyboard (..)
+  , Button (..)
+  , Action (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -26,8 +31,12 @@ import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( MonadReader )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
+import GHC.Generics (Generic)
+--import Network.HTTP.Types.Header (hContentEncoding)
 
+import qualified Data.Aeson.Extended                   as Aeson
 import qualified Data.ByteString                       as BS
+import qualified Data.ByteString.Lazy                  as LBS
 import qualified Data.Text.Extended                    as Text
 import qualified Network.HTTP.Client                   as HTTP
 import qualified Network.HTTP.Client.MultipartFormData as MP
@@ -83,6 +92,36 @@ instance HasPriority GetUpdates where logData = logInfo . toLog
 
 -- SendMessage -------------------------------------------------------------
 
+--data SendMessage' = SendMessage'
+--  { ssmAccessToken        :: Text
+--  , ssmGroupId       :: Text
+--  , ssmPeerId      :: Integer
+--  , ssmRandomId    :: Int
+--  , ssmMessage     :: Maybe Text
+--  , ssmLat    :: Maybe Double
+--  , ssmLong   :: Maybe Double
+--  , ssmAttachment :: Maybe Text
+--  , ssmStickerId     :: Maybe Integer
+--  , ssmV :: Text
+--  } deriving Generic
+--
+--instance Aeson.ToJSON SendMessage' where
+--  toJSON = Aeson.toJsonDrop
+--
+--instance MonadReader r m => ToRequest m r SendMessage' where
+--  toRequest sm = return $ defaultRequest
+--    { HTTP.path        = "method/messages.send"
+--    , HTTP.method      = "POST"
+--    , HTTP.requestBody = HTTP.RequestBodyLBS $ Aeson.encode sm
+--    , HTTP.requestHeaders = [("Content-type", "application/json")]
+--    }
+--
+--instance Loggable SendMessage' where
+--  toLog SendMessage' {..} = "Sending message with peer id: "
+--    <> Text.showt ssmPeerId
+--
+--instance HasPriority SendMessage' where logData = logInfo . toLog
+
 data SendMessage = SendMessage
   { smPeerId      :: Integer
   , smRandomId    :: Int
@@ -91,6 +130,7 @@ data SendMessage = SendMessage
   , smLongitude   :: Maybe Double
   , smAttachments :: Maybe Text
   , smSticker     :: Maybe Integer
+  , smKeyboard    :: Keyboard
   }
 
 instance VkReader r m => ToRequest m r SendMessage where
@@ -99,6 +139,7 @@ instance VkReader r m => ToRequest m r SendMessage where
     return $ HTTP.urlEncodedBody (mergeBodies mBody $ body <> df) request
     where body    = [ ("peer_id"   , encodeShowUtf8 smPeerId)
                     , ("random_id" , encodeShowUtf8 smRandomId)
+                    , ("keyboard"  , LBS.toStrict $ Aeson.encode smKeyboard)
                     ]
           mBody   = [ ("attachment", encodeUtf8     <$> smAttachments)
                     , ("message"   , encodeUtf8     <$> smMessage)
@@ -116,6 +157,38 @@ instance Loggable SendMessage where
     <> Text.showt smPeerId
 
 instance HasPriority SendMessage where logData = logInfo . toLog
+
+-- Keyboard ----------------------------------------------------------------
+
+data Keyboard = Keyboard
+  { kOneTime :: Bool
+  , kInline  :: Bool
+  , kButtons :: [[Button]]
+  } deriving Generic
+
+instance Aeson.ToJSON Keyboard where
+  toJSON = Aeson.toJsonDrop
+
+-- Button ------------------------------------------------------------------
+
+data Button = Button
+  { bAction :: Action
+  , bColor  :: Text
+  } deriving Generic
+
+instance Aeson.ToJSON Button where
+  toJSON = Aeson.toJsonDrop
+
+-- Button ------------------------------------------------------------------
+
+data Action = Action
+  { abType    :: Text
+  , abLabel   :: Text
+  , abPayload :: Text
+  } deriving Generic
+
+instance Aeson.ToJSON Action where
+  toJSON = Aeson.toJsonDrop
 
 -- GetFile -----------------------------------------------------------------
 
