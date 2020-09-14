@@ -13,11 +13,14 @@ module App.Vk ( Config, mkApp, runApp ) where
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Vk.Converters
+import App.Shared.Repetition
+import App.Shared hiding ( Config )
 
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
 import Internal
 
+import qualified App.Shared            as Shared
 import qualified Infrastructure.Logger as Logger
 
 import Control.Exception           ( try )
@@ -28,6 +31,7 @@ import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
 import Data.Text.Extended          ( Text )
 import Data.Time                   ( getCurrentTime )
+import Data.IORef                  ( IORef )
 import System.Random               ( randomIO )
 import Network.HTTP.Client         ( Manager, httpLbs )
 
@@ -55,18 +59,26 @@ instance Aeson.FromJSON Config where
     <*> (Group <$> o .: "group_id")
 
 data Env = Env
-  { envToken     :: Token
-  , envGroup     :: Group
-  , envLogger    :: Logger App
-  , envLock      :: Lock
-  , envRequester :: Requester App
+  { envToken         :: Token
+  , envGroup         :: Group
+  , envDefaultRepeat :: DefaultRepeat
+  , envRepetitions   :: IORef Repetitions
+  , envLogger        :: Logger App
+  , envLock          :: Lock
+  , envRequester     :: Requester App
+  , envHelpText      :: HelpText
+  , envRepeatText    :: RepeatText
   }
 
-instance Has Lock            Env where getter = envLock
-instance Has (Logger App)    Env where getter = envLogger
-instance Has (Requester App) Env where getter = envRequester
-instance Has Token           Env where getter = envToken
-instance Has Group           Env where getter = envGroup
+instance Has Lock                Env where getter = envLock
+instance Has (Logger App)        Env where getter = envLogger
+instance Has (Requester App)     Env where getter = envRequester
+instance Has Token               Env where getter = envToken
+instance Has Group               Env where getter = envGroup
+instance Has DefaultRepeat       Env where getter = envDefaultRepeat
+instance Has HelpText            Env where getter = envHelpText
+instance Has RepeatText          Env where getter = envRepeatText
+instance Has (IORef Repetitions) Env where getter = envRepetitions
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
   (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadFail )
@@ -86,9 +98,24 @@ instance MonadRequester App where
 app :: App ()
 app = logInfo start >> getLongPollServer
 
-mkApp :: Config -> Logger.Config -> Lock -> Manager -> Env
-mkApp Config {..} cLogger lock = Env cToken cGroup logger lock . mkRequester
-  where logger = mkLogger cLogger "Vk"
+mkApp :: Config
+      -> Shared.Config
+      -> Logger.Config
+      -> Lock
+      -> IORef Repetitions
+      -> Manager
+      -> Env
+mkApp Config {..} Shared.Config {..} logger lock ref manager =
+  let envLock          = lock
+      envLogger        = mkLogger logger "Vk"
+      envToken         = cToken
+      envGroup         = cGroup
+      envRequester     = mkRequester manager
+      envDefaultRepeat = cDefaultRepeat
+      envRepeatText    = cRepeatText
+      envHelpText      = cHelpText
+      envRepetitions   = ref
+   in Env {..}
 
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
@@ -116,7 +143,7 @@ processNewMessage message = do
   aState      <- execStateT
     (traverseHandle routeAttachment $ parse <$> mAttachments message) $
     mkState message
-  sendMessage <- mkSendMessage message aState <$> liftIO randomIO
+  sendMessage <- mkSendMessage message aState 4 <$> liftIO randomIO
   handleWarningRequest @MessageSended sendMessage endRoute
 
 routeAttachment :: Attachment -> StateT AttachmentsState App ()
@@ -133,7 +160,7 @@ processDocument doc = do
 getFile :: DocumentBody -> UploadServer -> StateT AttachmentsState App ()
 getFile doc us = do
   file <- request $ mkGetFile doc
-  handleWarningR (uploadDocument . mkUploadFile doc us) $ RawFile <$>file
+  handleWarningR (uploadDocument . mkUploadFile doc us) $ RawFile <$> file
 
 uploadDocument :: UploadFile -> StateT AttachmentsState App ()
 uploadDocument uFile = handleWarningRequest uFile
