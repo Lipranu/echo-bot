@@ -136,11 +136,25 @@ routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
 routeUpdates _ _               = getLongPollServer
 
 processUpdate :: Update -> App ()
-processUpdate (NewMessage m) = withLog processNewMessage m
+processUpdate (NewMessage m) = case mPayload m of
+  Nothing -> withLog processMessage m
+  Just "101" -> logDebug ("help message" :: Text)
+  Just "102" -> logDebug ("rep message" :: Text)
+  Just "201" -> processRepeats m 1
+  Just "202" -> processRepeats m 2
+  Just "203" -> processRepeats m 3
+  Just "204" -> processRepeats m 4
+  Just "205" -> processRepeats m 5
+  Just text  -> logWarning ("unknown payload: " <> text)
+             >> withLog processMessage m
 processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
 
-processNewMessage :: Message -> App ()
-processNewMessage message = do
+processRepeats :: Message -> Int -> App ()
+processRepeats m i = putRepeats m i
+  >> sendMessage (mkRepeatReply m i)
+
+processMessage :: Message -> App ()
+processMessage message = do
   aState  <- execStateT
     (traverseHandle routeAttachment $ parse <$> mAttachments message) $
     mkState message

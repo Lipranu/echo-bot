@@ -18,6 +18,7 @@ module App.Vk.Converters
   , mkGetUploadServer
   , mkSaveFile
   , mkSendMessage
+  , mkRepeatReply
   , mkState
   , mkUploadFile
   ) where
@@ -100,6 +101,18 @@ mkSendMessage Message {..} AttachmentsState {..} currentRepeat randomId =
         xs -> Just $ Text.intercalate "," $ reverse xs
    in SendMessage {..}
 
+mkRepeatReply :: Message -> Int -> Int -> SendMessage
+mkRepeatReply Message {..} repeat randomId =
+  let smPeerId      = mPeerId
+      smRandomId    = randomId
+      smMessage     = Just $ "Repeat count set to: " <> Text.showt repeat
+      smLatitude    = Nothing
+      smLongitude   = Nothing
+      smSticker     = Nothing
+      smKeyboard    = mkKeyboard repeat
+      smAttachments = Nothing
+   in SendMessage {..}
+
 mkKeyboard :: Int -> Keyboard
 mkKeyboard currentRepeat =
   let kOneTime = False
@@ -117,7 +130,7 @@ helpAction :: Action
 helpAction =
   let abType    = "text"
       abLabel   = "Help"
-      abPayload = "0"
+      abPayload = "101"
    in Action {..}
 
 repeatButtons :: Int -> [Button]
@@ -140,7 +153,7 @@ repeatAction :: Text -> Action
 repeatAction index =
   let abType    = "text"
       abLabel   = index
-      abPayload = index
+      abPayload = "20" <> index
    in Action {..}
 
 mkUploadFile :: DocumentBody -> UploadServer -> RawFile -> UploadFile
