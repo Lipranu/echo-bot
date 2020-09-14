@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 3ce10d4ab8de846dad91909f8c687ab683b3a3735f34e68438b6cd477408b7e5
+-- hash: 646e057be969f8fe078f7553b3c125bb98977dc4613162ebf2509a2418a1f070
 
 name:           echo-bot
 version:        0.1.0.0
@@ -28,6 +28,7 @@ source-repository head
 library
   exposed-modules:
       App
+      App.Shared
       App.Shared.Repetition
       App.Telegram
       App.Vk

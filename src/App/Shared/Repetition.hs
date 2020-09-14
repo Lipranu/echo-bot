@@ -3,7 +3,7 @@
 module App.Shared.Repetition
   ( Repetitions
   , Key
-  , DefaultRepeat
+  , DefaultRepeat (..)
 
   , getRepeats
   , putRepeats
