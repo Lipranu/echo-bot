@@ -1,9 +1,10 @@
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE DeriveFunctor     #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving     #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -24,6 +25,8 @@ module App.Vk.Responses
 
 -- IMPORTS -----------------------------------------------------------------
 
+import Internal              ( Has (..) )
+import App.Shared.Repetition ( Key )
 import Infrastructure.Logger ( Loggable (..), HasPriority (..)
                              , logDebug, logWarning, logInfo
                              , mkToLog, mkLogLine
@@ -216,7 +219,6 @@ data Message = Message
   , mLongitude   :: Maybe Double
   , mAttachments :: [Aeson.Value]
   , mPayload     :: Maybe Text
---  , mKeyboard    :: Maybe Aeson.Object
   }
 
 instance Aeson.FromJSON Message where
@@ -243,6 +245,8 @@ instance Loggable Message where
     ]
 
 instance HasPriority Message where logData = logDebug . toLog
+
+instance Has Key Message where getter Message {..} = (mFromId, mPeerId)
 
 -- Attachment --------------------------------------------------------------
 
