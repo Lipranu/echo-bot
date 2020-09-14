@@ -24,6 +24,7 @@ import qualified App.Shared            as Shared
 import qualified Infrastructure.Logger as Logger
 
 import Control.Exception           ( try )
+import Control.Monad               ( replicateM_ )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT (..), MonadReader, runReaderT )
 import Control.Monad.State         ( StateT (..), execStateT )
@@ -140,11 +141,16 @@ processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
 
 processNewMessage :: Message -> App ()
 processNewMessage message = do
-  aState      <- execStateT
+  aState  <- execStateT
     (traverseHandle routeAttachment $ parse <$> mAttachments message) $
     mkState message
-  sendMessage <- mkSendMessage message aState 4 <$> liftIO randomIO
-  handleWarningRequest @MessageSended sendMessage endRoute
+  repeats <- getRepeats message
+  replicateM_ repeats $ sendMessage $ mkSendMessage message aState repeats
+
+sendMessage :: (Int -> SendMessage) -> App ()
+sendMessage sm = do
+  sendm <- sm <$> liftIO randomIO
+  handleWarningRequest @MessageSended sendm endRoute
 
 routeAttachment :: Attachment -> StateT AttachmentsState App ()
 routeAttachment (Attachment body) = withLog addAttachment body
