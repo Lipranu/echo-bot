@@ -19,19 +19,25 @@ module App.Vk.Converters
   , mkSaveFile
   , mkSendMessage
   , mkRepeatReply
+  , mkHelpReply
+  , mkIndexReply
   , mkState
   , mkUploadFile
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
+
+import App.Shared           ( HelpText (..), RepeatText (..) )
 import App.Vk.Internal
 import App.Vk.Requests
 import App.Vk.Responses
+import Internal
 
-import Control.Monad.State ( MonadState, modify, gets )
-import Data.Maybe          ( fromMaybe )
-import Data.Text.Extended  ( Text )
+import Control.Monad.State  ( MonadState, modify, gets )
+import Control.Monad.Reader ( MonadReader )
+import Data.Maybe           ( fromMaybe )
+import Data.Text.Extended   ( Text )
 
 import qualified Data.Text.Extended   as Text
 import qualified Data.ByteString.Lazy as LBS
@@ -95,23 +101,41 @@ mkSendMessage Message {..} AttachmentsState {..} currentRepeat randomId =
       smLatitude    = mLatitude
       smLongitude   = mLongitude
       smSticker     = asSticker
-      smKeyboard    = mkKeyboard currentRepeat
+      smKeyboard    = Just $ mkKeyboard currentRepeat
       smAttachments = case asAttachments of
         [] -> Nothing
         xs -> Just $ Text.intercalate "," $ reverse xs
    in SendMessage {..}
 
-mkRepeatReply :: Message -> Int -> Int -> SendMessage
-mkRepeatReply Message {..} repeat randomId =
+mkGenericReply :: Maybe Keyboard -> Message -> Text -> Int -> SendMessage
+mkGenericReply keyboard Message {..} text randomId =
   let smPeerId      = mPeerId
       smRandomId    = randomId
-      smMessage     = Just $ "Repeat count set to: " <> Text.showt repeat
+      smMessage     = Just text
       smLatitude    = Nothing
       smLongitude   = Nothing
       smSticker     = Nothing
-      smKeyboard    = mkKeyboard repeat
+      smKeyboard    = keyboard
       smAttachments = Nothing
    in SendMessage {..}
+
+mkIndexReply :: Int -> Message -> Int -> SendMessage
+mkIndexReply repeat message = mkGenericReply
+  (Just $ mkKeyboard repeat)
+  message
+  ("Repeat count set to: " <> Text.showt repeat)
+
+mkRepeatReply :: (Has RepeatText r, MonadReader r m)
+              => Message
+              -> m (Int -> SendMessage)
+mkRepeatReply message = unRepeatText <$> obtain
+  >>= return . mkGenericReply Nothing message
+
+mkHelpReply :: (Has HelpText r, MonadReader r m)
+              => Message
+              -> m (Int -> SendMessage)
+mkHelpReply message = unHelpText <$> obtain
+  >>= return . mkGenericReply Nothing message
 
 mkKeyboard :: Int -> Keyboard
 mkKeyboard currentRepeat =

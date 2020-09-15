@@ -138,28 +138,31 @@ routeUpdates _ _               = getLongPollServer
 processUpdate :: Update -> App ()
 processUpdate (NewMessage m) = case mPayload m of
   Nothing -> withLog processMessage m
-  Just "101" -> logDebug ("help message" :: Text)
-  Just "102" -> logDebug ("rep message" :: Text)
-  Just "201" -> processRepeats m 1
-  Just "202" -> processRepeats m 2
-  Just "203" -> processRepeats m 3
-  Just "204" -> processRepeats m 4
-  Just "205" -> processRepeats m 5
+  Just "101" -> withLog processHelp m
+  Just "102" -> withLog processRepeat m
+  Just "201" -> processIndex m 1
+  Just "202" -> processIndex m 2
+  Just "203" -> processIndex m 3
+  Just "204" -> processIndex m 4
+  Just "205" -> processIndex m 5
   Just text  -> logWarning ("unknown payload: " <> text)
              >> withLog processMessage m
 processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
 
-processRepeats :: Message -> Int -> App ()
-processRepeats m i = putRepeats m i
-  >> sendMessage (mkRepeatReply m i)
+processIndex :: Message -> Int -> App ()
+processIndex m i = putRepeats m i
+  >> sendMessage (mkIndexReply i m)
 
-processMessage :: Message -> App ()
-processMessage message = do
+processHelp, processRepeat, processMessage :: Message -> App ()
+processHelp m = mkHelpReply m >>= sendMessage
+
+processRepeat m = mkRepeatReply m >>= sendMessage
+
+processMessage m = do
   aState  <- execStateT
-    (traverseHandle routeAttachment $ parse <$> mAttachments message) $
-    mkState message
-  repeats <- getRepeats message
-  replicateM_ repeats $ sendMessage $ mkSendMessage message aState repeats
+    (traverseHandle routeAttachment $ parse <$> mAttachments m) $ mkState m
+  repeats <- getRepeats m
+  replicateM_ repeats $ sendMessage $ mkSendMessage m aState repeats
 
 sendMessage :: (Int -> SendMessage) -> App ()
 sendMessage sm = do

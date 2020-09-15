@@ -130,27 +130,28 @@ data SendMessage = SendMessage
   , smLongitude   :: Maybe Double
   , smAttachments :: Maybe Text
   , smSticker     :: Maybe Integer
-  , smKeyboard    :: Keyboard
+  , smKeyboard    :: Maybe Keyboard
   }
 
 instance VkReader r m => ToRequest m r SendMessage where
   toRequest SendMessage {..} = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (mergeBodies mBody $ body <> df) request
-    where body    = [ ("peer_id"   , encodeShowUtf8 smPeerId)
-                    , ("random_id" , encodeShowUtf8 smRandomId)
-                    , ("keyboard"  , LBS.toStrict $ Aeson.encode smKeyboard)
-                    ]
-          mBody   = [ ("attachment", encodeUtf8     <$> smAttachments)
-                    , ("message"   , encodeUtf8     <$> smMessage)
-                    , ("lat"       , encodeShowUtf8 <$> smLatitude)
-                    , ("long"      , encodeShowUtf8 <$> smLongitude)
-                    , ("sticker_id", encodeShowUtf8 <$> smSticker)
-                    ]
-          request = defaultRequest
-                    { HTTP.method = "POST"
-                    , HTTP.path   = "method/messages.send"
-                    }
+    where body     = [ ("peer_id"   , encodeShowUtf8 smPeerId)
+                     , ("random_id" , encodeShowUtf8 smRandomId)
+                     ]
+          mBody    = [ ("attachment", encodeUtf8     <$> smAttachments)
+                     , ("message"   , encodeUtf8     <$> smMessage)
+                     , ("lat"       , encodeShowUtf8 <$> smLatitude)
+                     , ("long"      , encodeShowUtf8 <$> smLongitude)
+                     , ("sticker_id", encodeShowUtf8 <$> smSticker)
+                     , ("keyboard"  , keyboard)
+                     ]
+          keyboard = (LBS.toStrict . Aeson.encode) <$> smKeyboard
+          request  = defaultRequest
+                     { HTTP.method = "POST"
+                     , HTTP.path   = "method/messages.send"
+                     }
 
 instance Loggable SendMessage where
   toLog SendMessage {..} = "Sending message with peer id: "
