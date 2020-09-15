@@ -76,8 +76,8 @@ type HasLogger r m =
   , MonadLogger m
   )
 
-instance Loggable Text           where toLog   = id
-instance Loggable String         where toLog   = Text.pack
+instance Loggable Text   where toLog = id
+instance Loggable String where toLog = Text.pack
 
 instance Loggable HttpException where
   toLog (HttpExceptionRequest _ content) = toLog content

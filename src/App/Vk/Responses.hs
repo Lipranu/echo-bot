@@ -5,6 +5,7 @@
 {-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE LambdaCase                 #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -19,6 +20,7 @@ module App.Vk.Responses
   , Update (..)
   , Updates (..)
   , UploadServer (..)
+  , UserName (..)
   , WallBody (..)
   , MessageSended (..)
   ) where
@@ -254,6 +256,18 @@ newtype UserName = UserName { unFirstName :: Text } deriving Generic
 
 instance Aeson.FromJSON UserName where
   parseJSON = Aeson.parseJsonDrop
+--  parseJSON = Aeson.withObject "App.Vk.Responses.UserName" $ \o ->
+--    UserName <$> o .: "first_name"
+    --null  -> fail "App.Vk.Responses.UserName: empty result"
+    --xs -> Aeson.withObject "" (\o -> UserName <$> o .: "first_name") $ xs ! 0
+
+instance Loggable [UserName] where
+  toLog [] = "User not found"
+  toLog (x:_) = toLog x
+
+instance HasPriority [UserName] where
+  logData [] = logWarning $ toLog ([] :: [UserName])
+  logData (x:_) = logData x
 
 instance Loggable UserName where
   toLog (UserName name) = "User name: " <> name
