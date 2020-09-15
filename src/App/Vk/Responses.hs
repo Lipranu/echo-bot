@@ -248,6 +248,18 @@ instance HasPriority Message where logData = logDebug . toLog
 
 instance Has Key Message where getter Message {..} = (mFromId, mPeerId)
 
+-- UserName ----------------------------------------------------------------
+
+newtype UserName = UserName { unFirstName :: Text } deriving Generic
+
+instance Aeson.FromJSON UserName where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable UserName where
+  toLog (UserName name) = "User name: " <> name
+
+instance HasPriority UserName where logData = logDebug . toLog
+
 -- Attachment --------------------------------------------------------------
 
 data Attachment
