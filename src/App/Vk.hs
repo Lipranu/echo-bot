@@ -27,7 +27,7 @@ import Control.Exception           ( try )
 import Control.Monad               ( replicateM_ )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT (..), MonadReader, runReaderT )
-import Control.Monad.State         ( StateT (..), execStateT )
+import Control.Monad.State         ( StateT (..), execStateT, put )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
 import Data.Text.Extended          ( Text )
@@ -149,14 +149,23 @@ processUpdate (NewMessage m) = case mPayload m of
              >> withLog processMessage m
 processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
 
+checkChat :: Message -> App (Maybe UserName)
+checkChat m | mPeerId m == mFromId m = return Nothing
+            | otherwise              = getName $ mkGetName m
+
+getName :: GetName -> App (Maybe UserName)
+getName gn = execStateT (handleWarningRequest gn getFirst) Nothing
+  where getFirst []    = logWarning ("User not found" :: Text)
+        getFirst (x:_) = put $ Just x
+
 processIndex :: Message -> Int -> App ()
 processIndex m i = putRepeats m i
-  >> sendMessage (mkIndexReply i m)
+  >> checkChat m >>= sendMessage . mkIndexReply i m
 
 processHelp, processRepeat, processMessage :: Message -> App ()
-processHelp m = mkHelpReply m >>= sendMessage
+processHelp m = checkChat m >>= mkHelpReply m >>= sendMessage
 
-processRepeat m = mkRepeatReply m >>= sendMessage
+processRepeat m = checkChat m >>= mkRepeatReply m >>= sendMessage
 
 processMessage m = do
   aState  <- execStateT
