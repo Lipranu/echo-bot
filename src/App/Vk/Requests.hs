@@ -92,36 +92,6 @@ instance HasPriority GetUpdates where logData = logInfo . toLog
 
 -- SendMessage -------------------------------------------------------------
 
---data SendMessage' = SendMessage'
---  { ssmAccessToken        :: Text
---  , ssmGroupId       :: Text
---  , ssmPeerId      :: Integer
---  , ssmRandomId    :: Int
---  , ssmMessage     :: Maybe Text
---  , ssmLat    :: Maybe Double
---  , ssmLong   :: Maybe Double
---  , ssmAttachment :: Maybe Text
---  , ssmStickerId     :: Maybe Integer
---  , ssmV :: Text
---  } deriving Generic
---
---instance Aeson.ToJSON SendMessage' where
---  toJSON = Aeson.toJsonDrop
---
---instance MonadReader r m => ToRequest m r SendMessage' where
---  toRequest sm = return $ defaultRequest
---    { HTTP.path        = "method/messages.send"
---    , HTTP.method      = "POST"
---    , HTTP.requestBody = HTTP.RequestBodyLBS $ Aeson.encode sm
---    , HTTP.requestHeaders = [("Content-type", "application/json")]
---    }
---
---instance Loggable SendMessage' where
---  toLog SendMessage' {..} = "Sending message with peer id: "
---    <> Text.showt ssmPeerId
---
---instance HasPriority SendMessage' where logData = logInfo . toLog
-
 data SendMessage = SendMessage
   { smPeerId      :: Integer
   , smRandomId    :: Int
@@ -190,6 +160,26 @@ data Action = Action
 
 instance Aeson.ToJSON Action where
   toJSON = Aeson.toJsonDrop
+
+-- GetName -----------------------------------------------------------------
+
+newtype GetName = GetName Integer
+
+instance VkReader r m => ToRequest m r GetName where
+  toRequest (GetName id) = do
+    df <- defaultBody
+    return $ HTTP.urlEncodedBody (body <> df) request
+    where body    = [ ("user_ids"   , encodeShowUtf8 id) ]
+          request = defaultRequest
+                    { HTTP.method = "GET"
+                    , HTTP.path   = "/method/users.get"
+                    }
+
+instance Loggable GetName where
+  toLog (GetName id) = "Performing a request for a username with an id: "
+    <> Text.showt id
+
+instance HasPriority GetName where logData = logInfo . toLog
 
 -- GetFile -----------------------------------------------------------------
 
