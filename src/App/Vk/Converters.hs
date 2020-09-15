@@ -116,15 +116,15 @@ mkRepeatReply Message {..} repeat randomId =
 mkKeyboard :: Int -> Keyboard
 mkKeyboard currentRepeat =
   let kOneTime = False
-      kButtons = [helpButton, repeatButtons currentRepeat]
+      kButtons = [[helpButton, repeatButton], indexButtons currentRepeat]
       kInline  = False
    in Keyboard {..}
 
-helpButton :: [Button]
+helpButton :: Button
 helpButton =
   let bColor  = "primary"
       bAction = helpAction
-   in [Button {..}]
+   in Button {..}
 
 helpAction :: Action
 helpAction =
@@ -133,24 +133,37 @@ helpAction =
       abPayload = "101"
    in Action {..}
 
-repeatButtons :: Int -> [Button]
-repeatButtons currentRepeat =
-  [ repeatButton 1 currentRepeat
-  , repeatButton 2 currentRepeat
-  , repeatButton 3 currentRepeat
-  , repeatButton 4 currentRepeat
-  , repeatButton 5 currentRepeat
+repeatButton :: Button
+repeatButton =
+  let bColor  = "primary"
+      bAction = repeatAction
+   in Button {..}
+
+repeatAction :: Action
+repeatAction =
+  let abType    = "text"
+      abLabel   = "Repeat"
+      abPayload = "102"
+   in Action {..}
+
+indexButtons :: Int -> [Button]
+indexButtons currentRepeat =
+  [ indexButton 1 currentRepeat
+  , indexButton 2 currentRepeat
+  , indexButton 3 currentRepeat
+  , indexButton 4 currentRepeat
+  , indexButton 5 currentRepeat
   ]
 
-repeatButton :: Int -> Int -> Button
-repeatButton index currentRepeat =
-  let bAction = repeatAction $ Text.showt index
+indexButton :: Int -> Int -> Button
+indexButton index currentRepeat =
+  let bAction = indexAction $ Text.showt index
       bColor  | index == currentRepeat = "positive"
               | otherwise              = "secondary"
    in Button {..}
 
-repeatAction :: Text -> Action
-repeatAction index =
+indexAction :: Text -> Action
+indexAction index =
   let abType    = "text"
       abLabel   = index
       abPayload = "20" <> index
