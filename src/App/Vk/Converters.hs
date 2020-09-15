@@ -93,6 +93,9 @@ mkState Message {..} =
       asSticker     = Nothing
    in AttachmentsState {..}
 
+mkGetName :: Message -> GetName
+mkGetName Message {..} = GetName mFromId
+
 mkSendMessage :: Message -> AttachmentsState -> Int -> Int -> SendMessage
 mkSendMessage Message {..} AttachmentsState {..} currentRepeat randomId =
   let smPeerId      = mPeerId
@@ -111,7 +114,7 @@ mkGenericReply :: Maybe Keyboard -> Message -> Text -> Int -> SendMessage
 mkGenericReply keyboard Message {..} text randomId =
   let smPeerId      = mPeerId
       smRandomId    = randomId
-      smMessage     = Just text
+      smMessage     = Just $ "@id" <> Text.showt mFromId <> " " <> text
       smLatitude    = Nothing
       smLongitude   = Nothing
       smSticker     = Nothing

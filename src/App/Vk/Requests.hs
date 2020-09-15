@@ -12,7 +12,7 @@ module App.Vk.Requests
   , GetUploadServer (..)
   , SaveFile (..)
   , SendMessage (..)
-  --, SendMessage' (..)
+  , GetName (..)
   , UploadFile (..)
   , Keyboard (..)
   , Button (..)
