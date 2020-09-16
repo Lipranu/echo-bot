@@ -3,6 +3,7 @@
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -27,7 +28,7 @@ import Control.Exception           ( try )
 import Control.Monad               ( replicateM_ )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT (..), MonadReader, runReaderT )
-import Control.Monad.State         ( StateT (..), execStateT, put )
+import Control.Monad.State         ( MonadState, execStateT )
 import Data.Aeson                  ( (.:) )
 import Data.Foldable               ( traverse_ )
 import Data.Text.Extended          ( Text )
@@ -121,23 +122,59 @@ mkApp Config {..} Shared.Config {..} logger lock ref manager =
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
 
-getLongPollServer :: App ()
+getLongPollServer :: ( Has (IORef Repetitions) r
+                     , Has DefaultRepeat r
+                     , Has HelpText r
+                     , Has RepeatText r
+                     , MonadEffects r m
+                     , MonadIO m
+                     , VkReader r m
+                     )
+                  => m ()
 getLongPollServer = handleErrorRequest GetLongPollServer
   $ getUpdates . mkGetUpdates
 
-getUpdates :: GetUpdates -> App ()
+getUpdates :: ( Has (IORef Repetitions) r
+              , Has DefaultRepeat r
+              , Has HelpText r
+              , Has RepeatText r
+              , MonadEffects r m
+              , MonadIO m
+              , VkReader r m
+              )
+           => GetUpdates
+           -> m ()
 getUpdates gu = handleErrorRequest gu $ routeUpdates gu
 
-routeUpdates :: GetUpdates -> Updates -> App ()
+routeUpdates :: ( Has (IORef Repetitions) r
+                , Has DefaultRepeat r
+                , Has HelpText r
+                , Has RepeatText r
+                , MonadEffects r m
+                , MonadIO m
+                , VkReader r m
+                )
+             => GetUpdates
+             -> Updates
+             -> m ()
 routeUpdates gu (Updates upd ts) = do
     traverseHandle processUpdate $ parse <$> upd
     getUpdates gu { guTs = ts }
 routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
 routeUpdates _ _               = getLongPollServer
 
-processUpdate :: Update -> App ()
+processUpdate :: ( Has (IORef Repetitions) r
+                 , Has DefaultRepeat r
+                 , Has HelpText r
+                 , Has RepeatText r
+                 , MonadEffects r m
+                 , MonadIO m
+                 , VkReader r m
+                 )
+              => Update
+              -> m ()
 processUpdate (NewMessage m) = case mPayload m of
-  Nothing -> withLog processMessage m
+  Nothing    -> withLog processMessage m
   Just "101" -> withLog processHelp m
   Just "102" -> withLog processRepeat m
   Just "201" -> processIndex m 1
@@ -149,62 +186,119 @@ processUpdate (NewMessage m) = case mPayload m of
              >> withLog processMessage m
 processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
 
-checkChat :: Message -> App (Maybe UserName)
+checkChat :: (MonadEffects r m, VkReader r m)
+          => Message
+          -> m (Maybe UserName)
 checkChat m | mPeerId m == mFromId m = return Nothing
             | otherwise              = getName $ mkGetName m
 
-getName :: GetName -> App (Maybe UserName)
-getName gn = execStateT (handleWarningRequest gn getFirst) Nothing
-  where getFirst []    = logWarning ("User not found" :: Text)
-        getFirst (x:_) = put $ Just x
+getName :: (MonadEffects r m, VkReader r m)
+        => GetName -> m (Maybe UserName)
+getName gn = withLog requestAndDecode gn >>= \case
+  Result (Success (x:_)) -> return $ Just x
+  error -> logWarning error >> return Nothing
 
-processIndex :: Message -> Int -> App ()
+processIndex :: ( Has (IORef Repetitions) r
+                , MonadEffects r m
+                , MonadIO m
+                , VkReader r m
+                )
+             => Message
+             -> Int
+             -> m ()
 processIndex m i = putRepeats m i
-  >> checkChat m >>= sendMessage . mkIndexReply i m
+  >>  checkChat m
+  >>= sendMessage . mkIndexReply i m
 
-processHelp, processRepeat, processMessage :: Message -> App ()
+processHelp :: (Has HelpText r, MonadEffects r m, MonadIO m, VkReader r m)
+            => Message
+            -> m ()
 processHelp m = checkChat m >>= mkHelpReply m >>= sendMessage
 
+processRepeat :: ( Has RepeatText r
+                 , MonadEffects r m
+                 , MonadIO m
+                 , VkReader r m
+                 )
+              => Message
+              -> m ()
 processRepeat m = checkChat m >>= mkRepeatReply m >>= sendMessage
 
+processMessage :: ( Has (IORef Repetitions) r
+                  , Has DefaultRepeat r
+                  , MonadEffects r m
+                  , MonadIO m
+                  , VkReader r m
+                  )
+               => Message
+               -> m ()
 processMessage m = do
   aState  <- execStateT
     (traverseHandle routeAttachment $ parse <$> mAttachments m) $ mkState m
   repeats <- getRepeats m
   replicateM_ repeats $ sendMessage $ mkSendMessage m aState repeats
 
-sendMessage :: (Int -> SendMessage) -> App ()
+sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m)
+            => (Int -> SendMessage)
+            -> m ()
 sendMessage sm = do
   sendm <- sm <$> liftIO randomIO
   handleWarningRequest @MessageSended sendm endRoute
 
-routeAttachment :: Attachment -> StateT AttachmentsState App ()
+routeAttachment :: ( MonadEffects r m
+                   , MonadIO m
+                   , MonadState AttachmentsState m
+                   , VkReader r m
+                   )
+                => Attachment
+                -> m ()
 routeAttachment (Attachment body) = withLog addAttachment body
 routeAttachment (Wall       body) = withLog addAttachment body
 routeAttachment (Document   body) = withLog processDocument body
 routeAttachment (Sticker      id) = addSticker id
 
-processDocument :: DocumentBody -> StateT AttachmentsState App ()
+processDocument :: ( MonadEffects r m
+                   , MonadIO m
+                   , MonadState AttachmentsState m
+                   , VkReader r m
+                   )
+                => DocumentBody -> m ()
 processDocument doc = do
   gUploadServer <- mkGetUploadServer
   handleWarningRequest gUploadServer $ getFile doc
 
-getFile :: DocumentBody -> UploadServer -> StateT AttachmentsState App ()
+getFile :: ( MonadEffects r m
+           , MonadIO m
+           , MonadState AttachmentsState m
+           , VkReader r m
+           )
+        => DocumentBody
+        -> UploadServer
+        -> m ()
 getFile doc us = do
   file <- request $ mkGetFile doc
   handleWarningR (uploadDocument . mkUploadFile doc us) $ RawFile <$> file
 
-uploadDocument :: UploadFile -> StateT AttachmentsState App ()
+uploadDocument :: ( MonadEffects r m
+                  , MonadIO m
+                  , MonadState AttachmentsState m
+                  , VkReader r m
+                  )
+               => UploadFile
+               -> m ()
 uploadDocument uFile = handleWarningRequest uFile
   $ saveFile . mkSaveFile uFile
 
-saveFile :: SaveFile -> StateT AttachmentsState App ()
+saveFile :: (MonadEffects r m, MonadState AttachmentsState m, VkReader r m)
+         => SaveFile
+         -> m ()
 saveFile sf = handleWarningRequest @FileSaved sf addAttachment
 
 endRoute :: Monad m => a -> m ()
 endRoute = const (return ())
+
 -- TODO: move all handlers to shared module
-handle :: ( HasLogger r m, HasPriority a)
+handle :: (HasLogger r m, HasPriority a)
        => (Result (Response a) -> m ())  -- logger for input
        -> m ()                           -- additional logger
        -> (a -> m ())                    -- function for handled input
@@ -213,7 +307,7 @@ handle :: ( HasLogger r m, HasPriority a)
 handle _ _ route (Result (Success x)) = logData x >> route x
 handle logger1 logger2 _ error = logger1 error >> logger2
 
-handleR :: ( HasLogger r m, HasPriority a)
+handleR :: (HasLogger r m, HasPriority a)
        => (Result a -> m ())
        -> m ()
        -> (a -> m ())
@@ -222,14 +316,14 @@ handleR :: ( HasLogger r m, HasPriority a)
 handleR _ _ route (Result x) = logData x >> route x
 handleR logger1 logger2 _ error = logger1 error >> logger2
 
-handleWarningR :: ( HasLogger r m, HasPriority a)
+handleWarningR :: (HasLogger r m, HasPriority a)
        => (a -> m ())
        -> Result a
        -> m ()
 handleWarningR = handleR logWarning (return ())
 
 handleError, handleWarning
-  :: ( HasLogger r m, HasPriority input)
+  :: (HasLogger r m, HasPriority input)
   => (input -> m ())
   -> Result (Response input)
   -> m ()
@@ -239,33 +333,33 @@ handleWarning = handle logWarning (return ())
 withLog :: (HasLogger r m, HasPriority a) => (a -> m b) -> a -> m b
 withLog f x = logData x >> f x
 
-requestWithLog ::
-  ( MonadEffects r m
-  , HasPriority input
-  , ToRequest m r input
-  , Aeson.FromJSON output
-  ) => input
-    -> m (Result (Response output))
+requestWithLog :: ( Aeson.FromJSON output
+                  , HasPriority input
+                  , MonadEffects r m
+                  , ToRequest m r input
+                  )
+               => input
+               -> m (Result (Response output))
 requestWithLog = withLog requestAndDecode
 
-handleErrorRequest, handleWarningRequest :: forall output input r m .
-  ( MonadEffects r m
-  , HasPriority input
-  , HasPriority output
-  , ToRequest m r input
-  , Aeson.FromJSON output
-  ) => input
-    -> (output -> m ())
-    -> m ()
+handleErrorRequest, handleWarningRequest
+  :: forall output input r m
+   . ( Aeson.FromJSON output
+     , HasPriority input
+     , HasPriority output
+     , MonadEffects r m
+     , ToRequest m r input
+     )
+  => input
+  -> (output -> m ())
+  -> m ()
 handleErrorRequest   x f = requestWithLog x >>= handleError f
 handleWarningRequest x f = requestWithLog x >>= handleWarning f
 
-traverseHandle ::
-  ( HasLogger r m
-  , HasPriority input
-  ) => (input -> m ())
-    -> [Result input]
-    -> m ()
+traverseHandle :: (HasLogger r m, HasPriority input)
+               => (input -> m ())
+               -> [Result input]
+               -> m ()
 traverseHandle f = traverse_ (handleWarningR f)
 
 start, shutdown :: Text
