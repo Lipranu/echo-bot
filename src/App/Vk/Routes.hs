@@ -1,5 +1,3 @@
-{-# LANGUAGE ConstraintKinds   #-}
-{-# LANGUAGE ExplicitForAll    #-}
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -14,6 +12,7 @@ module App.Vk.Routes
 
 import App.Shared
 import App.Shared.Repetition
+import App.Shared.Routes
 import App.Vk.Converters
 import Infrastructure.Logger
 import Infrastructure.Requester
@@ -21,22 +20,12 @@ import Internal
 
 import Control.Monad          ( replicateM_ )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( MonadReader )
 import Control.Monad.State    ( MonadState, execStateT )
-import Data.Foldable          ( traverse_ )
 import Data.IORef             ( IORef )
-import Data.Text.Extended     ( Text )
+import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
 
-import qualified Data.Aeson.Extended as Aeson
-import qualified Data.Text.Extended  as Text
-
-type MonadEffects r m =
-  ( Has (Requester m) r
-  , MonadRequester m
-  , MonadReader r m
-  , HasLogger r m
-  )
+-- FUNCTIONS ---------------------------------------------------------------
 
 getLongPollServer :: ( Has (IORef Repetitions) r
                      , Has DefaultRepeat r
@@ -76,7 +65,7 @@ routeUpdates :: ( Has (IORef Repetitions) r
 routeUpdates gu (Updates upd ts) = do
     traverseHandle processUpdate $ parse <$> upd
     getUpdates gu { guTs = ts }
-routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = Text.showt ts }
+routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = showt ts }
 routeUpdates _ _               = getLongPollServer
 
 processUpdate :: ( Has (IORef Repetitions) r
@@ -210,74 +199,74 @@ saveFile :: (MonadEffects r m, MonadState AttachmentsState m, VkReader r m)
          -> m ()
 saveFile sf = handleWarningRequest @FileSaved sf addAttachment
 
-endRoute :: Monad m => a -> m ()
-endRoute = const (return ())
-
--- TODO: move all handlers to shared module
-handle :: (HasLogger r m, HasPriority a)
-       => (Result (Response a) -> m ())  -- logger for input
-       -> m ()                           -- additional logger
-       -> (a -> m ())                    -- function for handled input
-       -> Result (Response a)            -- input
-       -> m ()                           -- phantom result
-handle _ _ route (Result (Success x)) = logData x >> route x
-handle logger1 logger2 _ error = logger1 error >> logger2
-
-handleR :: (HasLogger r m, HasPriority a)
-       => (Result a -> m ())
-       -> m ()
-       -> (a -> m ())
-       -> Result a
-       -> m ()
-handleR _ _ route (Result x) = logData x >> route x
-handleR logger1 logger2 _ error = logger1 error >> logger2
-
-handleWarningR :: (HasLogger r m, HasPriority a)
-       => (a -> m ())
-       -> Result a
-       -> m ()
-handleWarningR = handleR logWarning (return ())
-
-handleError, handleWarning
-  :: (HasLogger r m, HasPriority input)
-  => (input -> m ())
-  -> Result (Response input)
-  -> m ()
-handleError   = handle logError shutdown
-handleWarning = handle logWarning (return ())
-
-withLog :: (HasLogger r m, HasPriority a) => (a -> m b) -> a -> m b
-withLog f x = logData x >> f x
-
-requestWithLog :: ( Aeson.FromJSON output
-                  , HasPriority input
-                  , MonadEffects r m
-                  , ToRequest m r input
-                  )
-               => input
-               -> m (Result (Response output))
-requestWithLog = withLog requestAndDecode
-
-handleErrorRequest, handleWarningRequest
-  :: forall output input r m
-   . ( Aeson.FromJSON output
-     , HasPriority input
-     , HasPriority output
-     , MonadEffects r m
-     , ToRequest m r input
-     )
-  => input
-  -> (output -> m ())
-  -> m ()
-handleErrorRequest   x f = requestWithLog x >>= handleError f
-handleWarningRequest x f = requestWithLog x >>= handleWarning f
-
-traverseHandle :: (HasLogger r m, HasPriority input)
-               => (input -> m ())
-               -> [Result input]
-               -> m ()
-traverseHandle f = traverse_ (handleWarningR f)
-
-start, shutdown :: HasLogger r m => m ()
-start    = logInfo ("Application getting started" :: Text)
-shutdown = logInfo ("Application shut down" :: Text)
+--endRoute :: Monad m => a -> m ()
+--endRoute = const (return ())
+--
+---- TODO: move all handlers to shared module
+--handle :: (HasLogger r m, HasPriority a)
+--       => (Result (Response a) -> m ())  -- logger for input
+--       -> m ()                           -- additional logger
+--       -> (a -> m ())                    -- function for handled input
+--       -> Result (Response a)            -- input
+--       -> m ()                           -- phantom result
+--handle _ _ route (Result (Success x)) = logData x >> route x
+--handle logger1 logger2 _ error = logger1 error >> logger2
+--
+--handleR :: (HasLogger r m, HasPriority a)
+--       => (Result a -> m ())
+--       -> m ()
+--       -> (a -> m ())
+--       -> Result a
+--       -> m ()
+--handleR _ _ route (Result x) = logData x >> route x
+--handleR logger1 logger2 _ error = logger1 error >> logger2
+--
+--handleWarningR :: (HasLogger r m, HasPriority a)
+--       => (a -> m ())
+--       -> Result a
+--       -> m ()
+--handleWarningR = handleR logWarning (return ())
+--
+--handleError, handleWarning
+--  :: (HasLogger r m, HasPriority input)
+--  => (input -> m ())
+--  -> Result (Response input)
+--  -> m ()
+--handleError   = handle logError shutdown
+--handleWarning = handle logWarning (return ())
+--
+--withLog :: (HasLogger r m, HasPriority a) => (a -> m b) -> a -> m b
+--withLog f x = logData x >> f x
+--
+--requestWithLog :: ( Aeson.FromJSON output
+--                  , HasPriority input
+--                  , MonadEffects r m
+--                  , ToRequest m r input
+--                  )
+--               => input
+--               -> m (Result (Response output))
+--requestWithLog = withLog requestAndDecode
+--
+--handleErrorRequest, handleWarningRequest
+--  :: forall output input r m
+--   . ( Aeson.FromJSON output
+--     , HasPriority input
+--     , HasPriority output
+--     , MonadEffects r m
+--     , ToRequest m r input
+--     )
+--  => input
+--  -> (output -> m ())
+--  -> m ()
+--handleErrorRequest   x f = requestWithLog x >>= handleError f
+--handleWarningRequest x f = requestWithLog x >>= handleWarning f
+--
+--traverseHandle :: (HasLogger r m, HasPriority input)
+--               => (input -> m ())
+--               -> [Result input]
+--               -> m ()
+--traverseHandle f = traverse_ (handleWarningR f)
+--
+--start, shutdown :: HasLogger r m => m ()
+--start    = logInfo ("Application getting started" :: Text)
+--shutdown = logInfo ("Application shut down" :: Text)
