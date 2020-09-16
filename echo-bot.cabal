@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 646e057be969f8fe078f7553b3c125bb98977dc4613162ebf2509a2418a1f070
+-- hash: 9e276e0ac0ffed5fe62ee7836a36fb354597c90ba3857b3146686ac57b417771
 
 name:           echo-bot
 version:        0.1.0.0
@@ -36,6 +36,7 @@ library
       App.Vk.Internal
       App.Vk.Requests
       App.Vk.Responses
+      App.Vk.Routes
       Data.Aeson.Extended
       Data.Text.Encoding.Extended
       Data.Text.Extended
