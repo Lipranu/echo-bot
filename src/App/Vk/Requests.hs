@@ -1,9 +1,10 @@
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE DeriveGeneric            #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module App.Vk.Requests
   ( GetFile (..)
@@ -22,17 +23,14 @@ module App.Vk.Requests
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Vk.Internal
-import Infrastructure.Logger       ( Loggable (..), HasPriority (..)
-                                   , logInfo )
+import Infrastructure.Logger       ( Loggable (..), HasPriority (..), logInfo )
 import Infrastructure.Requester    ( ToRequest (..) )
 import Internal
 
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
-import Control.Monad.Reader        ( MonadReader )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
-import GHC.Generics (Generic)
---import Network.HTTP.Types.Header (hContentEncoding)
+import GHC.Generics                ( Generic )
 
 import qualified Data.Aeson.Extended                   as Aeson
 import qualified Data.ByteString                       as BS
@@ -47,7 +45,7 @@ import qualified Network.HTTP.Client.MultipartFormData as MP
 
 data GetLongPollServer = GetLongPollServer
 
-instance VkReader r m => ToRequest m r GetLongPollServer where
+instance (Monad m, VkReader r m) => ToRequest m GetLongPollServer where
   toRequest GetLongPollServer = HTTP.urlEncodedBody
     <$> defaultBody
     <*> pure request
@@ -70,7 +68,7 @@ data GetUpdates = GetUpdates
   , guHost :: Text
   }
 
-instance MonadReader r m => ToRequest m r GetUpdates where
+instance Monad m => ToRequest m GetUpdates where
   toRequest GetUpdates {..} = return $ body request
     where body    = HTTP.urlEncodedBody
                     [ ("act" , "a_check")
@@ -103,7 +101,7 @@ data SendMessage = SendMessage
   , smKeyboard    :: Maybe Keyboard
   }
 
-instance VkReader r m => ToRequest m r SendMessage where
+instance (Monad m, VkReader r m) => ToRequest m SendMessage where
   toRequest SendMessage {..} = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (mergeBodies mBody $ body <> df) request
@@ -165,7 +163,7 @@ instance Aeson.ToJSON Action where
 
 newtype GetName = GetName Integer
 
-instance VkReader r m => ToRequest m r GetName where
+instance (Monad m, VkReader r m) => ToRequest m GetName where
   toRequest (GetName id) = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (body <> df) request
@@ -185,7 +183,7 @@ instance HasPriority GetName where logData = logInfo . toLog
 
 newtype GetFile = GetFile Text
 
-instance MonadReader r m => ToRequest m r GetFile where
+instance Monad m => ToRequest m GetFile where
   toRequest (GetFile url) = return $ HTTP.parseRequest_ $ Text.unpack url
 
 instance Loggable GetFile where
@@ -200,7 +198,7 @@ data GetUploadServer = GetUploadServer
   , gusPeerId :: Integer
   }
 
-instance VkReader r m => ToRequest m r GetUploadServer where
+instance (Monad m, VkReader r m) => ToRequest m GetUploadServer where
   toRequest GetUploadServer {..} = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (body <> df) request
@@ -226,7 +224,7 @@ data UploadFile = UploadFile
   , ufTitle :: Text
   }
 
-instance (MonadReader r m, MonadIO m) => ToRequest m r UploadFile where
+instance MonadIO m => ToRequest m UploadFile where
   toRequest UploadFile {..} =
     let request = HTTP.parseRequest_ $ Text.unpack ufUrl
         part    = MP.partBS "file" ufFile
@@ -246,7 +244,7 @@ data SaveFile = SaveFile
   , sfTitle :: Text
   }
 
-instance VkReader r m => ToRequest m r SaveFile where
+instance (Monad m, VkReader r m) => ToRequest m SaveFile where
   toRequest SaveFile {..} = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (body <> df) request
