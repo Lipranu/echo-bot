@@ -24,6 +24,7 @@ dependencies:
 - async
 - bytestring
 - containers
+- exceptions
 - http-client
 - http-client-tls
 - http-types

@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 9e276e0ac0ffed5fe62ee7836a36fb354597c90ba3857b3146686ac57b417771
+-- hash: c27dfa696b45a6c66aed2aa8f42916c3f4e06c91ae8cb2c2775841f86274306a
 
 name:           echo-bot
 version:        0.1.0.0
@@ -30,6 +30,7 @@ library
       App
       App.Shared
       App.Shared.Repetition
+      App.Shared.Routes
       App.Telegram
       App.Vk
       App.Vk.Converters
@@ -54,6 +55,7 @@ library
     , base >=4.7 && <5
     , bytestring
     , containers
+    , exceptions
     , http-client
     , http-client-tls
     , http-types
@@ -77,6 +79,7 @@ executable echo-bot-exe
     , bytestring
     , containers
     , echo-bot
+    , exceptions
     , http-client
     , http-client-tls
     , http-types
@@ -104,6 +107,7 @@ test-suite echo-bot-test
     , bytestring
     , containers
     , echo-bot
+    , exceptions
     , hspec
     , http-client
     , http-client-tls

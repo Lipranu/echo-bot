@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveFunctor         #-}
+{-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -9,7 +9,7 @@ module Infrastructure.Requester
   ( MonadRequester (..)
   , Requester (..)
   , ToRequest (..)
-  , Result (..)
+  , DecodeException (..)
 
   , decode
   , mkRequester
@@ -20,13 +20,14 @@ module Infrastructure.Requester
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Infrastructure.Logger        ( Loggable (..) )
+import Infrastructure.Logger ( Loggable (..) )
 import Internal
 
-import Control.Monad.Reader         ( MonadReader, lift )
-import Control.Monad.State          ( StateT (..) )
-import Data.Text.Encoding           ( decodeUtf8 )
-import Data.Text.Extended           ( Text )
+import Control.Monad.Catch   ( Exception (..), MonadThrow (..), throwM )
+import Control.Monad.Reader  ( MonadReader, lift )
+import Control.Monad.State   ( StateT (..) )
+import Data.Text.Encoding    ( decodeUtf8 )
+import Data.Text.Extended    ( Text )
 
 import qualified Data.Aeson                   as Aeson
 import qualified Data.ByteString.Lazy         as LBS
@@ -36,18 +37,23 @@ import qualified Network.HTTP.Client.Extended as HTTP
 -- CLASSES -----------------------------------------------------------------
 
 class Monad m => MonadRequester m where
-  requester :: HTTP.Manager -> HTTP.Request -> m RequestResult
+  requester :: HTTP.Manager
+            -> HTTP.Request
+            -> m (HTTP.Response LBS.ByteString)
 
-class MonadReader r m => ToRequest m r a where
+class Monad m => ToRequest m a where
   toRequest :: a -> m HTTP.Request
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
-type RequestResult
-  = Either HTTP.HttpException (HTTP.Response LBS.ByteString)
+type HasRequester r m =
+  ( MonadRequester m
+  , Has (Requester m) r
+  , MonadReader r m
+  )
 
-newtype Requester m
-  = Requester { runRequester :: HTTP.Request -> m RequestResult }
+newtype Requester m = Requester
+  { runRequester :: HTTP.Request -> m (HTTP.Response LBS.ByteString) }
 
 instance MonadRequester m => MonadRequester (StateT s m) where
    requester m = lift . requester m
@@ -57,54 +63,44 @@ instance (Has (Requester m) r, MonadReader r m)
   getter env = Requester $ \req ->  StateT $ \s ->
     (,s) <$> runRequester (getter env) req
 
-data Result a
-  = Result a
-  | DecodeError Text Text
-  | RequestError HTTP.HttpException
-  deriving (Show, Functor)
+data DecodeException = DecodeException Text Text deriving Show
 
-instance Loggable a => Loggable (Result a) where
-  toLog (Result result) = toLog result
+instance Exception DecodeException
 
-  toLog (DecodeError err bs) = "An error occurred during decoding:\n\
+instance Loggable DecodeException where
+  toLog (DecodeException err bs) = "An error occurred during decoding:\n\
     \ | Error Message: " <> err <> "\n\
     \ | Source: "        <> bs
-
-  toLog (RequestError err) = "An error occurred during request:\n\
-    \ | Error: " <> toLog err
 
 -- FUNCTIONS ---------------------------------------------------------------
 
 mkRequester :: MonadRequester m => HTTP.Manager -> Requester m
 mkRequester = Requester . requester
 
-request :: (ToRequest m r a, Has (Requester m) r, MonadReader r m)
+request :: (ToRequest m a, HasRequester r m, MonadThrow m)
         => a
-        -> m (Result LBS.ByteString)
-request r = do
+        -> m LBS.ByteString
+request x = do
   requester <- obtain
-  request   <- toRequest r
+  request   <- toRequest x
   result    <- runRequester requester request
-  case result of
-    Left  e -> return $ RequestError e
-    Right r -> return $ Result $ HTTP.responseBody r
+  return $ HTTP.responseBody result
 
-decode :: Aeson.FromJSON a => Result LBS.ByteString -> Result a
-decode (Result bs)        = case Aeson.eitherDecode bs of
-  Left  e -> DecodeError (Text.pack e) $ decodeUtf8 $ LBS.toStrict bs
-  Right r -> Result r
-decode (RequestError e)   = RequestError e
-decode (DecodeError  e t) = DecodeError  e t
+decode :: (MonadThrow m, Aeson.FromJSON a) => LBS.ByteString -> m a
+decode bs = case Aeson.eitherDecode bs of
+  Right r -> return r
+  Left  e -> throwM $ DecodeException (Text.pack e)
+                    $ decodeUtf8
+                    $ LBS.toStrict bs
 
-requestAndDecode :: ( ToRequest m r a
-                    , Aeson.FromJSON b
-                    , Has (Requester m) r
-                    , MonadReader r m
-                    ) => a
-                      -> m (Result b)
-requestAndDecode req = decode <$> request req
+requestAndDecode
+  :: (MonadThrow m, ToRequest m a, Aeson.FromJSON b, HasRequester r m)
+  => a
+  -> m b
+requestAndDecode req = request req >>= decode
 
-parse :: Aeson.FromJSON a => Aeson.Value -> Result a
+parse :: (MonadThrow m, Aeson.FromJSON a) => Aeson.Value -> m a
 parse value = case Aeson.fromJSON value of
-  Aeson.Success result -> Result result
-  Aeson.Error error    -> DecodeError (Text.pack error) $ Text.showt value
+  Aeson.Success result -> return result
+  Aeson.Error error    -> throwM $ DecodeException (Text.pack error)
+                                 $ Text.showt value
