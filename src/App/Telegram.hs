@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE UndecidableInstances            #-}
 
 module App.Telegram ( Config, mkApp, runApp ) where
 
@@ -18,6 +19,7 @@ import qualified Infrastructure.Logger as Logger
 import Control.Applicative         ( (<|>) )
 import Control.Exception           ( try )
 import Control.Monad               ( foldM )
+import Control.Monad.Catch         ( MonadThrow )
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT )
 import Data.Aeson.Extended         ( (.:) )
@@ -59,7 +61,7 @@ instance Has Token           Env where getter = envToken
 -- App ---------------------------------------------------------------------
 
 newtype App a = App { unApp :: ReaderT Env IO a } deriving
-  (Functor, Applicative, Monad, MonadReader Env, MonadIO)
+  (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadThrow)
 
 instance MonadLogger App where
   logConsole   = liftIO . TextIO.putStr
@@ -69,7 +71,7 @@ instance Logger.MonadTime App where
   getTime = liftIO getCurrentTime
 
 instance MonadRequester App where
-  requester manager req = liftIO $ try $ HTTP.httpLbs req manager
+  requester manager req = liftIO $ HTTP.httpLbs req manager
 
 -- Response ----------------------------------------------------------------
 
@@ -95,7 +97,7 @@ instance Loggable a => Loggable (Response a) where
 
 newtype GetUpdates = GetUpdates (Maybe Integer)
 
-instance (Has Token r, MonadReader r m) => ToRequest m r GetUpdates where
+instance (Has Token r, MonadReader r m, Monad m) => ToRequest m GetUpdates where
   toRequest (GetUpdates Nothing) = do
     token <- obtain
     return $
@@ -139,7 +141,7 @@ instance Loggable Update where
 app :: App ()
 app = do
   logInfo ("Application getting started" :: Text)
-  getUpdates $ GetUpdates Nothing
+  --getUpdates $ GetUpdates Nothing
 
 mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
 mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
@@ -148,27 +150,27 @@ mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
 
-getUpdates :: GetUpdates -> App ()
-getUpdates gu = do
-  logInfo gu
-  result <- requestAndDecode gu
-  case result of
-    Result (Succes v) -> do
-      logInfo v
-      proccessUpdates v
-    error -> do
-      logError error
-      logError ("Application shut down" :: Text)
+--getUpdates :: GetUpdates -> App ()
+--getUpdates gu = do
+--  logInfo gu
+--  result <- requestAndDecode gu
+--  case result of
+--    Result (Succes v) -> do
+--      logInfo v
+--      proccessUpdates v
+--    error -> do
+--      logError error
+--      logError ("Application shut down" :: Text)
 
-proccessUpdates :: [Update] -> App ()
-proccessUpdates xs = do
-  x <- foldM proccessUpdate Nothing xs
-  getUpdates $ GetUpdates x
-
-proccessUpdate :: Maybe Integer -> Update -> App (Maybe Integer)
-proccessUpdate current p@(Post id) = do
-  logDebug p
-  return (max current $ Just id)
+--proccessUpdates :: [Update] -> App ()
+--proccessUpdates xs = do
+--  x <- foldM proccessUpdate Nothing xs
+--  getUpdates $ GetUpdates x
+--
+--proccessUpdate :: Maybe Integer -> Update -> App (Maybe Integer)
+--proccessUpdate current p@(Post id) = do
+--  logDebug p
+--  return (max current $ Just id)
 
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest

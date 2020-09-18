@@ -10,6 +10,7 @@ module Infrastructure.Requester
   , Requester (..)
   , ToRequest (..)
   , DecodeException (..)
+  , HasRequester
 
   , decode
   , mkRequester

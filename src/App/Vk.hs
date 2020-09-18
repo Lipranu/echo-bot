@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
@@ -20,14 +21,14 @@ import Internal
 import qualified App.Shared            as Shared
 import qualified Infrastructure.Logger as Logger
 
-import Control.Exception      ( try )
+import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch, catches )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT (..), MonadReader )
-import Control.Monad.Cont     ( ContT (..), MonadCont )
 import Data.Aeson             ( (.:) )
-import Data.Time              ( getCurrentTime )
 import Data.IORef             ( IORef )
-import Network.HTTP.Client    ( Manager, httpLbs )
+import Data.Text.Extended     ( Text, showt )
+import Data.Time              ( getCurrentTime )
+import Network.HTTP.Client    ( HttpException (..), Manager, httpLbs )
 
 import qualified Data.Aeson.Extended as Aeson
 import qualified Data.Text.IO        as TextIO
@@ -49,16 +50,16 @@ data Env = Env
   , envGroup         :: Group
   , envDefaultRepeat :: DefaultRepeat
   , envRepetitions   :: IORef Repetitions
-  , envLogger        :: Logger (App Env ())
+  , envLogger        :: Logger (App Env)
   , envLock          :: Lock
-  , envRequester     :: Requester (App Env ())
+  , envRequester     :: Requester (App Env)
   , envHelpText      :: HelpText
   , envRepeatText    :: RepeatText
   }
 
 instance Has Lock                  Env where getter = envLock
-instance Has (Logger (App Env ()))    Env where getter = envLogger
-instance Has (Requester (App Env ())) Env where getter = envRequester
+instance Has (Logger (App Env))    Env where getter = envLogger
+instance Has (Requester (App Env)) Env where getter = envRequester
 instance Has Token                 Env where getter = envToken
 instance Has Group                 Env where getter = envGroup
 instance Has DefaultRepeat         Env where getter = envDefaultRepeat
@@ -66,23 +67,36 @@ instance Has HelpText              Env where getter = envHelpText
 instance Has RepeatText            Env where getter = envRepeatText
 instance Has (IORef Repetitions)   Env where getter = envRepetitions
 
-newtype App r c a = App { unApp :: ReaderT r (ContT c IO) a } deriving
-  ( Functor, Applicative, Monad, MonadReader r, MonadIO, MonadFail, MonadCont )
+newtype App r a = App { unApp :: ReaderT r IO a }
+  deriving ( Applicative
+           , Functor
+           , Monad
+           , MonadCatch
+           , MonadIO
+           , MonadReader r
+           , MonadThrow
+           )
 
-instance MonadLogger (App r c) where
+instance MonadLogger (App r) where
   logConsole   = liftIO . TextIO.putStr
   logFile path = liftIO . TextIO.appendFile path
 
-instance MonadTime (App r c) where
+instance MonadTime (App r) where
   getTime = liftIO getCurrentTime
 
-instance MonadRequester (App r c) where
-  requester manager req = liftIO $ try $ httpLbs req manager
+instance MonadRequester (App r) where
+  requester manager req = liftIO $ httpLbs req manager
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-app :: App Env () ()
-app = start >> getLongPollServer -- >>= endRoute-- >>= getUpdates' >>= endRoute-- >>= getUpdates'  --endRoute
+app :: App Env ()
+app = (getLongPollServer >>= getUpdates (logDebug . showt . length)) `catches` handleLoggable >> logError ("SHUTDOWN" :: Text)
+
+handleLoggable :: [Handler (App Env) () ]
+handleLoggable =
+  [ Handler $ \(e :: HttpException) -> logError $ toLog e
+  , Handler $ \(e :: DecodeException) -> logError $ toLog e
+  ]
 
 mkApp :: Config
       -> Shared.Config
@@ -104,4 +118,4 @@ mkApp Config {..} Shared.Config {..} logger lock ref manager =
    in Env {..}
 
 runApp :: Env -> IO ()
-runApp env = runContT (runReaderT (unApp app) env) return --shutdown--return --endRoute
+runApp env = runReaderT (unApp app) env

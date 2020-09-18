@@ -16,6 +16,8 @@ module App.Vk.Responses
   , LongPollServer (..)
   , Message (..)
   , RawFile (..)
+  , ResponseException
+  , UploadException
   , Response (..)
   , Update (..)
   , Updates (..)
@@ -30,11 +32,12 @@ module App.Vk.Responses
 import Internal              ( Has (..) )
 import App.Shared.Repetition ( Key )
 import Infrastructure.Logger ( Loggable (..), HasPriority (..)
-                             , logDebug, logWarning, logInfo
+                             , logDebug, logWarning, logInfo, logError
                              , mkToLog, mkLogLine
                              )
 
 import Control.Applicative  ( (<|>) )
+import Control.Monad.Catch  ( Exception )
 import Data.Aeson           ( (.:), (.:?) )
 import Data.Text.Extended   ( Text )
 import GHC.Generics         ( Generic )
@@ -47,42 +50,41 @@ import qualified Data.Text.Extended  as Text
 
 -- Response ----------------------------------------------------------------
 
-data Response a
+data Response e a
   = Success a
-  | Error ErrorBody
-  | UploadError UploadErrorBody
-  deriving Functor
+  | Error e
 
-instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
+instance (Exception e, Aeson.FromJSON e, Aeson.FromJSON a)
+  => Aeson.FromJSON (Response e a) where
   parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
         Error       <$> o .: "error"
-    <|> UploadError <$> Aeson.parseJSON (Aeson.Object o)
+    <|> Error       <$> Aeson.parseJSON (Aeson.Object o)
     <|> Success     <$> o .: "response"
     <|> Success     <$> Aeson.parseJSON (Aeson.Object o)
 
-instance Loggable a => Loggable (Response a) where
+instance (Loggable e, Loggable a) => Loggable (Response e a) where
   toLog (Success     x) = toLog x
   toLog (Error       x) = toLog x
-  toLog (UploadError x) = toLog x
 
-instance HasPriority a => HasPriority (Response a) where
+instance (HasPriority e, HasPriority a) => HasPriority (Response e a) where
   logData (Success     x) = logData x
   logData (Error       x) = logData x
-  logData (UploadError x) = logData x
 
--- ErrorBody ---------------------------------------------------------------
+-- ResponseException -------------------------------------------------------
 
-data ErrorBody = ErrorBody
+data ResponseException = ResponseException
   { eErrorCode     :: Integer
   , eErrorMsg      :: Text
   , eRequestParams :: [RequestParams]
-  } deriving Generic
+  } deriving (Show, Generic)
 
-instance Aeson.FromJSON ErrorBody where
+instance Exception ResponseException
+
+instance Aeson.FromJSON ResponseException where
   parseJSON = Aeson.parseJsonDrop
 
-instance Loggable ErrorBody where
-  toLog ErrorBody {..}
+instance Loggable ResponseException where
+  toLog ResponseException {..}
     = mkToLog "An error occurred as a result of the request:"
     [ ("Error Code"        , Text.showt eErrorCode)
     , ("Error Message"     , eErrorMsg)
@@ -90,36 +92,38 @@ instance Loggable ErrorBody where
     ] []
     where params = Text.concat $ fmap toLog eRequestParams
 
-instance HasPriority ErrorBody where logData = logWarning . toLog
+instance HasPriority ResponseException where logData = logError . toLog
 
--- UploadErrorBody ---------------------------------------------------------
+-- UploadException ---------------------------------------------------------
 
-data UploadErrorBody = UploadErrorBody
+data UploadException = UploadException
   { uebError  :: Text
   , uebBwact  :: Text
   , uebServer :: Integer
   , ueb_sig   :: Text
-  } deriving Generic
+  } deriving (Show, Generic)
 
-instance Aeson.FromJSON UploadErrorBody where
+instance Exception UploadException
+
+instance Aeson.FromJSON UploadException where
   parseJSON = Aeson.parseJsonDrop
 
-instance Loggable UploadErrorBody where
-  toLog UploadErrorBody {..} = mkToLog "Error occurred during upload file:"
+instance Loggable UploadException where
+  toLog UploadException {..} = mkToLog "Error occurred during upload file:"
     [ ("Error" , uebError)
     , ("Bwact" , uebBwact)
     , ("Server", Text.showt uebServer)
     , ("_sig"  , ueb_sig)
     ] []
 
-instance HasPriority UploadErrorBody where logData = logWarning . toLog
+instance HasPriority UploadException where logData = logWarning . toLog
 
 -- RequestParams -----------------------------------------------------------
 
 data RequestParams = RequestParams
   { rpKey   :: Text
   , rpValue :: Text
-  } deriving Generic
+  } deriving (Show, Generic)
 
 instance Aeson.FromJSON RequestParams where
   parseJSON = Aeson.parseJsonDrop
