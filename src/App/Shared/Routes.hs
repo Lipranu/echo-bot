@@ -31,45 +31,60 @@ import Data.Text            ( Text )
 
 -- TYPES -------------------------------------------------------------------
 
-type MonadEffects r m =
-  ( Has (Requester m) r
+type MonadEffects env m =
+  ( Has (Requester m) env
   , MonadRequester m
-  , MonadReader r m
-  , HasLogger r m
+  , MonadReader env m
+  , HasLogger env m
   )
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-withLog :: (HasPriority a, HasPriority b, HasLogger r m)
-        => (a -> m b)
-        -> a
-        -> m b
-withLog f x = logData x >> f x >>= \y -> logData y >> return y
+logInput :: (HasPriority input, HasLogger env m)
+         => (input -> m output)
+         -> input
+         -> m output
+logInput f x = logData x >> f x
 
-handleResponse :: (Exception e, FromJSON e, FromJSON a, MonadThrow m)
-               => (Response e a)
-               -> m a
+logOutput :: (HasPriority output, HasLogger env m)
+          => output
+          -> m output
+logOutput x = logData x >> pure x
+
+withLog :: (HasPriority input, HasPriority output, HasLogger env m)
+        => (input -> m output)
+        -> input
+        -> m output
+withLog f x = logInput f x >>= logOutput
+
+handleResponse :: ( Exception  error
+                  , FromJSON   error
+                  , FromJSON   output
+                  , MonadThrow m
+                  )
+               => (Response error output)
+               -> m output
 handleResponse (Success x) = return x
 handleResponse (Error   e) = throwM e
 
 fromResponse :: forall error output input env m
-              . ( FromJSON     error
-                , Exception    error
-                , ToRequest    m input
+              . ( Exception    error
+                , FromJSON     error
                 , FromJSON     output
-                , MonadThrow   m
                 , HasRequester env m
+                , MonadThrow   m
+                , ToRequest    m input
                 )
              => input
              -> m output
 fromResponse x = requestAndDecode x >>= handleResponse @error
 
-sharedHandlers :: HasLogger r m => [Handler m () ]
+sharedHandlers :: HasLogger env m => [Handler m () ]
 sharedHandlers =
   [ Handler $ \(e :: HttpException)     -> logError $ toLog e
   , Handler $ \(e :: DecodeException)   -> logError $ toLog e
   ]
 
-start, shutdown :: HasLogger r m => m ()
+start, shutdown :: HasLogger env m => m ()
 start    = logInfo  ("Application getting started" :: Text)
 shutdown = logError ("Application shut down"       :: Text)
