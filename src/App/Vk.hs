@@ -90,13 +90,15 @@ instance MonadRequester (App r) where
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App Env ()
-app = (getLongPollServer >>= getUpdates (logDebug . showt . length)) `catches` handleLoggable >> logError ("SHUTDOWN" :: Text)
+app = start
+   >> (getLongPollServer >>= getUpdates processUpdates) `catches` handlers
+   >> shutdown
 
-handleLoggable :: [Handler (App Env) () ]
-handleLoggable =
-  [ Handler $ \(e :: HttpException) -> logError $ toLog e
-  , Handler $ \(e :: DecodeException) -> logError $ toLog e
-  ]
+--handleLoggable :: [Handler (App Env) () ]
+--handleLoggable =
+--  [ Handler $ \(e :: HttpException) -> logError $ toLog e
+--  , Handler $ \(e :: DecodeException) -> logError $ toLog e
+--  ]
 
 mkApp :: Config
       -> Shared.Config

@@ -1,18 +1,17 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances  #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications  #-}
-{-# LANGUAGE ExplicitForAll        #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE LambdaCase          #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module App.Vk.Routes
   ( getLongPollServer
   , getUpdates
-  --, start
-  --, endRoute
-  --, shutdown
+  , processUpdates
+  , handlers
+  , start
+  , shutdown
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -25,14 +24,16 @@ import Infrastructure.Logger hiding ( Priority (..) )
 import Infrastructure.Requester
 import Internal
 
+import Data.Foldable          ( traverse_ )
 import Control.Monad          ( replicateM_ )
-import Control.Monad.Catch    ( Exception, MonadThrow, throwM )
+import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow, MonadCatch, throwM, catches )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.State    ( MonadState, execStateT, get )
 import Control.Monad.Cont     ( ContT (..), MonadCont (..), lift )
 import Data.IORef             ( IORef )
 import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
+import Network.HTTP.Client    ( HttpException )
 
 import Data.Aeson             ( FromJSON, Value )
 
@@ -51,119 +52,26 @@ getUpdates f gu = withLog requestAndDecode gu >>= \case
   OutOfDate ts    -> getUpdates f gu { guTs = showt ts }
   rest            -> getLongPollServer >>= getUpdates f
 
+processUpdates :: (HasLogger r m, MonadCatch m)  => [Value] -> m ()
+processUpdates = traverse_ f
+  where f x = (parse x >>= processUpdate) `catches` handlers
 
-handleResponse :: (Exception e, FromJSON e, FromJSON a, MonadThrow m)
-               => (Response e a) -> m a
-handleResponse (Success x) = return x
-handleResponse (Error   e) = throwM e
+processUpdate :: HasLogger r m => Update -> m ()
+processUpdate (NewMessage m) = logData m >> routeUpdate m
+processUpdate rest = logData rest
 
-withLog :: (HasPriority a, HasPriority b, HasLogger r m)
-        => (a -> m b)
-        -> a
-        -> m b
-withLog f x = logData x >> f x >>= \y -> logData y >> return y
-
-fromResponseR, fromResponseU
-  :: forall b a e m r
-   . (ToRequest m a, FromJSON b, MonadThrow m, HasRequester r m)
-  => a
-  -> m b
-fromResponseR x = requestAndDecode x >>= handleResponse @ResponseException
-fromResponseU x = requestAndDecode x >>= handleResponse @UploadException
---  \case
---  Success x -> return x
---  Error   e -> throwM e
---fromResponseE = fromResponse @ResponseException
---fromResponseU = fromResponse @UploadException
---withSuccess :: Response a -> m a
---withSuccess (Success x) = return x
---withSuccess (
---getLongPollServer' :: ( --Has (IORef Repetitions) r
---                     , Has DefaultRepeat r
---                     , Has HelpText r
---                     , Has RepeatText r
---                      MonadEffects r m
---                     , MonadIO m
---                    ,  VkReader r m
---  , MonadCont m
---                     )
---                  => (GetUpdates -> m ()) -> m () --GetUpdates
---getLongPollServer' f = handleErrorReq (f . mkGetUpdates) GetLongPollServer--(f . mkGetUpdates) GetLongPollServer
---
---handleError' :: MonadCont m => ((err -> m a) -> m a) -> (err -> m a) -> m a
---handleError' c h = callCC $ \ok -> do
---  err <- callCC $ \notOk -> do
---    x <- c notOk
---    ok x
---  h err
---
---handleReq :: forall b a r m . (ToRequest m r a, MonadCont m, FromJSON b, MonadRequester m, Has (Requester m) r) => (b -> m ()) -> a -> (Result (Response b) -> m ()) -> m ()
---handleReq f a throw = requestAndDecode a >>= \case
---  Result (Success x) -> f x
---  error -> throw error
---
-----handleErrorReq :: (ToRequest m r a, MonadCont m, FromJSON b, MonadRequester m, Has (Requester m) r) => (Result (Response b) -> m b) -> a -> m b
---handleErrorReq :: forall b a r m . (FromJSON b, HasPriority b, ToRequest m r a, MonadCont m, MonadEffects r m) => (b -> m ()) -> a -> m ()
---handleErrorReq f x = handleError' (handleReq f x) (logError) --const
---
---instance Loggable () where
---  toLog _ = "()"
---handleError :: (MonadCont m, HasLogger r m, Loggable a)
---            => (a -> m ())
---            -> Result (Response a)
---            -> m ()
---handleError f v = callCC $ \k -> case v of
---  Result (Success x) -> f x
---  error -> logError error >> k ()
---  --e@(DecodeError err t) -> k e
-----handleError _ (Result (Success x)) = return x
-----handleError abort err = logError err >> abort
---
---handleErrReq :: ( Loggable b
---                , MonadCont m
---                , MonadEffects r m
---                , ToRequest m r a
---                , FromJSON b)
---            -- => -- (b -> m r)
---             => (b -> m ())
---             -> a
---             -> m ()
---handleErrReq f v = requestAndDecode v >>= handleError f
---
---getUpdates' :: ( --Has (IORef Repetitions) r
---              -- Has DefaultRepeat r
---              -- Has HelpText r
---              -- Has RepeatText r
---               MonadEffects r m
---              -- MonadIO m
---              -- VkReader r m
---               , MonadCont m
---              )
---           => (GetUpdates -> Updates -> m ())
---           -> GetUpdates
---           -> m ()
---getUpdates' k gu = handleErrReq (k gu) gu --undefined--handleErrorRequest gu $ k gu u
---
-----routeUpdates' :: ( Has (IORef Repetitions) r
-----                , Has DefaultRepeat r
-----                , Has HelpText r
-----                , Has RepeatText r
-----                , MonadEffects r m
-----                , MonadIO m
-----                , VkReader r m
-----                )
-----             => (Updates -> m ())
-----             -> (GetUpdates -> m ())
-----             -> (GetUpdates -> m ())
-----             -> GetUpdates
-----             -> Updates
-----             -> m ()
-----routeUpdates' k1 k2 k3 gu (Updates upd ts) = do
-----    traverseHandle processUpdate $ parse <$> upd
-----    getUpdates gu { guTs = ts }
-----routeUpdates' gu (OutOfDate ts) = getUpdates gu { guTs = showt ts }
-----routeUpdates' _ _               = getLongPollServer
---
+routeUpdate :: HasLogger r m => Message -> m ()
+routeUpdate m = case mPayload m of
+ Nothing    -> logDebug ("Nothing" :: Text)--withLog processMessage m
+ Just "101" -> logDebug ("101" :: Text)--withLog processHelp m
+ Just "102" -> logDebug ("102" :: Text)--withLog processRepeat m
+ Just "201" -> logDebug ("201" :: Text)--processIndex m 1
+ Just "202" -> logDebug ("202" :: Text)--processIndex m 2
+ Just "203" -> logDebug ("203" :: Text)--processIndex m 3
+ Just "204" -> logDebug ("204" :: Text)--processIndex m 4
+ Just "205" -> logDebug ("205" :: Text)--processIndex m 5
+ Just text  -> logDebug text --logWarning ("unknown payload: " <> text)
+           --  >> withLog processMessage m
 --getLongPollServer :: ( Has (IORef Repetitions) r
 --                     , Has DefaultRepeat r
 --                     , Has HelpText r
@@ -336,3 +244,17 @@ fromResponseU x = requestAndDecode x >>= handleResponse @UploadException
 --         => SaveFile
 --         -> m ()
 --saveFile sf = handleWarningRequest @FileSaved sf addAttachment
+
+fromResponseR, fromResponseU
+  :: forall output input env m
+   . (ToRequest m input, FromJSON output, MonadThrow m, HasRequester env m)
+  => input
+  -> m output
+fromResponseR input = fromResponse @ResponseException @output input
+fromResponseU input = fromResponse @UploadException   @output input
+
+handlers :: HasLogger r m => [Handler m () ]
+handlers = sharedHandlers <>
+  [ Handler $ \(e :: ResponseException) -> logError $ toLog e
+  , Handler $ \(e :: UploadException)   -> logError $ toLog e
+  ]
