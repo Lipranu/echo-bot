@@ -50,10 +50,15 @@ class Convertible a b | a -> b where
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
+data Context
+  = Private
+  | Chat
+
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
   , asSticker     :: Maybe Integer
   , asPeerId      :: Integer
+  , asContext     :: Context
   }
 
 instance Convertible FileSaved Text where
@@ -88,11 +93,17 @@ mkGetUpdates LongPollServer {..} =
    in GetUpdates {..}
 
 mkState :: Message -> AttachmentsState
-mkState Message {..} =
-  let asPeerId      = mPeerId
+mkState message =
+  let asPeerId      = mPeerId message
       asAttachments = []
       asSticker     = Nothing
+      asContext     = mkContext message
    in AttachmentsState {..}
+
+mkContext :: Message -> Context
+mkContext Message {..}
+  | mPeerId == mFromId = Private
+  | otherwise          = Chat
 
 mkGetName :: Message -> GetName
 mkGetName Message {..} = GetName mFromId
