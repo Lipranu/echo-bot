@@ -7,7 +7,7 @@ module App.Shared
   ) where
 
 import Data.Text.Extended          ( Text )
-import App.Shared.Repetition ( DefaultRepeat (..) )
+import App.Shared.Routes -- ( DefaultRepeat (..) )
 import Data.Aeson.Extended ( (.:) )
 import qualified Data.Aeson.Extended  as Aeson
 

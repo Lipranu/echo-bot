@@ -3,32 +3,28 @@
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE ScopedTypeVariables        #-}
 
 module App.Vk ( Config, mkApp, runApp ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import App.Vk.Routes
+import App.Shared               hiding ( Config )
 import App.Vk.Internal
-import App.Shared.Repetition
-import App.Shared            hiding ( Config )
-
-import Infrastructure.Logger    hiding ( Config, Priority (..) )
+import App.Vk.Routes
+import Infrastructure.Logger    hiding ( Config )
 import Infrastructure.Requester
 import Internal
 
 import qualified App.Shared            as Shared
 import qualified Infrastructure.Logger as Logger
 
-import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch, catches )
+import Control.Monad.Catch    ( MonadThrow, MonadCatch, catches )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( ReaderT (..), MonadReader )
 import Data.Aeson             ( (.:) )
 import Data.IORef             ( IORef )
-import Data.Text.Extended     ( Text, showt )
 import Data.Time              ( getCurrentTime )
-import Network.HTTP.Client    ( HttpException (..), Manager, httpLbs )
+import Network.HTTP.Client    ( Manager, httpLbs )
 
 import qualified Data.Aeson.Extended as Aeson
 import qualified Data.Text.IO        as TextIO
@@ -93,12 +89,6 @@ app :: App Env ()
 app = start
    >> (getLongPollServer >>= getUpdates processUpdates) `catches` handlers
    >> shutdown
-
---handleLoggable :: [Handler (App Env) () ]
---handleLoggable =
---  [ Handler $ \(e :: HttpException) -> logError $ toLog e
---  , Handler $ \(e :: DecodeException) -> logError $ toLog e
---  ]
 
 mkApp :: Config
       -> Shared.Config

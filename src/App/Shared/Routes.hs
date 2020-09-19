@@ -1,44 +1,71 @@
-{-# LANGUAGE ExplicitForAll #-}
-{-# LANGUAGE ConstraintKinds #-}
-{-# LANGUAGE FlexibleContexts #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE TypeApplications #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module App.Shared.Routes
-  ( MonadEffects
-  , withLog
+  ( DefaultRepeat (..)
+  , MonadEffects
+  , MonadRepetitions
+  , Repetitions
   , fromResponse
   , sharedHandlers
-  , start
+  , getRepeats
+  , putRepeats
   , shutdown
+  , start
+  , withLog
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Internal
-import Infrastructure.Logger hiding ( Priority (..) )
+import Infrastructure.Logger    hiding ( Priority (..) )
 import Infrastructure.Requester
+import Internal
 
 import App.Shared.Responses
 
-import Control.Monad.Reader ( MonadReader )
-import Data.Aeson.Extended  ( FromJSON )
-import Control.Monad.Catch  ( Handler (..), Exception, MonadThrow,  throwM )
-import Network.HTTP.Client  ( HttpException )
-import Data.Text            ( Text )
+import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow,  throwM )
+import Control.Monad.IO.Class ( MonadIO, liftIO )
+import Control.Monad.Reader   ( MonadReader )
+import Data.Aeson.Extended    ( FromJSON )
+import Data.IORef             ( IORef, readIORef, modifyIORef' )
+import Data.Map.Strict        ( Map, findWithDefault, insert )
+import Data.Text              ( Text )
+import Network.HTTP.Client    ( HttpException )
 
 -- TYPES -------------------------------------------------------------------
 
 type MonadEffects env m =
-  ( Has (Requester m) env
-  , MonadRequester m
-  , MonadReader env m
+  ( HasRequester env m
   , HasLogger env m
   )
 
+type MonadRepetitions r m =
+  ( MonadReader r m
+  , Has (IORef Repetitions) r
+  , Has DefaultRepeat r
+  , MonadIO m
+  )
+
+type Repetitions = Map Key Int
+
+newtype DefaultRepeat = DefaultRepeat { unDefaultRepeat :: Int }
+
 -- FUNCTIONS ---------------------------------------------------------------
+
+getRepeats :: (MonadRepetitions r m, Has Key a) => a -> m Int
+getRepeats key = do
+  def <- unDefaultRepeat    <$> obtain
+  rep <- liftIO . readIORef =<< obtain @(IORef Repetitions)
+  return $ findWithDefault def (getter key) rep
+
+putRepeats :: (MonadRepetitions r m, Has Key a) => a -> Int -> m ()
+putRepeats key value = do
+  map <- obtain @(IORef Repetitions)
+  liftIO $ modifyIORef' map $ insert (getter key) value
 
 logInput :: (HasPriority input, HasLogger env m)
          => (input -> m output)

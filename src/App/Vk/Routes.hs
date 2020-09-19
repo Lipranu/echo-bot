@@ -6,36 +6,34 @@
 {-# LANGUAGE TypeApplications    #-}
 
 module App.Vk.Routes
-  ( getLongPollServer
+  ( DefaultRepeat
+  , Repetitions
+  , getLongPollServer
   , getUpdates
-  , processUpdates
   , handlers
-  , start
+  , processUpdates
   , shutdown
+  , start
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import App.Shared
-import App.Shared.Repetition
 import App.Shared.Routes
 import App.Vk.Converters
 import Infrastructure.Logger hiding ( Priority (..) )
 import Infrastructure.Requester
-import Internal
 
-import Data.Foldable          ( traverse_ )
 import Control.Monad          ( replicateM_ )
-import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow, MonadCatch, throwM, catches )
+import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch, catches )
+import Control.Monad.Cont     ( ContT (..), MonadCont (..), lift )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.State    ( MonadState, execStateT, get )
-import Control.Monad.Cont     ( ContT (..), MonadCont (..), lift )
+import Data.Aeson             ( FromJSON, Value )
+import Data.Foldable          ( traverse_ )
 import Data.IORef             ( IORef )
 import Data.Text.Extended     ( Text, showt )
-import System.Random          ( randomIO )
 import Network.HTTP.Client    ( HttpException )
-
-import Data.Aeson             ( FromJSON, Value )
+import System.Random          ( randomIO )
 
 -- FUNCTIONS ---------------------------------------------------------------
 

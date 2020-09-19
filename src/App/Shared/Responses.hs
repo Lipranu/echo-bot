@@ -1,12 +1,17 @@
 {-# LANGUAGE OverloadedStrings          #-}
 
-module App.Shared.Responses where
+module App.Shared.Responses
+  ( Key
+  , Response (..)
+  ) where
 
 import Infrastructure.Logger ( Loggable (..), HasPriority (..) )
 
 import Control.Monad.Catch  ( Exception )
 import Data.Aeson.Extended  ( FromJSON (..), Value (..), withObject, (.:) )
 import Control.Applicative  ( (<|>) )
+
+type Key = (Integer, Integer)
 
 data Response e a
   = Success a
