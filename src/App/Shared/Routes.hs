@@ -11,12 +11,14 @@ module App.Shared.Routes
   , MonadRepetitions
   , Repetitions
   , fromResponse
-  , sharedHandlers
   , getRepeats
   , putRepeats
+  , sharedHandlers
   , shutdown
   , start
   , withLog
+  , inputLog
+  , outputLog
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -67,29 +69,29 @@ putRepeats key value = do
   map <- obtain @(IORef Repetitions)
   liftIO $ modifyIORef' map $ insert (getter key) value
 
-logInput :: (HasPriority input, HasLogger env m)
+inputLog :: (HasPriority input, HasLogger env m)
          => (input -> m output)
          -> input
          -> m output
-logInput f x = logData x >> f x
+inputLog f x = logData x >> f x
 
-logOutput :: (HasPriority output, HasLogger env m)
+outputLog :: (HasPriority output, HasLogger env m)
           => output
           -> m output
-logOutput x = logData x >> pure x
+outputLog x = logData x >> pure x
 
 withLog :: (HasPriority input, HasPriority output, HasLogger env m)
         => (input -> m output)
         -> input
         -> m output
-withLog f x = logInput f x >>= logOutput
+withLog f x = inputLog f x >>= outputLog
 
 handleResponse :: ( Exception  error
                   , FromJSON   error
                   , FromJSON   output
                   , MonadThrow m
                   )
-               => (Response error output)
+               => Response error output
                -> m output
 handleResponse (Success x) = return x
 handleResponse (Error   e) = throwM e
@@ -108,8 +110,8 @@ fromResponse x = requestAndDecode x >>= handleResponse @error
 
 sharedHandlers :: HasLogger env m => [Handler m () ]
 sharedHandlers =
-  [ Handler $ \(e :: HttpException)     -> logError $ toLog e
-  , Handler $ \(e :: DecodeException)   -> logError $ toLog e
+  [ Handler $ \(e :: HttpException)   -> logError $ toLog e
+  , Handler $ \(e :: DecodeException) -> logError $ toLog e
   ]
 
 start, shutdown :: HasLogger env m => m ()

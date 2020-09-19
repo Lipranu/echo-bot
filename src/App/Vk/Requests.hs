@@ -115,7 +115,7 @@ instance (Monad m, VkReader r m) => ToRequest m SendMessage where
                      , ("sticker_id", encodeShowUtf8 <$> smSticker)
                      , ("keyboard"  , keyboard)
                      ]
-          keyboard = (LBS.toStrict . Aeson.encode) <$> smKeyboard
+          keyboard = LBS.toStrict . Aeson.encode <$> smKeyboard
           request  = defaultRequest
                      { HTTP.method = "POST"
                      , HTTP.path   = "method/messages.send"

@@ -144,15 +144,15 @@ mkRepeatReply :: (Has RepeatText r, MonadReader r m)
               => Message
               -> Maybe UserName
               -> m (Int -> SendMessage)
-mkRepeatReply message user = unRepeatText <$> obtain
-  >>= return . mkGenericReply Nothing message user
+mkRepeatReply message user = mkGenericReply Nothing message user
+  <$> (unRepeatText <$> obtain)
 
 mkHelpReply :: (Has HelpText r, MonadReader r m)
               => Message
               -> Maybe UserName
               -> m (Int -> SendMessage)
-mkHelpReply message user = unHelpText <$> obtain
-  >>= return . mkGenericReply Nothing message user
+mkHelpReply message user = mkGenericReply Nothing message user
+  <$> (unHelpText <$> obtain)
 
 mkKeyboard :: Int -> Keyboard
 mkKeyboard currentRepeat =

@@ -25,7 +25,6 @@ import Infrastructure.Requester
 
 import Control.Monad          ( replicateM_ )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch, catches )
-import Control.Monad.Cont     ( ContT (..), MonadCont (..), lift )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.State    ( MonadState, execStateT, get )
 import Data.Aeson             ( FromJSON, Value )
@@ -248,8 +247,8 @@ fromResponseR, fromResponseU
    . (ToRequest m input, FromJSON output, MonadThrow m, HasRequester env m)
   => input
   -> m output
-fromResponseR input = fromResponse @ResponseException @output input
-fromResponseU input = fromResponse @UploadException   @output input
+fromResponseR = fromResponse @ResponseException @output
+fromResponseU = fromResponse @UploadException   @output
 
 handlers :: HasLogger r m => [Handler m () ]
 handlers = sharedHandlers <>
