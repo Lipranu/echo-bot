@@ -2,10 +2,8 @@
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE DeriveFunctor              #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE LambdaCase                 #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -15,60 +13,34 @@ module App.Vk.Responses
   , FileUploaded (..)
   , LongPollServer (..)
   , Message (..)
+  , MessageSended (..)
   , RawFile (..)
   , ResponseException
-  , UploadException
-  , Response (..)
   , Update (..)
   , Updates (..)
+  , UploadException
   , UploadServer (..)
   , UserName (..)
   , WallBody (..)
-  , MessageSended (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
 import Internal              ( Has (..) )
 import App.Shared.Repetition ( Key )
-import Infrastructure.Logger ( Loggable (..), HasPriority (..)
-                             , logDebug, logWarning, logInfo, logError
-                             , mkToLog, mkLogLine
-                             )
+import Infrastructure.Logger
 
 import Control.Applicative  ( (<|>) )
 import Control.Monad.Catch  ( Exception )
 import Data.Aeson           ( (.:), (.:?) )
+import Data.ByteString.Lazy ( ByteString )
 import Data.Text.Extended   ( Text )
 import GHC.Generics         ( Generic )
-import Data.ByteString.Lazy ( ByteString )
 
 import qualified Data.Aeson.Extended as Aeson
 import qualified Data.Text.Extended  as Text
 
 -- TYPES AND INSTANCES -----------------------------------------------------
-
--- Response ----------------------------------------------------------------
-
-data Response e a
-  = Success a
-  | Error e
-
-instance (Exception e, Aeson.FromJSON e, Aeson.FromJSON a)
-  => Aeson.FromJSON (Response e a) where
-  parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
-        Error       <$> o .: "error"
-    <|> Error       <$> Aeson.parseJSON (Aeson.Object o)
-    <|> Success     <$> o .: "response"
-    <|> Success     <$> Aeson.parseJSON (Aeson.Object o)
-
-instance (Loggable e, Loggable a) => Loggable (Response e a) where
-  toLog (Success     x) = toLog x
-  toLog (Error       x) = toLog x
-
-instance (HasPriority e, HasPriority a) => HasPriority (Response e a) where
-  logData (Success     x) = logData x
-  logData (Error       x) = logData x
 
 -- ResponseException -------------------------------------------------------
 
@@ -260,10 +232,6 @@ newtype UserName = UserName { unFirstName :: Text } deriving Generic
 
 instance Aeson.FromJSON UserName where
   parseJSON = Aeson.parseJsonDrop
---  parseJSON = Aeson.withObject "App.Vk.Responses.UserName" $ \o ->
---    UserName <$> o .: "first_name"
-    --null  -> fail "App.Vk.Responses.UserName: empty result"
-    --xs -> Aeson.withObject "" (\o -> UserName <$> o .: "first_name") $ xs ! 0
 
 instance Loggable [UserName] where
   toLog [] = "User not found"
