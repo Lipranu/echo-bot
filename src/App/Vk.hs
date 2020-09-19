@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
@@ -11,23 +10,18 @@ module App.Vk ( Config, mkApp, runApp ) where
 import App.Shared               hiding ( Config )
 import App.Vk.Internal
 import App.Vk.Routes
-import Infrastructure.Logger    hiding ( Config )
-import Infrastructure.Requester
+import Infrastructure.Logger           ( Logger, mkLogger )
+import Infrastructure.Requester        ( Requester, mkRequester )
 import Internal
 
 import qualified App.Shared            as Shared
 import qualified Infrastructure.Logger as Logger
 
-import Control.Monad.Catch    ( MonadThrow, MonadCatch, catches )
-import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.Reader   ( ReaderT (..), MonadReader )
-import Data.Aeson             ( (.:) )
-import Data.IORef             ( IORef )
-import Data.Time              ( getCurrentTime )
-import Network.HTTP.Client    ( Manager, httpLbs )
-
-import qualified Data.Aeson.Extended as Aeson
-import qualified Data.Text.IO        as TextIO
+import Control.Monad.Catch  ( catches )
+import Control.Monad.Reader ( runReaderT )
+import Data.Aeson           ( FromJSON (..), (.:), withObject )
+import Data.IORef           ( IORef )
+import Network.HTTP.Client  ( Manager )
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -36,8 +30,8 @@ data Config = Config
   , cGroup :: Group
   }
 
-instance Aeson.FromJSON Config where
-  parseJSON = Aeson.withObject "Vk.Config" $ \o -> Config
+instance FromJSON Config where
+  parseJSON = withObject "Vk.Config" $ \o -> Config
     <$> (Token <$> o .: "token")
     <*> (Group <$> o .: "group_id")
 
@@ -62,26 +56,6 @@ instance Has DefaultRepeat         Env where getter = envDefaultRepeat
 instance Has HelpText              Env where getter = envHelpText
 instance Has RepeatText            Env where getter = envRepeatText
 instance Has (IORef Repetitions)   Env where getter = envRepetitions
-
-newtype App r a = App { unApp :: ReaderT r IO a }
-  deriving ( Applicative
-           , Functor
-           , Monad
-           , MonadCatch
-           , MonadIO
-           , MonadReader r
-           , MonadThrow
-           )
-
-instance MonadLogger (App r) where
-  logConsole   = liftIO . TextIO.putStr
-  logFile path = liftIO . TextIO.appendFile path
-
-instance MonadTime (App r) where
-  getTime = liftIO getCurrentTime
-
-instance MonadRequester (App r) where
-  requester manager req = liftIO $ httpLbs req manager
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -110,4 +84,4 @@ mkApp Config {..} Shared.Config {..} logger lock ref manager =
    in Env {..}
 
 runApp :: Env -> IO ()
-runApp env = runReaderT (unApp app) env
+runApp = runReaderT (unApp app)
