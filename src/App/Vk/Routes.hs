@@ -4,35 +4,45 @@
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE ConstraintKinds     #-}
 
 module App.Vk.Routes
-  ( DefaultRepeat
-  , Repetitions
-  , getLongPollServer
+  ( getLongPollServer
   , getUpdates
   , handlers
   , processUpdates
-  , shutdown
-  , start
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
+import App.Shared.Config
 import App.Shared.Routes
+
+import App.Vk.Config     ( VkReader )
 import App.Vk.Converters
-import Infrastructure.Logger hiding ( Priority (..) )
+import App.Vk.Requests
+import App.Vk.Responses
+
+import Infrastructure.Logger    hiding ( Priority (..) )
 import Infrastructure.Requester
+import Internal
 
 import Control.Monad          ( replicateM_ )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch, catches )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
-import Control.Monad.State    ( MonadState, execStateT, get )
+import Control.Monad.State    ( MonadState, execStateT, get, modify )
+import Control.Monad.Reader   ( MonadReader )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Foldable          ( traverse_ )
 import Data.IORef             ( IORef )
+import Data.Maybe             ( listToMaybe )
 import Data.Text.Extended     ( Text, showt )
 import Network.HTTP.Client    ( HttpException )
 import System.Random          ( randomIO )
+
+-- TYPES -------------------------------------------------------------------
+
+type AppReader r m = (SharedReader r m, VkReader r m)
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -49,18 +59,36 @@ getUpdates f gu = withLog requestAndDecode gu >>= \case
   OutOfDate ts    -> getUpdates f gu { guTs = showt ts }
   rest            -> getLongPollServer >>= getUpdates f
 
-processUpdates :: (HasLogger r m, MonadCatch m)  => [Value] -> m ()
+processUpdates :: ( MonadRepetitions r m
+                  , AppReader r m
+                  , MonadEffects r m
+                  , MonadCatch m
+                  )
+               => [Value]
+               -> m ()
 processUpdates = traverse_ f
   where f x = (parse x >>= processUpdate) `catches` handlers
 
-processUpdate :: HasLogger r m => Update -> m ()
+processUpdate :: ( MonadRepetitions r m
+                 , AppReader r m
+                 , MonadEffects r m
+                 , MonadThrow m
+                 )
+              => Update
+              -> m ()
 processUpdate (NewMessage m) = logData m >> routeUpdate m
 processUpdate rest = logData rest
 
-routeUpdate :: HasLogger r m => Message -> m ()
+routeUpdate :: ( MonadRepetitions r m
+               , AppReader r m
+               , MonadEffects r m
+               , MonadThrow m
+               )
+            => Message
+            -> m ()
 routeUpdate m = case mPayload m of
  Nothing    -> logDebug ("Nothing" :: Text)--withLog processMessage m
- Just "101" -> logDebug ("101" :: Text)--withLog processHelp m
+ Just "101" -> mkProcess Help
  Just "102" -> logDebug ("102" :: Text)--withLog processRepeat m
  Just "201" -> logDebug ("201" :: Text)--processIndex m 1
  Just "202" -> logDebug ("202" :: Text)--processIndex m 2
@@ -69,6 +97,57 @@ routeUpdate m = case mPayload m of
  Just "205" -> logDebug ("205" :: Text)--processIndex m 5
  Just text  -> logDebug text --logWarning ("unknown payload: " <> text)
            --  >> withLog processMessage m
+ where mkProcess = processCommand m $ mkContext m
+       mkRepeat  = mkProcess . NewRepeat
+
+sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
+            => (Int -> SendMessage)
+            -> m ()
+sendMessage sm = sm <$> liftIO randomIO
+  >>= inputLog (fromResponseR @MessageSended)
+  >>= logData
+
+processCommand :: ( MonadRepetitions r m
+                  , AppReader r m
+                  , MonadEffects r m
+                  , MonadThrow m
+                  )
+               => Message
+               -> Context
+               -> Command
+               -> m ()
+processCommand m ctx c = do
+  name <- getName ctx m
+  text <- mkCommandText m ctx name <$> getCommandText c m
+  sendMessage $ mkCommandReply m text
+
+getName :: (MonadEffects r m, VkReader r m, MonadThrow m)
+        => Context
+        -> Message
+        -> m (Maybe UserName)
+getName Private _ = pure Nothing
+getName Chat    m = listToMaybe <$> withLog fromResponseR (mkGetName m)
+
+getCommandText :: (MonadRepetitions r m, SharedReader r m)
+               => Command
+               -> Message
+               -> m Text
+getCommandText Help          _ = unHelpText <$> obtain
+getCommandText (NewRepeat i) _ = pure $ "Repeat count set to: " <> showt i
+getCommandText Repeat        m = do
+  text    <- unRepeatText <$> obtain
+  repeats <- getRepeats m
+  pure $ text <> "\nCurrent repeat count: " <> showt repeats
+
+addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
+              => a
+              -> m ()
+addAttachment x = modify $ \as ->
+  as { asAttachments = convert x : asAttachments as }
+
+addSticker :: MonadState AttachmentsState m => Integer -> m ()
+addSticker id = modify $ \as -> as { asSticker = Just id }
+
 --getLongPollServer :: ( Has (IORef Repetitions) r
 --                     , Has DefaultRepeat r
 --                     , Has HelpText r

@@ -26,8 +26,9 @@ module App.Vk.Responses
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Internal              ( Has (..) )
 import App.Shared.Responses
+
+import Internal
 import Infrastructure.Logger
 
 import Control.Applicative  ( (<|>) )

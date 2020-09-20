@@ -1,39 +1,32 @@
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
 
-module App.Vk ( Config, mkApp, runApp ) where
+module App.Vk ( mkApp, runApp ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import App.Shared               hiding ( Config )
-import App.Vk.Internal
-import App.Vk.Routes
-import Infrastructure.Logger           ( Logger, mkLogger )
-import Infrastructure.Requester        ( Requester, mkRequester )
+import Infrastructure.Logger    ( Logger, mkLogger )
+import Infrastructure.Requester ( Requester, mkRequester )
 import Internal
 
-import qualified App.Shared            as Shared
+import App.Shared
+import App.Shared.Routes
+import App.Shared.Config hiding ( Config )
+
+import App.Vk.Config
+import App.Vk.Routes
+
+import qualified App.Shared.Config     as Shared
 import qualified Infrastructure.Logger as Logger
 
 import Control.Monad.Catch  ( catches )
 import Control.Monad.Reader ( runReaderT )
-import Data.Aeson           ( FromJSON (..), (.:), withObject )
 import Data.IORef           ( IORef )
 import Network.HTTP.Client  ( Manager )
 
 -- TYPES AND INSTANCES -----------------------------------------------------
-
-data Config = Config
-  { cToken :: Token
-  , cGroup :: Group
-  }
-
-instance FromJSON Config where
-  parseJSON = withObject "Vk.Config" $ \o -> Config
-    <$> (Token <$> o .: "token")
-    <*> (Group <$> o .: "group_id")
 
 data Env = Env
   { envToken         :: Token

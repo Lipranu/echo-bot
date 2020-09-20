@@ -4,41 +4,31 @@
 {-# LANGUAGE RecordWildCards        #-}
 
 module App.Vk.Converters
-  ( module App.Vk.Requests
-  , module App.Vk.Responses
-  , module App.Vk.Internal
-
+  ( AttachmentsState (..)
+  , Command (..)
+  , Context (..)
   , Convertible (..)
-  , AttachmentsState (..)
-
-  , addAttachment
-  , addSticker
+  , mkCommandReply
+  , mkCommandText
+  , mkContext
   , mkGetFile
   , mkGetName
   , mkGetUpdates
   , mkGetUploadServer
   , mkSaveFile
   , mkSendMessage
-  , mkRepeatReply
-  , mkHelpReply
-  , mkIndexReply
   , mkState
   , mkUploadFile
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-
-import App.Shared           ( HelpText (..), RepeatText (..) )
-import App.Vk.Internal
 import App.Vk.Requests
 import App.Vk.Responses
-import Internal
 
-import Control.Monad.State  ( MonadState, modify, gets )
-import Control.Monad.Reader ( MonadReader )
-import Data.Maybe           ( fromMaybe )
-import Data.Text.Extended   ( Text )
+import Control.Monad.State ( MonadState, gets )
+import Data.Maybe          ( fromMaybe )
+import Data.Text           ( Text )
 
 import qualified Data.Text.Extended   as Text
 import qualified Data.ByteString.Lazy as LBS
@@ -53,6 +43,11 @@ class Convertible a b | a -> b where
 data Context
   = Private
   | Chat
+
+data Command
+ = Help
+ | Repeat
+ | NewRepeat Int
 
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
@@ -122,6 +117,25 @@ mkSendMessage Message {..} AttachmentsState {..} currentRepeat randomId =
         xs -> Just $ Text.intercalate "," $ reverse xs
    in SendMessage {..}
 
+mkCommandReply :: Message -> Text -> Int -> SendMessage
+mkCommandReply Message {..} text randomId =
+  let smPeerId      = mPeerId
+      smRandomId    = randomId
+      smLatitude    = Nothing
+      smLongitude   = Nothing
+      smSticker     = Nothing
+      smKeyboard    = Nothing
+      smAttachments = Nothing
+      smMessage     = Just text
+   in SendMessage {..}
+
+mkCommandText :: Message -> Context -> Maybe UserName -> Text -> Text
+mkCommandText _ Private _ text = text
+mkCommandText Message {..} Chat un text
+  = "@id" <> Text.showt mFromId <> case un of
+    Nothing           -> ", " <> text
+    Just (UserName n) -> " (" <> n <> "), " <> text
+
 mkGenericReply :: Maybe Keyboard
                -> Message
                -> Maybe UserName
@@ -144,26 +158,26 @@ mkGenericReply keyboard Message {..} user text randomId =
         Just (UserName n) -> mkIdLink <> " (" <> n <> "), "
    in SendMessage {..}
 
-mkIndexReply :: Int -> Message -> Maybe UserName -> Int -> SendMessage
-mkIndexReply repeat message user = mkGenericReply
-  (Just $ mkKeyboard repeat)
-  message
-  user
-  ("Repeat count set to: " <> Text.showt repeat)
-
-mkRepeatReply :: (Has RepeatText r, MonadReader r m)
-              => Message
-              -> Maybe UserName
-              -> m (Int -> SendMessage)
-mkRepeatReply message user = mkGenericReply Nothing message user
-  <$> (unRepeatText <$> obtain)
-
-mkHelpReply :: (Has HelpText r, MonadReader r m)
-              => Message
-              -> Maybe UserName
-              -> m (Int -> SendMessage)
-mkHelpReply message user = mkGenericReply Nothing message user
-  <$> (unHelpText <$> obtain)
+--mkIndexReply :: Int -> Message -> Maybe UserName -> Int -> SendMessage
+--mkIndexReply repeat message user = mkGenericReply
+--  (Just $ mkKeyboard repeat)
+--  message
+--  user
+--  ("Repeat count set to: " <> Text.showt repeat)
+--
+--mkRepeatReply :: (Has RepeatText r, MonadReader r m)
+--              => Message
+--              -> Maybe UserName
+--              -> m (Int -> SendMessage)
+--mkRepeatReply message user = mkGenericReply Nothing message user
+--  <$> (unRepeatText <$> obtain)
+--
+--mkHelpReply :: (Has HelpText r, MonadReader r m)
+--              => Message
+--              -> Maybe UserName
+--              -> m (Int -> SendMessage)
+--mkHelpReply message user = mkGenericReply Nothing message user
+--  <$> (unHelpText <$> obtain)
 
 mkKeyboard :: Int -> Keyboard
 mkKeyboard currentRepeat =
@@ -239,12 +253,3 @@ mkSaveFile UploadFile {..} (FileUploaded file) =
   let sfFile  = file
       sfTitle = ufTitle
    in SaveFile {..}
-
-addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
-              => a
-              -> m ()
-addAttachment x = modify $ \as ->
-  as { asAttachments = convert x : asAttachments as }
-
-addSticker :: MonadState AttachmentsState m => Integer -> m ()
-addSticker id = modify $ \as -> as { asSticker = Just id }

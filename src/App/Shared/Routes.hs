@@ -6,8 +6,8 @@
 {-# LANGUAGE TypeApplications    #-}
 
 module App.Shared.Routes
-  ( DefaultRepeat (..)
-  , MonadEffects
+  ( 
+   MonadEffects
   , MonadRepetitions
   , Repetitions
   , fromResponse
@@ -28,6 +28,7 @@ import Infrastructure.Requester
 import Internal
 
 import App.Shared.Responses
+import App.Shared.Config
 
 import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow,  throwM )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
@@ -40,6 +41,8 @@ import Network.HTTP.Client    ( HttpException )
 
 -- TYPES -------------------------------------------------------------------
 
+type Repetitions = Map Key Int
+
 type MonadEffects env m =
   ( HasRequester env m
   , HasLogger env m
@@ -51,10 +54,6 @@ type MonadRepetitions r m =
   , Has DefaultRepeat r
   , MonadIO m
   )
-
-type Repetitions = Map Key Int
-
-newtype DefaultRepeat = DefaultRepeat { unDefaultRepeat :: Int }
 
 -- FUNCTIONS ---------------------------------------------------------------
 
