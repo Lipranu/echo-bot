@@ -35,7 +35,7 @@ import Control.Monad.Reader   ( MonadReader )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Foldable          ( traverse_ )
 import Data.IORef             ( IORef )
-import Data.Maybe             ( listToMaybe )
+import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
 import Network.HTTP.Client    ( HttpException )
 import System.Random          ( randomIO )
@@ -126,8 +126,9 @@ processCommand m command context= do
       NewCount i       -> pure $ "Repeat count set to: " <> showt i
       UnknownCommand t -> pure "Unknown command"
       Repeat           -> do
-        text    <- unRepeatText <$> obtain
-        repeats <- getRepeats m
+        text    <- unRepeatText    <$> obtain
+        def     <- unDefaultRepeat <$> obtain
+        repeats <- fromMaybe def   <$> getRepeats m
         pure $ text <> "\nCurrent repeat count: " <> showt repeats
 
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)

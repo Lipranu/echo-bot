@@ -35,9 +35,11 @@ import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( MonadReader )
 import Data.Aeson.Extended    ( FromJSON )
 import Data.IORef             ( IORef, readIORef, modifyIORef' )
-import Data.Map.Strict        ( Map, findWithDefault, insert )
+import Data.Map.Strict        ( Map, lookup, insert )
 import Data.Text              ( Text )
 import Network.HTTP.Client    ( HttpException )
+
+import Prelude         hiding ( lookup )
 
 -- TYPES -------------------------------------------------------------------
 
@@ -57,11 +59,10 @@ type MonadRepetitions r m =
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-getRepeats :: (MonadRepetitions r m, Has Key a) => a -> m Int
+getRepeats :: (MonadRepetitions r m, Has Key a) => a -> m (Maybe Int)
 getRepeats key = do
-  def <- unDefaultRepeat    <$> obtain
   rep <- liftIO . readIORef =<< obtain @(IORef Repetitions)
-  return $ findWithDefault def (getter key) rep
+  return $ lookup (getter key) rep
 
 putRepeats :: (MonadRepetitions r m, Has Key a) => a -> Int -> m ()
 putRepeats key value = do
