@@ -118,8 +118,9 @@ processCommand :: ( MonadRepetitions r m
                -> m ()
 processCommand m context command = do
   performCommand
-  text <- mkCommandText m context <$> getName <*> getCommandText
-  sendMessage $ mkCommandReply m text
+  name <- getName
+  text <- getCommandText
+  sendMessage $ mkCommandReply m $ mkCommandText m context name text
   where
     performCommand = case command of
       NewRepeat i -> logData command >> putRepeats m i
@@ -262,13 +263,6 @@ addSticker id = modify $ \as -> as { asSticker = Just id }
 --    (traverseHandle routeAttachment $ parse <$> mAttachments m) $ mkState m
 --  repeats <- getRepeats m
 --  replicateM_ repeats $ sendMessage $ mkSendMessage m aState repeats
---
---sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m)
---            => (Int -> SendMessage)
---            -> m ()
---sendMessage sm = do
---  sendm <- sm <$> liftIO randomIO
---  handleWarningRequest @MessageSended sendm endRoute
 --
 --routeAttachment :: ( MonadEffects r m
 --                   , MonadIO m

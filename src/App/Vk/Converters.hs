@@ -146,49 +146,6 @@ mkCommandText Message {..} Chat un text
     Nothing           -> ", " <> text
     Just (UserName n) -> " (" <> n <> "), " <> text
 
-mkGenericReply :: Maybe Keyboard
-               -> Message
-               -> Maybe UserName
-               -> Text
-               -> Int
-               -> SendMessage
-mkGenericReply keyboard Message {..} user text randomId =
-  let smPeerId      = mPeerId
-      smRandomId    = randomId
-      smLatitude    = Nothing
-      smLongitude   = Nothing
-      smSticker     = Nothing
-      smKeyboard    = keyboard
-      smAttachments = Nothing
-      smMessage     | mPeerId == mFromId = Just text
-                    | otherwise          = Just $ mkAppeal <> text
-      mkIdLink      = "@id" <> Text.showt mFromId
-      mkAppeal      = case user of
-        Nothing           -> mkIdLink <> ", "
-        Just (UserName n) -> mkIdLink <> " (" <> n <> "), "
-   in SendMessage {..}
-
---mkIndexReply :: Int -> Message -> Maybe UserName -> Int -> SendMessage
---mkIndexReply repeat message user = mkGenericReply
---  (Just $ mkKeyboard repeat)
---  message
---  user
---  ("Repeat count set to: " <> Text.showt repeat)
---
---mkRepeatReply :: (Has RepeatText r, MonadReader r m)
---              => Message
---              -> Maybe UserName
---              -> m (Int -> SendMessage)
---mkRepeatReply message user = mkGenericReply Nothing message user
---  <$> (unRepeatText <$> obtain)
---
---mkHelpReply :: (Has HelpText r, MonadReader r m)
---              => Message
---              -> Maybe UserName
---              -> m (Int -> SendMessage)
---mkHelpReply message user = mkGenericReply Nothing message user
---  <$> (unHelpText <$> obtain)
-
 mkKeyboard :: Int -> Keyboard
 mkKeyboard currentRepeat =
   let kOneTime = False
