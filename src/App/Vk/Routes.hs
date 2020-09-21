@@ -1,10 +1,11 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE ConstraintKinds     #-}
 {-# LANGUAGE FlexibleContexts    #-}
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
-{-# LANGUAGE ConstraintKinds     #-}
 
 module App.Vk.Routes
   ( getLongPollServer
@@ -66,16 +67,16 @@ routeUpdate :: ( MonadRepetitions r m
             => Update
             -> m ()
 routeUpdate (NewMessage msg) = logData msg >> case getter msg of
-  Nothing  -> return () --withLog processMessage m
+  Nothing  -> processMessage msg
   Just cmd -> processCommand msg cmd $ mkContext msg
 routeUpdate rest = logData rest
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
             -> m ()
-sendMessage sm = sm <$> liftIO randomIO
-  >>= inputLog (fromResponseR @MessageSended)
-  >>= logData
+sendMessage sm = sm
+  <$> liftIO randomIO
+  >>= withLog_ (fromResponseR @MessageSended)
 
 processCommand :: ( MonadRepetitions r m
                   , AppReader r m
@@ -94,8 +95,8 @@ processCommand m command context= do
   where
     performCommand = logData command >> case command of
       NewCount i       -> putRepeats m i
-      UnknownCommand c -> return ()
-      _                -> return ()
+      UnknownCommand c -> processMessage m
+      _                -> pure ()
 
     getName = case context of
       Private -> pure Nothing
@@ -120,123 +121,24 @@ addAttachment x = modify $ \as ->
 addSticker :: MonadState AttachmentsState m => Integer -> m ()
 addSticker id = modify $ \as -> as { asSticker = Just id }
 
---getLongPollServer :: ( Has (IORef Repetitions) r
---                     , Has DefaultRepeat r
---                     , Has HelpText r
---                     , Has RepeatText r
---                     , MonadEffects r m
---                     , MonadIO m
---                     , VkReader r m
---                     --, MonadCont m
---                     )
---                  => m ()
---getLongPollServer = handleErrorRequest GetLongPollServer
---  $ getUpdates . mkGetUpdates
---
---getUpdates :: ( Has (IORef Repetitions) r
---              , Has DefaultRepeat r
---              , Has HelpText r
---              , Has RepeatText r
---              , MonadEffects r m
---              , MonadIO m
---              , VkReader r m
---              )
---           => GetUpdates
---           -> m ()
---getUpdates gu = handleErrorRequest gu $ routeUpdates gu
---
---routeUpdates :: ( Has (IORef Repetitions) r
---                , Has DefaultRepeat r
---                , Has HelpText r
---                , Has RepeatText r
---                , MonadEffects r m
---                , MonadIO m
---                , VkReader r m
---                )
---             => GetUpdates
---             -> Updates
---             -> m ()
---routeUpdates gu (Updates upd ts) = do
---    traverseHandle processUpdate $ parse <$> upd
---    getUpdates gu { guTs = ts }
---routeUpdates gu (OutOfDate ts) = getUpdates gu { guTs = showt ts }
---routeUpdates _ _               = getLongPollServer
---
---processUpdate :: ( Has (IORef Repetitions) r
---                 , Has DefaultRepeat r
---                 , Has HelpText r
---                 , Has RepeatText r
---                 , MonadEffects r m
---                 , MonadIO m
---                 , VkReader r m
---                 )
---              => Update
---              -> m ()
---processUpdate (NewMessage m) = case mPayload m of
---  Nothing    -> withLog processMessage m
---  Just "101" -> withLog processHelp m
---  Just "102" -> withLog processRepeat m
---  Just "201" -> processIndex m 1
---  Just "202" -> processIndex m 2
---  Just "203" -> processIndex m 3
---  Just "204" -> processIndex m 4
---  Just "205" -> processIndex m 5
---  Just text  -> logWarning ("unknown payload: " <> text)
---             >> withLog processMessage m
---processUpdate _ = logWarning ("NOT IMPLEMENTED" :: Text)
---
---checkChat :: (MonadEffects r m, VkReader r m)
---          => Message
---          -> m (Maybe UserName)
---checkChat m | mPeerId m == mFromId m = return Nothing
---            | otherwise              = getName $ mkGetName m
---
---getName :: (MonadEffects r m, VkReader r m)
---        => GetName -> m (Maybe UserName)
---getName gn = withLog requestAndDecode gn >>= \case
---  Result (Success (x:_)) -> return $ Just x
---  error -> logWarning error >> return Nothing
---
---processIndex :: ( Has (IORef Repetitions) r
---                , MonadEffects r m
---                , MonadIO m
---                , VkReader r m
---                )
---             => Message
---             -> Int
---             -> m ()
---processIndex m i = putRepeats m i
---  >>  checkChat m
---  >>= sendMessage . mkIndexReply i m
---
---processHelp :: (Has HelpText r, MonadEffects r m, MonadIO m, VkReader r m)
---            => Message
---            -> m ()
---processHelp m = checkChat m >>= mkHelpReply m >>= sendMessage
---
---processRepeat :: ( Has RepeatText r
---                 , MonadEffects r m
---                 , MonadIO m
---                 , VkReader r m
---                 )
---              => Message
---              -> m ()
---processRepeat m = checkChat m >>= mkRepeatReply m >>= sendMessage
---
---processMessage :: ( Has (IORef Repetitions) r
---                  , Has DefaultRepeat r
---                  , MonadEffects r m
---                  , MonadIO m
---                  , VkReader r m
---                  )
---               => Message
---               -> m ()
---processMessage m = do
---  aState  <- execStateT
---    (traverseHandle routeAttachment $ parse <$> mAttachments m) $ mkState m
---  repeats <- getRepeats m
---  replicateM_ repeats $ sendMessage $ mkSendMessage m aState repeats
---
+----------------------------------------------------------------------------
+
+processMessage :: ( MonadEffects r m
+                  , MonadRepetitions r m
+                  , VkReader r m
+                  , MonadThrow m
+                  )
+               => Message
+               -> m ()
+processMessage m = do
+ -- aState  <- execStateT
+ --   (traverseHandle routeAttachment $ parse <$> mAttachments m) $ mkState m
+  (keyboard, repeats) <- findUser
+  replicateM_ repeats $ sendMessage $ mkSendMessage m (mkState m) keyboard
+  where findUser = getRepeats m >>= \case
+          Nothing -> (mkKeyboard,) <$> unDefaultRepeat <$> obtain
+          Just i  -> pure (Nothing, i)
+
 --routeAttachment :: ( MonadEffects r m
 --                   , MonadIO m
 --                   , MonadState AttachmentsState m

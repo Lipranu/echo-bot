@@ -12,6 +12,7 @@ module App.Vk.Converters
   , mkCommandText
   , mkContext
   , mkGetFile
+  , mkKeyboard
   , mkGetName
   , mkGetUpdates
   , mkGetUploadServer
@@ -26,11 +27,9 @@ module App.Vk.Converters
 import App.Vk.Requests
 import App.Vk.Responses
 
-import Infrastructure.Logger ( Loggable (..), HasPriority (..), logInfo )
-
 import Control.Monad.State   ( MonadState, gets )
 import Data.Maybe            ( fromMaybe )
-import Data.Text.Extended    ( Text, showt )
+import Data.Text.Extended    ( Text )
 
 import qualified Data.Text.Extended   as Text
 import qualified Data.ByteString.Lazy as LBS
@@ -100,15 +99,19 @@ mkContext Message {..}
 mkGetName :: Message -> GetName
 mkGetName Message {..} = GetName mFromId
 
-mkSendMessage :: Message -> AttachmentsState -> Int -> Int -> SendMessage
-mkSendMessage Message {..} AttachmentsState {..} currentRepeat randomId =
+mkSendMessage :: Message
+              -> AttachmentsState
+              -> Maybe Keyboard
+              -> Int
+              -> SendMessage
+mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
   let smPeerId      = mPeerId
       smRandomId    = randomId
       smMessage     = mMessage
       smLatitude    = mLatitude
       smLongitude   = mLongitude
       smSticker     = asSticker
-      smKeyboard    = Just $ mkKeyboard currentRepeat
+      smKeyboard    = keyboard
       smAttachments = case asAttachments of
         [] -> Nothing
         xs -> Just $ Text.intercalate "," $ reverse xs
@@ -133,12 +136,12 @@ mkCommandText Message {..} Chat un text
     Nothing           -> ", " <> text
     Just (UserName n) -> " (" <> n <> "), " <> text
 
-mkKeyboard :: Int -> Keyboard
-mkKeyboard currentRepeat =
+mkKeyboard :: Maybe Keyboard
+mkKeyboard =
   let kOneTime = False
-      kButtons = [[helpButton, repeatButton], indexButtons currentRepeat]
+      kButtons = [[helpButton, repeatButton], indexButtons]
       kInline  = False
-   in Keyboard {..}
+   in Just Keyboard {..}
 
 helpButton :: Button
 helpButton =
@@ -166,20 +169,19 @@ repeatAction =
       abPayload = "102"
    in Action {..}
 
-indexButtons :: Int -> [Button]
-indexButtons currentRepeat =
-  [ indexButton 1 currentRepeat
-  , indexButton 2 currentRepeat
-  , indexButton 3 currentRepeat
-  , indexButton 4 currentRepeat
-  , indexButton 5 currentRepeat
+indexButtons :: [Button]
+indexButtons =
+  [ indexButton 1
+  , indexButton 2
+  , indexButton 3
+  , indexButton 4
+  , indexButton 5
   ]
 
-indexButton :: Int -> Int -> Button
-indexButton index currentRepeat =
+indexButton :: Int -> Button
+indexButton index =
   let bAction = indexAction $ Text.showt index
-      bColor  | index == currentRepeat = "positive"
-              | otherwise              = "secondary"
+      bColor  = "secondary"
    in Button {..}
 
 indexAction :: Text -> Action

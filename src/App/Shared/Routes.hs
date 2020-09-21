@@ -17,6 +17,7 @@ module App.Shared.Routes
   , shutdown
   , start
   , withLog
+  , withLog_
   , inputLog
   , outputLog
   ) where
@@ -88,6 +89,12 @@ withLog :: (HasPriority input, HasPriority output, HasLogger env m)
         -> input
         -> m output
 withLog f x = inputLog f x >>= outputLog
+
+withLog_ :: (HasPriority input, HasPriority output, HasLogger env m)
+         => (input -> m output)
+         -> input
+         -> m ()
+withLog_ f x = inputLog f x >>= logData
 
 handleResponse :: ( Exception  error
                   , FromJSON   error
