@@ -10,7 +10,6 @@ module App.Vk.Routes
   ( getLongPollServer
   , getUpdates
   , handlers
-  , processUpdates
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -28,16 +27,12 @@ import Infrastructure.Requester
 import Internal
 
 import Control.Monad          ( replicateM_ )
-import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch, catches )
-import Control.Monad.IO.Class ( MonadIO, liftIO )
+import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
+import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, execStateT, get, modify )
-import Control.Monad.Reader   ( MonadReader )
 import Data.Aeson             ( FromJSON, Value )
-import Data.Foldable          ( traverse_ )
-import Data.IORef             ( IORef )
 import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
-import Network.HTTP.Client    ( HttpException )
 import System.Random          ( randomIO )
 
 -- TYPES -------------------------------------------------------------------
@@ -50,45 +45,30 @@ getLongPollServer :: (VkReader r m, MonadEffects r m, MonadThrow m)
                   => m GetUpdates
 getLongPollServer = mkGetUpdates <$> withLog fromResponseR GetLongPollServer
 
-getUpdates :: (VkReader r m, MonadEffects r m, MonadThrow m)
-           => ([Value] -> m b)
-           -> GetUpdates
+getUpdates :: ( AppReader r m
+              , MonadCatch m
+              , MonadEffects r m
+              , MonadRepetitions r m
+              , MonadThrow m
+              )
+           => GetUpdates
            -> m ()
-getUpdates f gu = withLog requestAndDecode gu >>= \case
-  Updates upds ts -> f upds >> getUpdates f gu { guTs = ts }
-  OutOfDate ts    -> getUpdates f gu { guTs = showt ts }
-  rest            -> getLongPollServer >>= getUpdates f
-
-processUpdates :: ( MonadRepetitions r m
-                  , AppReader r m
-                  , MonadEffects r m
-                  , MonadCatch m
-                  )
-               => [Value]
-               -> m ()
-processUpdates = traverse_ f
-  where f x = (parse x >>= processUpdate) `catches` handlers
-
-processUpdate :: ( MonadRepetitions r m
-                 , AppReader r m
-                 , MonadEffects r m
-                 , MonadThrow m
-                 )
-              => Update
-              -> m ()
-processUpdate (NewMessage m) = logData m >> routeUpdate m
-processUpdate rest = logData rest
+getUpdates gu = withLog requestAndDecode gu >>= \case
+  Updates xs ts -> fromValues routeUpdate xs >> getUpdates gu { guTs = ts }
+  OutOfDate ts  -> getUpdates gu { guTs = showt ts }
+  rest          -> getLongPollServer >>= getUpdates
 
 routeUpdate :: ( MonadRepetitions r m
                , AppReader r m
                , MonadEffects r m
                , MonadThrow m
                )
-            => Message
+            => Update
             -> m ()
-routeUpdate msg = case getter msg of
- Nothing  -> return () --withLog processMessage m
- Just cmd -> processCommand msg cmd $ mkContext msg
+routeUpdate (NewMessage msg) = logData msg >> case getter msg of
+  Nothing  -> return () --withLog processMessage m
+  Just cmd -> processCommand msg cmd $ mkContext msg
+routeUpdate rest = logData rest
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
@@ -313,6 +293,12 @@ fromResponseR, fromResponseU
   -> m output
 fromResponseR = fromResponse @ResponseException @output
 fromResponseU = fromResponse @UploadException   @output
+
+fromValues :: (FromJSON a, MonadCatch m, HasLogger r m)
+           => (a -> m ())
+           -> [Value]
+           -> m ()
+fromValues = handleValues handlers
 
 handlers :: HasLogger r m => [Handler m () ]
 handlers = sharedHandlers <>

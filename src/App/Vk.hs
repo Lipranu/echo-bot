@@ -54,8 +54,8 @@ instance Has (IORef Repetitions)   Env where getter = envRepetitions
 
 app :: App Env ()
 app = start
-   >> (getLongPollServer >>= getUpdates processUpdates) `catches` handlers
-   >> shutdown
+  >> (getLongPollServer >>= getUpdates) `catches` handlers
+  >> shutdown
 
 mkApp :: Config
       -> Shared.Config
