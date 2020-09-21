@@ -15,7 +15,6 @@ module App.Vk.Responses
   , LongPollServer (..)
   , Message (..)
   , MessageSended (..)
-  , RawFile (..)
   , ResponseException
   , Update (..)
   , Updates (..)
@@ -37,7 +36,6 @@ import Infrastructure.Logger
 import Control.Applicative  ( (<|>) )
 import Control.Monad.Catch  ( Exception )
 import Data.Aeson           ( (.:), (.:?) )
-import Data.ByteString.Lazy ( ByteString )
 import Data.Text.Extended   ( Text )
 import GHC.Generics         ( Generic )
 
@@ -404,15 +402,6 @@ instance Loggable UploadServer where
     [("Url", url)] []
 
 instance HasPriority UploadServer where logData = logDebug . toLog
-
--- RawFile -----------------------------------------------------------------
-
-newtype RawFile = RawFile ByteString
-
-instance Loggable RawFile where
-  toLog _ = "File downloaded successfully"
-
-instance HasPriority RawFile where logData = logDebug . toLog
 
 -- FileUploaded ------------------------------------------------------------
 

@@ -30,7 +30,7 @@ import Internal
 import Control.Monad          ( replicateM_ )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
-import Control.Monad.State    ( MonadState, execStateT, get, modify )
+import Control.Monad.State    ( MonadState, execStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
@@ -63,6 +63,7 @@ routeUpdate :: ( MonadRepetitions r m
                , AppReader r m
                , MonadEffects r m
                , MonadThrow m
+               , MonadCatch m
                )
             => Update
             -> m ()
@@ -82,6 +83,7 @@ processCommand :: ( MonadRepetitions r m
                   , AppReader r m
                   , MonadEffects r m
                   , MonadThrow m
+                  , MonadCatch m
                   )
                => Message
                -> Command
@@ -112,6 +114,38 @@ processCommand m command context= do
         repeats <- fromMaybe def   <$> getRepeats m
         pure $ text <> "\nCurrent repeat count: " <> showt repeats
 
+processMessage :: ( MonadEffects r m
+                  , MonadRepetitions r m
+                  , VkReader r m
+                  , MonadThrow m
+                  , MonadCatch m
+                  )
+               => Message
+               -> m ()
+processMessage m = do
+  aState  <- execStateT
+    (fromValues routeAttachment $ mAttachments m) $ mkState m
+  (keyboard, repeats) <- findUser
+  let sm = mkSendMessage m aState keyboard
+  replicateM_ repeats $ sendMessage sm
+  where findUser = getRepeats m >>= \case
+          Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
+          Just i  -> pure (Nothing, i)
+
+routeAttachment :: ( MonadEffects r m
+                   , MonadIO m
+                   , MonadState AttachmentsState m
+                   , VkReader r m
+                   , MonadThrow m
+                   )
+                => Attachment
+                -> m ()
+routeAttachment a = logData a >> case a of
+  Attachment body -> addAttachment body
+  Wall body       -> addAttachment body
+  Document body   -> processDocument body
+  Sticker id      -> addSticker id
+
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
               => a
               -> m ()
@@ -121,72 +155,20 @@ addAttachment x = modify $ \as ->
 addSticker :: MonadState AttachmentsState m => Integer -> m ()
 addSticker id = modify $ \as -> as { asSticker = Just id }
 
-----------------------------------------------------------------------------
-
-processMessage :: ( MonadEffects r m
-                  , MonadRepetitions r m
-                  , VkReader r m
-                  , MonadThrow m
-                  )
-               => Message
-               -> m ()
-processMessage m = do
- -- aState  <- execStateT
- --   (traverseHandle routeAttachment $ parse <$> mAttachments m) $ mkState m
-  (keyboard, repeats) <- findUser
-  replicateM_ repeats $ sendMessage $ mkSendMessage m (mkState m) keyboard
-  where findUser = getRepeats m >>= \case
-          Nothing -> (mkKeyboard,) <$> unDefaultRepeat <$> obtain
-          Just i  -> pure (Nothing, i)
-
---routeAttachment :: ( MonadEffects r m
---                   , MonadIO m
---                   , MonadState AttachmentsState m
---                   , VkReader r m
---                   )
---                => Attachment
---                -> m ()
---routeAttachment (Attachment body) = withLog addAttachment body
---routeAttachment (Wall       body) = withLog addAttachment body
---routeAttachment (Document   body) = withLog processDocument body
---routeAttachment (Sticker      id) = addSticker id
---
---processDocument :: ( MonadEffects r m
---                   , MonadIO m
---                   , MonadState AttachmentsState m
---                   , VkReader r m
---                   )
---                => DocumentBody -> m ()
---processDocument doc = do
---  gUploadServer <- mkGetUploadServer
---  handleWarningRequest gUploadServer $ getFile doc
---
---getFile :: ( MonadEffects r m
---           , MonadIO m
---           , MonadState AttachmentsState m
---           , VkReader r m
---           )
---        => DocumentBody
---        -> UploadServer
---        -> m ()
---getFile doc us = do
---  file <- request $ mkGetFile doc
---  handleWarningR (uploadDocument . mkUploadFile doc us) $ RawFile <$> file
---
---uploadDocument :: ( MonadEffects r m
---                  , MonadIO m
---                  , MonadState AttachmentsState m
---                  , VkReader r m
---                  )
---               => UploadFile
---               -> m ()
---uploadDocument uFile = handleWarningRequest uFile
---  $ saveFile . mkSaveFile uFile
---
---saveFile :: (MonadEffects r m, MonadState AttachmentsState m, VkReader r m)
---         => SaveFile
---         -> m ()
---saveFile sf = handleWarningRequest @FileSaved sf addAttachment
+processDocument :: ( MonadEffects r m
+                   , MonadIO m
+                   , MonadState AttachmentsState m
+                   , VkReader r m
+                   , MonadThrow m
+                   )
+                => DocumentBody -> m ()
+processDocument doc = do
+  server   <- mkGetUploadServer >>= withLog fromResponseR
+  file     <- inputLog request (mkGetFile doc)
+  let upload = mkUploadFile doc server file
+  uploaded <- withLog fromResponseU $ mkUploadFile doc server file
+  saved    <- withLog fromResponseR $ mkSaveFile upload uploaded
+  addAttachment @FileSaved saved
 
 fromResponseR, fromResponseU
   :: forall output input env m
