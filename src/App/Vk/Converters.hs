@@ -46,19 +46,6 @@ data Context
   = Private
   | Chat
 
-data Command
-  = Help
-  | Repeat
-  | NewRepeat Int
-
-instance Loggable Command where
-  toLog Help          = "Performing Help Command"
-  toLog Repeat        = "Performing Repeat Command"
-  toLog (NewRepeat i) = "Setting new repeat count: "  <> showt i
-
-instance HasPriority Command where
-  logData = logInfo . toLog
-
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
   , asSticker     :: Maybe Integer

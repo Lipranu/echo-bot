@@ -86,19 +86,9 @@ routeUpdate :: ( MonadRepetitions r m
                )
             => Message
             -> m ()
-routeUpdate m = case mPayload m of
- Nothing    -> logDebug ("Nothing" :: Text)--withLog processMessage m
- Just "101" -> mkProcess Help
- Just "102" -> mkProcess Repeat
- Just "201" -> mkRepeat 1
- Just "202" -> mkRepeat 2
- Just "203" -> mkRepeat 3
- Just "204" -> mkRepeat 4
- Just "205" -> mkRepeat 5
- Just text  -> logWarning ("unknown payload: " <> text)
-           --  >> withLog processMessage m
- where mkProcess = processCommand m $ mkContext m
-       mkRepeat  = mkProcess . NewRepeat
+routeUpdate msg = case getter msg of
+ Nothing  -> return () --withLog processMessage m
+ Just cmd -> processCommand msg cmd $ mkContext msg
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
@@ -113,27 +103,29 @@ processCommand :: ( MonadRepetitions r m
                   , MonadThrow m
                   )
                => Message
-               -> Context
                -> Command
+               -> Context
                -> m ()
-processCommand m context command = do
+processCommand m command context= do
   performCommand
   name <- getName
   text <- getCommandText
   sendMessage $ mkCommandReply m $ mkCommandText m context name text
   where
-    performCommand = case command of
-      NewRepeat i -> logData command >> putRepeats m i
-      _           -> logData command
+    performCommand = logData command >> case command of
+      NewCount i       -> putRepeats m i
+      UnknownCommand c -> return ()
+      _                -> return ()
 
     getName = case context of
       Private -> pure Nothing
       Chat    -> listToMaybe <$> withLog fromResponseR (mkGetName m)
 
     getCommandText = case command of
-      Help        -> unHelpText <$> obtain
-      NewRepeat i -> pure $ "Repeat count set to: " <> showt i
-      Repeat      -> do
+      Help             -> unHelpText <$> obtain
+      NewCount i       -> pure $ "Repeat count set to: " <> showt i
+      UnknownCommand t -> pure "Unknown command"
+      Repeat           -> do
         text    <- unRepeatText <$> obtain
         repeats <- getRepeats m
         pure $ text <> "\nCurrent repeat count: " <> showt repeats

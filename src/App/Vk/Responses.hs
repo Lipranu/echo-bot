@@ -1,9 +1,10 @@
 {-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -22,6 +23,8 @@ module App.Vk.Responses
   , UploadServer (..)
   , UserName (..)
   , WallBody (..)
+  , Payload (..)
+  , Command (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -197,7 +200,7 @@ data Message = Message
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
   , mAttachments :: [Aeson.Value]
-  , mPayload     :: Maybe Text
+  , mPayload     :: Maybe Payload
   }
 
 instance Aeson.FromJSON Message where
@@ -220,12 +223,56 @@ instance Loggable Message where
     [ ("Message"    , mMessage)
     , ("Latitude"   , Text.showt <$> mLatitude)
     , ("Longitude"  , Text.showt <$> mLongitude)
-    , ("Payload"    , mPayload)
+    , ("Payload"    , toLog      <$> mPayload)
     ]
 
 instance HasPriority Message where logData = logDebug . toLog
 
 instance Has Key Message where getter Message {..} = (mFromId, mPeerId)
+
+instance Has (Maybe Command) Message where
+  getter Message {..} = case mPayload of
+    Nothing            -> Nothing
+    Just (Payload _ c) -> Just c
+
+-- Payload -----------------------------------------------------------------
+
+data Payload = Payload Text Command
+
+instance Aeson.FromJSON Payload where
+  parseJSON = Aeson.withText "App.Vk.Responses.Payload" $ \t -> Payload t
+    <$> Aeson.parseJSON (Aeson.String t)
+
+instance Loggable Payload where toLog (Payload t _) = t
+
+-- Command -----------------------------------------------------------------
+
+data Command
+  = Help
+  | Repeat
+  | NewCount Int
+  | UnknownCommand Text
+
+instance Aeson.FromJSON Command where
+  parseJSON = Aeson.withText "App.Vk.Responses.Payload.Command" $ \case
+    "101" -> pure Help
+    "102" -> pure Repeat
+    "201" -> pure $ NewCount 1
+    "202" -> pure $ NewCount 2
+    "203" -> pure $ NewCount 3
+    "204" -> pure $ NewCount 4
+    "205" -> pure $ NewCount 5
+    text  -> pure $ UnknownCommand text
+
+instance Loggable Command where
+  toLog Help               = "Performing Help command"
+  toLog Repeat             = "Performing Repeat command"
+  toLog (NewCount _)       = "Setting new repeat count"
+  toLog (UnknownCommand t) = "Unknown command: " <> t
+
+instance HasPriority Command where
+  logData c@(UnknownCommand _) = logWarning $ toLog c
+  logData c                    = logInfo    $ toLog c
 
 -- UserName ----------------------------------------------------------------
 
