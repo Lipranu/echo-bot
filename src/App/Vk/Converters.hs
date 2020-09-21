@@ -26,9 +26,11 @@ module App.Vk.Converters
 import App.Vk.Requests
 import App.Vk.Responses
 
-import Control.Monad.State ( MonadState, gets )
-import Data.Maybe          ( fromMaybe )
-import Data.Text           ( Text )
+import Infrastructure.Logger ( Loggable (..), HasPriority (..), logInfo )
+
+import Control.Monad.State   ( MonadState, gets )
+import Data.Maybe            ( fromMaybe )
+import Data.Text.Extended    ( Text, showt )
 
 import qualified Data.Text.Extended   as Text
 import qualified Data.ByteString.Lazy as LBS
@@ -45,9 +47,17 @@ data Context
   | Chat
 
 data Command
- = Help
- | Repeat
- | NewRepeat Int
+  = Help
+  | Repeat
+  | NewRepeat Int
+
+instance Loggable Command where
+  toLog Help          = "Performing Help Command"
+  toLog Repeat        = "Performing Repeat Command"
+  toLog (NewRepeat i) = "Setting new repeat count: "  <> showt i
+
+instance HasPriority Command where
+  logData = logInfo . toLog
 
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]

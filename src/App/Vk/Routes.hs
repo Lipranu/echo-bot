@@ -89,13 +89,13 @@ routeUpdate :: ( MonadRepetitions r m
 routeUpdate m = case mPayload m of
  Nothing    -> logDebug ("Nothing" :: Text)--withLog processMessage m
  Just "101" -> mkProcess Help
- Just "102" -> logDebug ("102" :: Text)--withLog processRepeat m
- Just "201" -> logDebug ("201" :: Text)--processIndex m 1
- Just "202" -> logDebug ("202" :: Text)--processIndex m 2
- Just "203" -> logDebug ("203" :: Text)--processIndex m 3
- Just "204" -> logDebug ("204" :: Text)--processIndex m 4
- Just "205" -> logDebug ("205" :: Text)--processIndex m 5
- Just text  -> logDebug text --logWarning ("unknown payload: " <> text)
+ Just "102" -> mkProcess Repeat
+ Just "201" -> mkRepeat 1
+ Just "202" -> mkRepeat 2
+ Just "203" -> mkRepeat 3
+ Just "204" -> mkRepeat 4
+ Just "205" -> mkRepeat 5
+ Just text  -> logWarning ("unknown payload: " <> text)
            --  >> withLog processMessage m
  where mkProcess = processCommand m $ mkContext m
        mkRepeat  = mkProcess . NewRepeat
@@ -116,28 +116,26 @@ processCommand :: ( MonadRepetitions r m
                -> Context
                -> Command
                -> m ()
-processCommand m ctx c = do
-  name <- getName ctx m
-  text <- mkCommandText m ctx name <$> getCommandText c m
+processCommand m context command = do
+  performCommand
+  text <- mkCommandText m context <$> getName <*> getCommandText
   sendMessage $ mkCommandReply m text
+  where
+    performCommand = case command of
+      NewRepeat i -> logData command >> putRepeats m i
+      _           -> logData command
 
-getName :: (MonadEffects r m, VkReader r m, MonadThrow m)
-        => Context
-        -> Message
-        -> m (Maybe UserName)
-getName Private _ = pure Nothing
-getName Chat    m = listToMaybe <$> withLog fromResponseR (mkGetName m)
+    getName = case context of
+      Private -> pure Nothing
+      Chat    -> listToMaybe <$> withLog fromResponseR (mkGetName m)
 
-getCommandText :: (MonadRepetitions r m, SharedReader r m)
-               => Command
-               -> Message
-               -> m Text
-getCommandText Help          _ = unHelpText <$> obtain
-getCommandText (NewRepeat i) _ = pure $ "Repeat count set to: " <> showt i
-getCommandText Repeat        m = do
-  text    <- unRepeatText <$> obtain
-  repeats <- getRepeats m
-  pure $ text <> "\nCurrent repeat count: " <> showt repeats
+    getCommandText = case command of
+      Help        -> unHelpText <$> obtain
+      NewRepeat i -> pure $ "Repeat count set to: " <> showt i
+      Repeat      -> do
+        text    <- unRepeatText <$> obtain
+        repeats <- getRepeats m
+        pure $ text <> "\nCurrent repeat count: " <> showt repeats
 
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
               => a
