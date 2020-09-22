@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: 6cbfc89e671c6cc19fbfb43ace9a29df2ea44974c40cab016d8aff39cdea7b5a
+-- hash: 624f4d0c4500aa73325b8e2135a83219da00b1323fc44a4ec973704ce498597a
 
 name:           echo-bot
 version:        0.1.0.0
@@ -65,6 +65,7 @@ library
     , random
     , text
     , time
+    , vector
   default-language: Haskell2010
 
 executable echo-bot-exe
@@ -89,6 +90,7 @@ executable echo-bot-exe
     , random
     , text
     , time
+    , vector
   default-language: Haskell2010
 
 test-suite echo-bot-test
@@ -118,4 +120,5 @@ test-suite echo-bot-test
     , random
     , text
     , time
+    , vector
   default-language: Haskell2010

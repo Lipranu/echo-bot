@@ -11,6 +11,7 @@ module App.Vk.Responses
   , AttachmentBody (..)
   , DocumentBody (..)
   , PhotoBody (..)
+  , PhotoSaved (..)
   , FileSaved (..)
   , FileUploaded (..)
   , LongPollServer (..)
@@ -38,6 +39,7 @@ import Control.Applicative  ( (<|>) )
 import Control.Monad.Catch  ( Exception )
 import Data.Aeson           ( (.:), (.:?) )
 import Data.List            ( sort )
+import Data.Vector          ( (!?) )
 import Data.Text.Extended   ( Text )
 import GHC.Generics         ( Generic )
 
@@ -467,31 +469,45 @@ instance HasPriority UploadServer where logData = logDebug . toLog
 
 -- FileUploaded ------------------------------------------------------------
 
-newtype FileUploaded = FileUploaded Text
+data FileUploaded
+  = DocumentUploaded Text
+  | PhotoUploaded Integer Text Text --Aeson.Value
 
 instance Aeson.FromJSON FileUploaded where
   parseJSON = Aeson.withObject "App.Vk.FileUploaded" $ \o ->
-    FileUploaded <$> o .: "file"
+        DocumentUploaded <$> o .: "file"
+    <|> PhotoUploaded    <$> o .: "server"
+                         <*> o .: "hash"
+                         <*> o .: "photo"
 
 instance Loggable FileUploaded where
-  toLog (FileUploaded text) = mkToLog "File uploaded:"
-    [("Response body", text)] []
+  toLog (DocumentUploaded file) = mkToLog "Document uploaded:"
+    [("File", file)] []
+
+  toLog (PhotoUploaded server hash photo) = mkToLog "Photo uploaded:"
+    [ ("Server", Text.showt server)
+    , ("Hash"  , hash)
+    , ("Photo" , Text.showt photo)
+    ] []
 
 instance HasPriority FileUploaded where logData = logDebug . toLog
 
 -- FileSaved ---------------------------------------------------------------
 
 data FileSaved = FileSaved
-  { fsType :: Text
-  , fsMediaId :: Integer
-  , fsOwnerId :: Integer
+  { fsType      :: Text
+  , fsMediaId   :: Integer
+  , fsOwnerId   :: Integer
+  , fsAccessKey :: Maybe Text
   }
 
 instance Aeson.FromJSON FileSaved where
   parseJSON = Aeson.withObject "App.Vk.FileSaved" $ \o -> do
-    fsType    <- o .: "type"
-    fsMediaId <- o .: fsType >>= (.: "id")
-    fsOwnerId <- o .: fsType >>= (.: "owner_id")
+    fsType      <- o    .:  "type"
+    body        <- o    .: fsType
+    fsMediaId   <- body .:  "id"
+    fsOwnerId   <- body .:  "owner_id"
+    fsAccessKey <- body .:? "access_key"
     return FileSaved {..}
 
 instance Loggable FileSaved where
@@ -499,9 +515,34 @@ instance Loggable FileSaved where
     [ ("Type"    , fsType)
     , ("Media id", Text.showt fsMediaId)
     , ("Owner id", Text.showt fsOwnerId)
-    ] []
+    ] [("Access Key", fsAccessKey)]
 
 instance HasPriority FileSaved where logData = logDebug . toLog
+
+-- PhotoSaved --------------------------------------------------------------
+
+data PhotoSaved = PhotoSaved
+  { psMediaId   :: Integer
+  , psOwnerId   :: Integer
+  , psAccessKey :: Maybe Text
+  }
+
+instance Aeson.FromJSON PhotoSaved where
+  parseJSON = Aeson.withArray path $ \a -> case a !? 0 of
+    Nothing -> fail $ path <> ": empty array"
+    Just x -> (flip $ Aeson.withObject path) x $ \o -> PhotoSaved
+      <$> o .: "id"
+      <*> o .: "owner_id"
+      <*> o .:? "access_key"
+    where path = "App.Vk.Responses.PhotoSaved"
+
+instance Loggable PhotoSaved where
+  toLog PhotoSaved {..} = mkToLog "Photo saved:"
+    [ ("Media id", Text.showt psMediaId)
+    , ("Owner id", Text.showt psOwnerId)
+    ] [("Access Key", psAccessKey)]
+
+instance HasPriority PhotoSaved where logData = logDebug . toLog
 
 -- MessageSended -----------------------------------------------------------
 

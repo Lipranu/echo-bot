@@ -7,15 +7,15 @@ module App.Vk.Converters
   ( AttachmentsState (..)
   , Command (..)
   , Context (..)
-  , Convertible (..)
+  , ToAttachment (..)
+  , UploadRequests (..)
+  , ToUploadRequests (..)
   , mkCommandReply
   , mkCommandText
   , mkContext
-  , mkGetFile
   , mkKeyboard
   , mkGetName
   , mkGetUpdates
-  , mkGetUploadServer
   , mkSaveFile
   , mkSendMessage
   , mkState
@@ -29,7 +29,6 @@ import App.Vk.Responses
 
 import Internal
 
-import Control.Monad.State   ( MonadState, gets )
 import Data.Maybe            ( fromMaybe )
 import Data.Text.Extended    ( Text )
 
@@ -38,8 +37,11 @@ import qualified Data.ByteString.Lazy as LBS
 
 -- CLASSES -----------------------------------------------------------------
 
-class Convertible a b | a -> b where
-  convert :: a -> b
+class ToAttachment a where
+  toAttachment :: a -> Text
+
+class ToUploadRequests a b | a -> b where
+  toUploadRequests :: a -> UploadRequests b
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -50,38 +52,70 @@ data Context
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
   , asSticker     :: Maybe Integer
-  , asPeerId      :: Integer
+  , asPeerId      :: PeerId
   , asContext     :: Context
   }
 
 instance Has Context AttachmentsState where
   getter = asContext
 
-instance Convertible FileSaved Text where
-  convert FileSaved {..}
-    = toAttachment fsType fsOwnerId fsMediaId
+instance Has PeerId AttachmentsState where
+  getter = asPeerId
 
-instance Convertible AttachmentBody Text where
-  convert AttachmentBody {..}
-    = toAttachmentWithKey aType aOwnerId aId aAccessKey
+instance ToAttachment FileSaved where
+  toAttachment FileSaved {..}
+    = mkAttachment fsType fsOwnerId fsMediaId fsAccessKey
 
-instance Convertible WallBody Text where
-  convert WallBody {..}
-    = toAttachmentWithKey wType wToId wId wAccessKey
+instance ToAttachment PhotoSaved where
+  toAttachment PhotoSaved {..}
+    = mkAttachment "photo" psOwnerId psMediaId psAccessKey
 
-instance Convertible PhotoBody Text where
-  convert PhotoBody {..}
-    = toAttachmentWithKey "photo" pbOwnerId pbId pbAccessKey
+instance ToAttachment AttachmentBody where
+  toAttachment AttachmentBody {..}
+    = mkAttachment aType aOwnerId aId aAccessKey
+
+instance ToAttachment WallBody where
+  toAttachment WallBody {..}
+    = mkAttachment wType wToId wId wAccessKey
+
+instance ToAttachment PhotoBody where
+  toAttachment PhotoBody {..}
+    = mkAttachment "photo" pbOwnerId pbId pbAccessKey
+
+data UploadRequests a = UploadRequests
+  { getUploadServer :: GetUploadServer
+  , getFile         :: GetFile
+  , uploadFile      :: UploadServer -> LBS.ByteString -> UploadFile
+  , saveFile        :: FileUploaded -> SaveFile
+  }
+
+instance ToUploadRequests PhotoBody PhotoSaved where
+  toUploadRequests PhotoBody {..} =
+    let getUploadServer = PhotoUploadServer
+        getFile         = GetFile pbUrl
+        uploadFile      = mkUploadFile "photo" title
+        saveFile        = mkSaveFile title
+        title           = snd $ Text.breakOnEnd "/" pbUrl
+     in UploadRequests {..}
+
+instance ToUploadRequests DocumentBody FileSaved where
+  toUploadRequests DocumentBody {..} =
+    let getUploadServer = FileUploadServer "doc"
+        getFile         = GetFile dUrl
+        uploadFile      = mkUploadFile "doc" dTitle
+        saveFile        = mkSaveFile dTitle
+     in UploadRequests {..}
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-toAttachment :: Text -> Integer -> Integer -> Text
-toAttachment t oid mid = t <> Text.showt oid <> "_" <> Text.showt mid
-
-toAttachmentWithKey :: Text -> Integer -> Integer -> Maybe Text -> Text
-toAttachmentWithKey t oid mid key = toAttachment t oid mid <> case key of
-  Just v  -> "_" <> v
-  Nothing -> ""
+mkAttachment :: Text -> Integer -> Integer -> Maybe Text -> Text
+mkAttachment t oid mid key = t
+  <> Text.showt oid
+  <> "_"
+  <> Text.showt mid
+  <> case key of
+    Just v  -> "_" <> v
+    Nothing -> ""
 
 mkGetUpdates :: LongPollServer -> GetUpdates
 mkGetUpdates LongPollServer {..} =
@@ -94,7 +128,7 @@ mkGetUpdates LongPollServer {..} =
 
 mkState :: Message -> AttachmentsState
 mkState message =
-  let asPeerId      = mPeerId message
+  let asPeerId      = PeerId $ mPeerId message
       asAttachments = []
       asSticker     = Nothing
       asContext     = mkContext message
@@ -200,21 +234,12 @@ indexAction index =
       abPayload = "20" <> index
    in Action {..}
 
-mkUploadFile :: DocumentBody -> UploadServer -> LBS.ByteString -> UploadFile
-mkUploadFile DocumentBody {..} (UploadServer url) file =
-  let ufFile  = LBS.toStrict file
-      ufUrl   = url
-      ufTitle = dTitle
+mkUploadFile :: Text -> Text -> UploadServer -> LBS.ByteString -> UploadFile
+mkUploadFile ufType ufTitle (UploadServer ufUrl) file =
+  let ufFile = LBS.toStrict file
    in UploadFile {..}
 
-mkGetFile :: DocumentBody -> GetFile
-mkGetFile DocumentBody {..} = GetFile dUrl
-
-mkGetUploadServer :: MonadState AttachmentsState m => m GetUploadServer
-mkGetUploadServer = GetUploadServer "doc" <$> gets asPeerId
-
-mkSaveFile :: UploadFile -> FileUploaded -> SaveFile
-mkSaveFile UploadFile {..} (FileUploaded file) =
-  let sfFile  = file
-      sfTitle = ufTitle
-   in SaveFile {..}
+mkSaveFile :: Text -> FileUploaded -> SaveFile
+mkSaveFile title (DocumentUploaded file) = SaveDocument title file
+mkSaveFile title (PhotoUploaded server hash photo) =
+  SavePhoto title server hash photo

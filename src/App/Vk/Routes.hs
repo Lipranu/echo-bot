@@ -6,6 +6,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
+{-# LANGUAGE RecordWildCards     #-}
 
 module App.Vk.Routes
   ( getLongPollServer
@@ -33,7 +34,7 @@ import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, execStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Maybe             ( fromMaybe, listToMaybe )
-import Data.Text.Extended     ( Text, showt )
+import Data.Text.Extended     ( showt )
 import System.Random          ( randomIO )
 
 -- TYPES -------------------------------------------------------------------
@@ -144,35 +145,39 @@ routeAttachment a = logData a >> case a of
   Attachment body -> addAttachment body
   Wall body       -> addAttachment body
   Photo body      -> fromContext body
-  Document body   -> processDocument body
+  Document body   -> processDocument $ toUploadRequests body
   Sticker id      -> addSticker id
   where fromContext a = grab >>= \case
           Private -> addAttachment a
-          Chat    -> logInfo a
+          Chat    -> processDocument $ toUploadRequests a
 
-addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
+addAttachment :: (ToAttachment a, MonadState AttachmentsState m)
               => a
               -> m ()
 addAttachment x = modify $ \as ->
-  as { asAttachments = convert x : asAttachments as }
+  as { asAttachments = toAttachment x : asAttachments as }
 
 addSticker :: MonadState AttachmentsState m => Integer -> m ()
 addSticker id = modify $ \as -> as { asSticker = Just id }
 
-processDocument :: ( MonadEffects r m
+processDocument :: forall result env m
+                 . ( MonadEffects env m
                    , MonadIO m
                    , MonadState AttachmentsState m
-                   , VkReader r m
+                   , VkReader env m
                    , MonadThrow m
+                   , ToAttachment result
+                   , HasPriority result
+                   , FromJSON result
                    )
-                => DocumentBody -> m ()
-processDocument doc = do
-  server   <- mkGetUploadServer >>= withLog fromResponseR
-  file     <- inputLog request (mkGetFile doc)
-  let upload = mkUploadFile doc server file
-  uploaded <- withLog fromResponseU $ mkUploadFile doc server file
-  saved    <- withLog fromResponseR $ mkSaveFile upload uploaded
-  addAttachment @FileSaved saved
+                => UploadRequests result
+                -> m ()
+processDocument UploadRequests {..} = do
+  server   <- withLog fromResponseR getUploadServer
+  file     <- inputLog request getFile
+  uploaded <- withLog fromResponseU $ uploadFile server file
+  saved    <- withLog (fromResponseR @result) $ saveFile uploaded
+  addAttachment saved
 
 fromResponseR, fromResponseU
   :: forall output input env m

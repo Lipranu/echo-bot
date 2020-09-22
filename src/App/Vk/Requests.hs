@@ -14,6 +14,7 @@ module App.Vk.Requests
   , SaveFile (..)
   , SendMessage (..)
   , GetName (..)
+  , PeerId (..)
   , UploadFile (..)
   , Keyboard (..)
   , Button (..)
@@ -29,6 +30,8 @@ import Infrastructure.Requester ( ToRequest (..) )
 import Internal
 
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
+import Control.Monad.State         ( MonadState )
+import Control.Monad.Catch         ( MonadThrow )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
 import GHC.Generics                ( Generic )
@@ -149,7 +152,7 @@ data Button = Button
 instance Aeson.ToJSON Button where
   toJSON = Aeson.toJsonDrop
 
--- Button ------------------------------------------------------------------
+-- Action ------------------------------------------------------------------
 
 data Action = Action
   { abType    :: Text
@@ -184,8 +187,8 @@ instance HasPriority GetName where logData = logInfo . toLog
 
 newtype GetFile = GetFile Text
 
-instance Monad m => ToRequest m GetFile where
-  toRequest (GetFile url) = return $ HTTP.parseRequest_ $ Text.unpack url
+instance MonadThrow m => ToRequest m GetFile where
+  toRequest (GetFile url) = HTTP.parseRequest $ Text.unpack url
 
 instance Loggable GetFile where
   toLog _ = "Downloading file from attachment url"
@@ -194,26 +197,35 @@ instance HasPriority GetFile where logData = logInfo . toLog
 
 -- GetUploadServer ---------------------------------------------------------
 
-data GetUploadServer = GetUploadServer
-  { gusType   :: Text
-  , gusPeerId :: Integer
-  }
+newtype PeerId = PeerId Integer
 
-instance (Monad m, VkReader r m) => ToRequest m GetUploadServer where
-  toRequest GetUploadServer {..} = do
-    df <- defaultBody
-    return $ HTTP.urlEncodedBody (body <> df) request
-    where body    = [ ("type"   , encodeUtf8     gusType)
-                    , ("peer_id", encodeShowUtf8 gusPeerId)
-                    ]
-          request = defaultRequest
-                    { HTTP.method = "GET"
-                    , HTTP.path   = "/method/docs.getMessagesUploadServer"
-                    }
+data GetUploadServer
+  = FileUploadServer Text
+  | PhotoUploadServer
+
+instance (Monad m, VkReader r m, MonadState s m, Has PeerId s)
+  => ToRequest m GetUploadServer where
+  toRequest gus = do
+    df           <- defaultBody
+    (PeerId pid) <- grab
+    return $ HTTP.urlEncodedBody (body pid <> df) request
+    where body pid = [("peer_id", "0")] <> case gus of
+            FileUploadServer t -> [ ("type", encodeUtf8 t)
+                                  , ("peer_id", encodeShowUtf8 pid)
+                                  ]
+            PhotoUploadServer  -> [ ("peer_id", "0") ]
+          request  = defaultRequest
+                     { HTTP.method = "GET"
+                     , HTTP.path   = path <> ".getMessagesUploadServer"
+                     }
+          path     = "/method/" <> case gus of
+            FileUploadServer _ -> "docs"
+            PhotoUploadServer  -> "photos"
 
 instance Loggable GetUploadServer where
-  toLog GetUploadServer {..} = "Requesting upload server of type: "
-    <> gusType
+  toLog PhotoUploadServer    = "Requesting photo upload server"
+  toLog (FileUploadServer t) = "Requesting docs upload server, file type: "
+    <> t
 
 instance HasPriority GetUploadServer where logData = logInfo . toLog
 
@@ -223,15 +235,18 @@ data UploadFile = UploadFile
   { ufFile  :: BS.ByteString
   , ufUrl   :: Text
   , ufTitle :: Text
+  , ufType  :: Text
   }
 
-instance MonadIO m => ToRequest m UploadFile where
-  toRequest UploadFile {..} =
-    let request = HTTP.parseRequest_ $ Text.unpack ufUrl
-        part    = MP.partBS "file" ufFile
-     in liftIO $ MP.formDataBody
-        [part { MP.partFilename = Just $ Text.unpack ufTitle }]
-        request
+instance (MonadThrow m, MonadIO m) => ToRequest m UploadFile where
+  toRequest UploadFile {..} = do
+    request <- HTTP.parseRequest $ Text.unpack ufUrl
+    liftIO $ MP.formDataBody
+      [part { MP.partFilename = Just $ Text.unpack ufTitle }]
+      request
+    where part = flip MP.partBS ufFile $ case ufType of
+            "photo" -> "photo"
+            rest    -> "file"
 
 instance Loggable UploadFile where
   toLog UploadFile {..} = "Uploading file: " <> ufTitle
@@ -240,25 +255,35 @@ instance HasPriority UploadFile where logData = logInfo . toLog
 
 -- SaveFile ----------------------------------------------------------------
 
-data SaveFile = SaveFile
-  { sfFile  :: Text
-  , sfTitle :: Text
-  }
+data SaveFile
+  = SaveDocument Text Text
+  | SavePhoto Text Integer Text Text
 
 instance (Monad m, VkReader r m) => ToRequest m SaveFile where
-  toRequest SaveFile {..} = do
+  toRequest sf = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (body <> df) request
-    where body    = [ ("file" , encodeUtf8 sfFile)
-                    , ("title", encodeUtf8 sfTitle)
-                    ]
+    where body    = case sf of
+            SaveDocument title file ->
+              [ ("file" , encodeUtf8 file)
+              , ("title", encodeUtf8 title)
+              ]
+            SavePhoto _ server hash photo ->
+              [ ("server", encodeShowUtf8 server)
+              , ("hash"  , encodeUtf8 hash)
+              , ("photo" , encodeUtf8 photo)
+              ]
           request = defaultRequest
-                    { HTTP.path   = "/method/docs.save"
+                    { HTTP.path   = "/method/" <> path
                     , HTTP.method = "POST"
                     }
+          path    = case sf of
+            SaveDocument { } -> "docs.save"
+            SavePhoto    { } -> "photos.saveMessagesPhoto"
 
 instance Loggable SaveFile where
-  toLog SaveFile {..} = "Saving file: " <> sfTitle
+  toLog (SaveDocument title _)  = "Saving document: " <> title
+  toLog (SavePhoto title _ _ _) = "Saving photo: "    <> title
 
 instance HasPriority SaveFile where logData = logInfo . toLog
 
@@ -275,7 +300,7 @@ defaultBody = do
   group <- obtain
   return [ ("access_token", encodeUtf8 $ unToken token)
          , ("group_id"    , encodeUtf8 $ unGroup group)
-         , ("v"           , "5.122")
+         , ("v"           , "5.124")
          ]
 
 defaultRequest :: HTTP.Request
