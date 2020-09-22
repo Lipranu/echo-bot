@@ -9,7 +9,7 @@ module Infrastructure.RequesterSpec ( spec ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Internal
+import Infrastructure.Has
 import Infrastructure.Requester
 import Infrastructure.Logger        ( Loggable (..) )
 

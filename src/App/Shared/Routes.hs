@@ -24,9 +24,9 @@ module App.Shared.Routes
 
 -- IMPORTS -----------------------------------------------------------------
 
+import Infrastructure.Has
 import Infrastructure.Logger    hiding ( Priority (..) )
 import Infrastructure.Requester
-import Internal
 
 import App.Shared.Responses
 import App.Shared.Config

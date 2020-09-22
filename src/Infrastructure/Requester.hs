@@ -22,7 +22,7 @@ module Infrastructure.Requester
 -- IMPORTS -----------------------------------------------------------------
 
 import Infrastructure.Logger ( Loggable (..), mkToLog )
-import Internal
+import Infrastructure.Has
 
 import Control.Monad.Catch   ( Exception (..), MonadThrow (..), throwM )
 import Control.Monad.Reader  ( MonadReader, lift )

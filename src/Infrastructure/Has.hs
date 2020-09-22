@@ -2,13 +2,10 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 
-module Internal where
+module Infrastructure.Has where
 
-import Control.Concurrent.MVar ( MVar )
 import Control.Monad.Reader    ( MonadReader, asks )
 import Control.Monad.State     ( MonadState, gets )
-
-type Lock = MVar ()
 
 class Has a r where
   getter :: r -> a

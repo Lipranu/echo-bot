@@ -24,9 +24,9 @@ import App.Vk.Converters
 import App.Vk.Requests
 import App.Vk.Responses
 
+import Infrastructure.Has
 import Infrastructure.Logger    hiding ( Priority (..) )
 import Infrastructure.Requester
-import Internal
 
 import Control.Monad          ( replicateM_ )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )

@@ -27,7 +27,7 @@ module App.Vk.Converters
 import App.Vk.Requests
 import App.Vk.Responses
 
-import Internal
+import Infrastructure.Has
 
 import Data.Maybe            ( fromMaybe )
 import Data.Text.Extended    ( Text )

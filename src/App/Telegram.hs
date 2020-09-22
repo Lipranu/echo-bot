@@ -10,9 +10,9 @@ module App.Telegram ( Config, mkApp, runApp ) where
 
 -- IMPORTS --------------------------------------------------------------------
 
+import Infrastructure.Has
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
-import Internal
 
 import qualified Infrastructure.Logger as Logger
 

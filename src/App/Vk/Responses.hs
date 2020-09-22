@@ -32,7 +32,7 @@ module App.Vk.Responses
 
 import App.Shared.Responses
 
-import Internal
+import Infrastructure.Has
 import Infrastructure.Logger
 
 import Control.Applicative  ( (<|>) )

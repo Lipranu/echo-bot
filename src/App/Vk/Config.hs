@@ -11,7 +11,7 @@ module App.Vk.Config
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Internal             ( Has )
+import Infrastructure.Has
 
 import Control.Monad.Reader ( MonadReader )
 import Data.Aeson           ( FromJSON (..), (.:), withObject )

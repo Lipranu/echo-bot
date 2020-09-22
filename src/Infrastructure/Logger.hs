@@ -11,6 +11,7 @@ module Infrastructure.Logger
   ( Config (..)
   , HasLogger
   , HasPriority (..)
+  , Lock
   , Loggable (..)
   , Logger (..)
   , MonadLogger (..)
@@ -23,16 +24,16 @@ module Infrastructure.Logger
   , logError
   , logInfo
   , logWarning
-  , mkLogger
   , mkLogLine
+  , mkLogger
   , mkToLog
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Internal
+import Infrastructure.Has
 
-import Control.Concurrent.MVar   ( takeMVar, putMVar )
+import Control.Concurrent.MVar   ( MVar, takeMVar, putMVar )
 import Control.Monad             ( when )
 import Control.Monad.IO.Class    ( MonadIO, liftIO )
 import Control.Monad.Reader      ( MonadReader, lift )
@@ -68,6 +69,8 @@ class Loggable a => HasPriority a where
   logData :: HasLogger r m => a -> m ()
 
 -- TYPES AND INSTANCES -----------------------------------------------------
+
+type Lock = MVar ()
 
 type HasLogger r m =
   ( Has (Logger m) r

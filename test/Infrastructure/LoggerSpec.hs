@@ -9,7 +9,7 @@ module Infrastructure.LoggerSpec ( spec ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Internal
+import Infrastructure.Has
 import Infrastructure.Logger
 
 import Control.Concurrent.Async ( concurrently )

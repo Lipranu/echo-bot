@@ -25,9 +25,9 @@ module App.Vk.Requests
 
 import App.Vk.Config            ( VkReader, Token (..), Group (..) )
 
+import Infrastructure.Has
 import Infrastructure.Logger    ( Loggable (..), HasPriority (..), logInfo )
 import Infrastructure.Requester ( ToRequest (..) )
-import Internal
 
 import Control.Monad.IO.Class      ( MonadIO, liftIO )
 import Control.Monad.State         ( MonadState )

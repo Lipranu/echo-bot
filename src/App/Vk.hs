@@ -7,9 +7,9 @@ module App.Vk ( mkApp, runApp ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Infrastructure.Logger    ( Logger, mkLogger )
+import Infrastructure.Has
+import Infrastructure.Logger    ( Logger, Lock, mkLogger )
 import Infrastructure.Requester ( Requester, mkRequester )
-import Internal
 
 import App.Shared
 import App.Shared.Routes
