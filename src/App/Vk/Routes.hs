@@ -143,8 +143,12 @@ routeAttachment :: ( MonadEffects r m
 routeAttachment a = logData a >> case a of
   Attachment body -> addAttachment body
   Wall body       -> addAttachment body
+  Photo body      -> fromContext body
   Document body   -> processDocument body
   Sticker id      -> addSticker id
+  where fromContext a = grab >>= \case
+          Private -> addAttachment a
+          Chat    -> logInfo a
 
 addAttachment :: (Convertible a Text, MonadState AttachmentsState m)
               => a

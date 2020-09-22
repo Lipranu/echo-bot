@@ -10,6 +10,7 @@ module App.Vk.Responses
   ( Attachment (..)
   , AttachmentBody (..)
   , DocumentBody (..)
+  , PhotoBody (..)
   , FileSaved (..)
   , FileUploaded (..)
   , LongPollServer (..)
@@ -36,6 +37,7 @@ import Infrastructure.Logger
 import Control.Applicative  ( (<|>) )
 import Control.Monad.Catch  ( Exception )
 import Data.Aeson           ( (.:), (.:?) )
+import Data.List            ( sort )
 import Data.Text.Extended   ( Text )
 import GHC.Generics         ( Generic )
 
@@ -296,6 +298,7 @@ instance HasPriority UserName where logData = logDebug . toLog
 
 data Attachment
   = Attachment AttachmentBody
+  | Photo PhotoBody
   | Document DocumentBody
   | Sticker Integer
   | Wall WallBody
@@ -305,6 +308,7 @@ instance Aeson.FromJSON Attachment where
     aType      <- o .: "type"
     case aType of
       "doc"     -> Document <$> (o .: aType >>= Aeson.parseJSON)
+      "photo"   -> Photo    <$> (o .: aType >>= Aeson.parseJSON)
       "sticker" -> Sticker  <$> (o .: aType >>= (.: "sticker_id"))
       "wall"    -> do
         body <- o .: aType >>= Aeson.parseJSON
@@ -314,10 +318,11 @@ instance Aeson.FromJSON Attachment where
         return $ Attachment $ body aType
 
 instance Loggable Attachment where
-  toLog (Attachment _) = "Processing attachment of type: Attachment"
-  toLog (Document   _) = "Processing attachment of type: Document"
-  toLog (Sticker    _) = "Processing attachment of type: Sticker"
-  toLog (Wall       _) = "Processing attachment of type: Wall"
+  toLog (Attachment body) = toLog body
+  toLog (Document   body) = toLog body
+  toLog (Photo      body) = toLog body
+  toLog (Wall       body) = toLog body
+  toLog (Sticker      id) = "Processing sticker with id: " <> Text.showt id
 
 instance HasPriority Attachment where logData = logDebug . toLog
 
@@ -344,7 +349,68 @@ instance Loggable AttachmentBody where
     , ("Media id", Text.showt aId)
     ] [("Access Key", aAccessKey)]
 
-instance HasPriority AttachmentBody where logData = logDebug . toLog
+-- PhotoBody ---------------------------------------------------------------
+
+data PhotoBody = PhotoBody
+  { pbId        :: Integer
+  , pbOwnerId   :: Integer
+  , pbAccessKey :: Maybe Text
+  , pbUrl       :: Text
+  }
+
+instance Aeson.FromJSON PhotoBody where
+  parseJSON = Aeson.withObject "App.Vk.Responses.Attachment.PhotoBody"
+    $ \o -> do
+      pbId        <- o .:  "id"
+      pbOwnerId   <- o .:  "owner_id"
+      pbAccessKey <- o .:? "access_key"
+      pbUrl       <- o .:  "sizes" >>= getUrl . sort
+      pure PhotoBody {..}
+    where getUrl sx = case (sx :: [UrlAndSize]) of
+            [] -> fail "App.Vk.Responses.Attachment.PhotoBody: absent url"
+            (UrlAndSize url _):_ -> pure url
+
+instance Loggable PhotoBody where
+  toLog PhotoBody {..} = mkToLog "Processing AttachmentBody:"
+    [ ("Type"    , "photo")
+    , ("Owner id", Text.showt pbOwnerId)
+    , ("Media id", Text.showt pbId)
+    , ("Url"     , pbUrl)
+    ] [("Access Key", pbAccessKey)]
+
+-- UrlAndSize --------------------------------------------------------------
+
+data UrlAndSize = UrlAndSize Text Size
+
+instance Eq UrlAndSize where
+  (UrlAndSize _ x) == (UrlAndSize _ y) = x == y
+
+instance Ord UrlAndSize where
+  compare (UrlAndSize _ x) (UrlAndSize _ y) = compare x y
+
+instance Aeson.FromJSON UrlAndSize where
+  parseJSON = Aeson.withObject
+    "App.Vk.Responses.Attachment.PhotoBody.UrlAndSize.Size" $ \o ->
+      UrlAndSize <$> o .: "url" <*> o .: "type"
+
+-- Size --------------------------------------------------------------------
+
+data Size = W | Z | Y | R | Q | P | O | X | M | S deriving (Eq, Ord)
+
+instance Aeson.FromJSON Size where
+  parseJSON = Aeson.withText path $ \case
+    "s" -> pure S
+    "m" -> pure M
+    "x" -> pure X
+    "o" -> pure O
+    "p" -> pure P
+    "q" -> pure Q
+    "r" -> pure R
+    "y" -> pure Y
+    "z" -> pure Z
+    "w" -> pure W
+    t   -> fail $ path <> ": unknown size: " <> Text.unpack t
+    where path ="App.Vk.Responses.Attachment.PhotoBody.UrlAndSize.Size"
 
 -- WallBody ----------------------------------------------------------------
 
@@ -369,8 +435,6 @@ instance Loggable WallBody where
     , ("Media id", Text.showt wId)
     ] [("Access Key", wAccessKey)]
 
-instance HasPriority WallBody where logData = logDebug . toLog
-
 -- DocumentBody ------------------------------------------------------------
 
 data DocumentBody = DocumentBody
@@ -386,8 +450,6 @@ instance Loggable DocumentBody where
     [ ("Title", dTitle)
     , ("Url"  ,dUrl)
     ] []
-
-instance HasPriority DocumentBody where logData = logDebug . toLog
 
 -- UploadServer ------------------------------------------------------------
 

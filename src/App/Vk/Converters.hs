@@ -27,6 +27,8 @@ module App.Vk.Converters
 import App.Vk.Requests
 import App.Vk.Responses
 
+import Internal
+
 import Control.Monad.State   ( MonadState, gets )
 import Data.Maybe            ( fromMaybe )
 import Data.Text.Extended    ( Text )
@@ -52,6 +54,9 @@ data AttachmentsState = AttachmentsState
   , asContext     :: Context
   }
 
+instance Has Context AttachmentsState where
+  getter = asContext
+
 instance Convertible FileSaved Text where
   convert FileSaved {..}
     = toAttachment fsType fsOwnerId fsMediaId
@@ -63,6 +68,10 @@ instance Convertible AttachmentBody Text where
 instance Convertible WallBody Text where
   convert WallBody {..}
     = toAttachmentWithKey wType wToId wId wAccessKey
+
+instance Convertible PhotoBody Text where
+  convert PhotoBody {..}
+    = toAttachmentWithKey "photo" pbOwnerId pbId pbAccessKey
 
 -- FUNCTIONS ---------------------------------------------------------------
 
