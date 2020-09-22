@@ -30,6 +30,6 @@ data Config = Config
   }
 
 instance FromJSON Config where
-  parseJSON = withObject "Vk.Config" $ \o -> Config
+  parseJSON = withObject "App.Vk.Config" $ \o -> Config
     <$> (Token <$> o .: "token")
     <*> (Group <$> o .: "group_id")

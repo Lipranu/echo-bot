@@ -18,7 +18,7 @@ data Response e a
   | Error e
 
 instance (Exception e, FromJSON e, FromJSON a) => FromJSON (Response e a) where
-  parseJSON = withObject "App.Vk.Response" $ \o ->
+  parseJSON = withObject "App.Shared.Responses.Response" $ \o ->
         Error       <$> o .: "error"
     <|> Error       <$> parseJSON (Object o)
     <|> Success     <$> o .: "response"

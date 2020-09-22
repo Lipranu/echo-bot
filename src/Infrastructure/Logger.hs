@@ -231,12 +231,13 @@ data Priority
   deriving (Show, Eq, Ord)
 
 instance Aeson.FromJSON Priority where
-  parseJSON = Aeson.withText "Logger.Priority" $ \case
+  parseJSON = Aeson.withText path $ \case
     "debug"   -> pure Debug
     "info"    -> pure Info
     "warning" -> pure Warning
     "error"   -> pure Error
-    e         -> fail $ "Logger.Priority: unknown priority: " ++ Text.unpack e
+    e         -> fail $ path <> ": unknown priority: " <> Text.unpack e
+    where path = "Infrastructure.Logger.Priority"
 
 data Options = Options
   { oEnable   :: Bool
@@ -246,7 +247,8 @@ data Options = Options
   } deriving (Show, Eq)
 
 instance Aeson.FromJSON Options where
-  parseJSON = Aeson.withObject "Logger.Options" $ \o -> Options
+  parseJSON = Aeson.withObject "Infrastructure.Logger.Options"
+    $ \o -> Options
     <$> o .:? "enable"    .!= True
     <*> o .:? "priority"  .!= Warning
     <*> o .:? "show_time" .!= False
@@ -259,12 +261,12 @@ data Config = Config
   } deriving (Show, Eq)
 
 instance Aeson.FromJSON Config where
-  parseJSON = Aeson.withObject "Logger.Config" $ \o -> do
+  parseJSON = Aeson.withObject "Infrastructure.Logger.Config" $ \o -> do
     cl   <- o .:? "console_logger" .!= defaultOptions
     fl   <- o .:? "file_logger"    .!= defaultOptions
     path <- o .:? "log_path"       .!= "log"
     case path of
-      ""   -> fail "Logger.Config: empty log path"
+      ""   -> fail "Infrastructure.Logger.Config: empty log path"
       path -> return $ Config cl fl path
     where defaultOptions = Options
             { oEnable   = True

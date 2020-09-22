@@ -21,7 +21,7 @@ module Infrastructure.Requester
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Infrastructure.Logger ( Loggable (..) )
+import Infrastructure.Logger ( Loggable (..), mkToLog )
 import Internal
 
 import Control.Monad.Catch   ( Exception (..), MonadThrow (..), throwM )
@@ -69,9 +69,11 @@ data DecodeException = DecodeException Text Text deriving Show
 instance Exception DecodeException
 
 instance Loggable DecodeException where
-  toLog (DecodeException err bs) = "An error occurred during decoding:\n\
-    \ | Error Message: " <> err <> "\n\
-    \ | Source: "        <> bs
+  toLog (DecodeException err bs)
+    = mkToLog "An error occurred during decoding:"
+    [ ("Error Message", err)
+    , ("Source"       , bs)
+    ] []
 
 -- FUNCTIONS ---------------------------------------------------------------
 
