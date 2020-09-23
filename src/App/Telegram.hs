@@ -11,6 +11,7 @@ module App.Telegram ( mkApp, runApp ) where
 -- IMPORTS --------------------------------------------------------------------
 
 import App.Telegram.Config
+import App.Telegram.Requests
 
 import App.Shared.Config hiding ( Config )
 import App.Shared
@@ -28,7 +29,7 @@ import Control.Monad.Reader        ( ReaderT (..) )
 import Data.Aeson.Extended         ( (.:) )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
-import Data.IORef           ( IORef )
+import Data.IORef                  ( IORef )
 
 import qualified Data.Aeson.Extended  as Aeson
 import qualified Data.ByteString      as BS
@@ -78,35 +79,6 @@ instance Loggable a => Loggable (Response a) where
     = "An error occurred as a result of the request\n\
     \ | Error Code: "        <> Text.showt code <> "\n\
     \ | Error Description: " <> description
-
--- GetUpdates --------------------------------------------------------------
-
-newtype GetUpdates = GetUpdates (Maybe Integer)
-
-instance (TelegramReader r m, Monad m) => ToRequest m GetUpdates where
-  toRequest (GetUpdates Nothing) = do
-    token <- obtain
-    return $
-      HTTP.urlEncodedBody defaultGetUpdatesBody $
-      defaultRequest
-      { HTTP.path = defaultPath token <> "/getUpdates"
-      , HTTP.method = "GET"
-      }
-
-  toRequest (GetUpdates (Just n)) = do
-    token <- obtain
-    return $
-      HTTP.urlEncodedBody mkBody $
-      defaultRequest
-      { HTTP.path = defaultPath token <> "/getUpdates" }
-    where mkBody = ("offset" , encodeShowUtf8 $ n + 1)
-                 : defaultGetUpdatesBody
-
-instance Loggable GetUpdates where
-  toLog (GetUpdates Nothing)
-    = "GetUpdates request without offset"
-  toLog (GetUpdates (Just n))
-    = "GetUpdates request with offset: " <> Text.showt (n + 1)
 
 -- Update ------------------------------------------------------------------
 
@@ -162,22 +134,3 @@ runApp = runReaderT (unApp app)
 --proccessUpdate current p@(Post id) = do
 --  logDebug p
 --  return (max current $ Just id)
-
-defaultRequest :: HTTP.Request
-defaultRequest = HTTP.defaultRequest
-  { HTTP.host = "api.telegram.org"
-  , HTTP.method = "POST"
-  , HTTP.secure = True
-  , HTTP.port   = 443
-  }
-
-defaultPath :: Token -> BS.ByteString
-defaultPath token = "/bot" <> encodeUtf8 (unToken token)
-
-defaultGetUpdatesBody :: [(BS.ByteString, BS.ByteString)]
-defaultGetUpdatesBody =
-  let list :: [Text]
-      list = ["message", "edited_channel_post", "callback_query"]
-   in [ ("timeout", "25")
-      , ("allowed_updates", LBS.toStrict $ Aeson.encode list)
-      ]
