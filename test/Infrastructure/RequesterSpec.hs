@@ -18,14 +18,14 @@ import Control.Monad.IO.Class       ( liftIO )
 import Data.Text.Extended           ( Text )
 import Data.Text.Encoding           ( decodeUtf8 )
 import GHC.Generics                 ( Generic )
-import Network.HTTP.Client.Extended ( HttpException (..), createCookieJar )
+import Network.HTTP.Client          ( HttpException (..), createCookieJar )
 import Network.HTTP.Client.Internal ( ResponseClose (..), Response (..) )
 import Network.HTTP.Types           ( mkStatus, http11 )
 import Test.Hspec                   ( Spec, describe, it, shouldBe )
 
-import qualified Data.Aeson.Extended          as Aeson
-import qualified Data.ByteString.Lazy         as BSL
-import qualified Network.HTTP.Client.Extended as HTTP
+import qualified Data.Aeson.Extended  as Aeson
+import qualified Data.ByteString.Lazy as BSL
+import qualified Network.HTTP.Client  as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 

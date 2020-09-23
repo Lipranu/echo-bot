@@ -27,12 +27,12 @@ import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
 import Data.Time                   ( getCurrentTime )
 
-import qualified Data.Aeson.Extended          as Aeson
-import qualified Data.ByteString              as BS
-import qualified Data.ByteString.Lazy         as LBS
-import qualified Data.Text.Extended           as Text
-import qualified Data.Text.IO                 as TextIO
-import qualified Network.HTTP.Client.Extended as HTTP
+import qualified Data.Aeson.Extended  as Aeson
+import qualified Data.ByteString      as BS
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text.Extended   as Text
+import qualified Data.Text.IO         as TextIO
+import qualified Network.HTTP.Client  as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -176,6 +176,8 @@ defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest
   { HTTP.host = "api.telegram.org"
   , HTTP.method = "POST"
+  , HTTP.secure = True
+  , HTTP.port   = 443
   }
 
 defaultPath :: Token -> BS.ByteString

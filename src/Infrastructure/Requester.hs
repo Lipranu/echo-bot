@@ -30,10 +30,10 @@ import Control.Monad.State   ( StateT (..) )
 import Data.Text.Encoding    ( decodeUtf8 )
 import Data.Text.Extended    ( Text )
 
-import qualified Data.Aeson                   as Aeson
-import qualified Data.ByteString.Lazy         as LBS
-import qualified Data.Text.Extended           as Text
-import qualified Network.HTTP.Client.Extended as HTTP
+import qualified Data.Aeson           as Aeson
+import qualified Data.ByteString.Lazy as LBS
+import qualified Data.Text.Extended   as Text
+import qualified Network.HTTP.Client  as HTTP
 
 -- CLASSES -----------------------------------------------------------------
 
