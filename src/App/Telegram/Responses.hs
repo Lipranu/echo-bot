@@ -75,6 +75,8 @@ instance Aeson.FromJSON Update where
 instance Loggable [Update] where
   toLog v = "Updates resived: " <> Text.showt (length v)
 
+instance HasPriority [Update] where logData = logInfo . toLog
+
 instance Loggable Update where
   toLog (Post i) = "Proccess post with id: " <> Text.showt i
 

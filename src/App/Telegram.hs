@@ -8,8 +8,7 @@ module App.Telegram ( mkApp, runApp ) where
 -- IMPORTS --------------------------------------------------------------------
 
 import App.Telegram.Config
-import App.Telegram.Requests
-import App.Telegram.Responses
+import App.Telegram.Routes
 
 import App.Shared
 import App.Shared.Config        hiding ( Config )
@@ -49,7 +48,7 @@ instance Has (IORef Repetitions)   Env where getter = envRepetitions
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App Env ()
-app = start
+app = start >> getUpdates (GetUpdates Nothing)
 
 mkApp Config {..} Shared.Config {..} logger lock ref manager =
   let envLock          = lock
@@ -64,25 +63,3 @@ mkApp Config {..} Shared.Config {..} logger lock ref manager =
 
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
-
---getUpdates :: GetUpdates -> App ()
---getUpdates gu = do
---  logInfo gu
---  result <- requestAndDecode gu
---  case result of
---    Result (Succes v) -> do
---      logInfo v
---      proccessUpdates v
---    error -> do
---      logError error
---      logError ("Application shut down" :: Text)
-
---proccessUpdates :: [Update] -> App ()
---proccessUpdates xs = do
---  x <- foldM proccessUpdate Nothing xs
---  getUpdates $ GetUpdates x
---
---proccessUpdate :: Maybe Integer -> Update -> App (Maybe Integer)
---proccessUpdate current p@(Post id) = do
---  logDebug p
---  return (max current $ Just id)

@@ -56,6 +56,8 @@ instance Loggable GetUpdates where
   toLog (GetUpdates (Just n))
     = "GetUpdates request with offset: " <> Text.showt (n + 1)
 
+instance HasPriority GetUpdates where logData = logInfo . toLog
+
 -- FUNCTIONS ---------------------------------------------------------------
 
 defaultRequest :: HTTP.Request
