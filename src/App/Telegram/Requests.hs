@@ -74,7 +74,7 @@ defaultPath token = "/bot" <> encodeUtf8 (unToken token)
 defaultGetUpdatesBody :: [(BS.ByteString, BS.ByteString)]
 defaultGetUpdatesBody =
   let list :: [Text]
-      list = ["message", "edited_channel_post", "callback_query"]
+      list = ["message", "channel_post", "callback_query"]
    in [ ("timeout", "25")
       , ("allowed_updates", LBS.toStrict $ encode list)
       ]

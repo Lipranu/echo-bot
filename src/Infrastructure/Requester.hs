@@ -21,7 +21,7 @@ module Infrastructure.Requester
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Infrastructure.Logger ( Loggable (..), mkToLog )
+import Infrastructure.Logger
 import Infrastructure.Has
 
 import Control.Monad.Catch   ( Exception (..), MonadThrow (..), throwM )
@@ -74,6 +74,8 @@ instance Loggable DecodeException where
     [ ("Error Message", err)
     , ("Source"       , bs)
     ] []
+
+instance HasPriority DecodeException where logData = logError . toLog
 
 -- FUNCTIONS ---------------------------------------------------------------
 

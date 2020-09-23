@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
 {-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
 
 module App.Telegram.Routes
   ( getUpdates
@@ -21,23 +22,35 @@ import Infrastructure.Logger
 import Infrastructure.Requester
 
 import Data.Aeson          ( FromJSON, Value )
-import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch )
+import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch, catch )
 import Control.Monad       ( foldM )
+import Data.Text.Extended  ( showt )
 
-getUpdates :: (TelegramReader r m, MonadEffects r m, MonadThrow m)
+instance Loggable [Value] where
+  toLog xs = "Get updates: " <> showt (length xs)
+
+instance HasPriority [Value] where logData = logInfo . toLog
+
+getUpdates :: (TelegramReader r m, MonadEffects r m, MonadThrow m, MonadCatch m)
            => GetUpdates -> m ()
 getUpdates gu = withLog fromResponseR gu
+  >>= convertRawUpdates
   >>= processUpdates
   >>= getUpdates . GetUpdates
 
-processUpdates :: MonadEffects r m => [Update] -> m (Maybe Integer)
-processUpdates xs = foldM processUpdate Nothing xs
+convertRawUpdates :: (MonadCatch m, MonadEffects r m) => [Value] -> m [Update]
+convertRawUpdates = foldM convert []
+  where convert xs x = (parse x >>= return . (:xs)) `catch` handle xs
+        handle  xs e = logData (e :: DecodeException) >> return xs
+
+processUpdates :: (MonadEffects r m) => [Update] -> m (Maybe Integer)
+processUpdates = foldM processUpdate Nothing
 
 processUpdate :: MonadEffects r m
               => Maybe Integer
               -> Update
               -> m (Maybe Integer)
-processUpdate current p@(Post id) = do
+processUpdate current p@(Post id _) = do
   logDebug p
   return (max current $ Just id)
 
