@@ -6,26 +6,29 @@
 {-# LANGUAGE RecordWildCards            #-}
 {-# LANGUAGE UndecidableInstances            #-}
 
-module App.Telegram ( Config, mkApp, runApp ) where
+module App.Telegram ( mkApp, runApp ) where
 
 -- IMPORTS --------------------------------------------------------------------
+
+import App.Telegram.Config
+
+import App.Shared.Config hiding ( Config )
+import App.Shared
+import App.Shared.Routes
 
 import Infrastructure.Has
 import Infrastructure.Logger    hiding ( Config, Priority (..) )
 import Infrastructure.Requester
 
+import qualified App.Shared.Config     as Shared
 import qualified Infrastructure.Logger as Logger
 
 import Control.Applicative         ( (<|>) )
-import Control.Exception           ( try )
-import Control.Monad               ( foldM )
-import Control.Monad.Catch         ( MonadThrow )
-import Control.Monad.IO.Class      ( MonadIO, liftIO )
-import Control.Monad.Reader        ( ReaderT, MonadReader, runReaderT )
+import Control.Monad.Reader        ( ReaderT (..) )
 import Data.Aeson.Extended         ( (.:) )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text )
-import Data.Time                   ( getCurrentTime )
+import Data.IORef           ( IORef )
 
 import qualified Data.Aeson.Extended  as Aeson
 import qualified Data.ByteString      as BS
@@ -36,42 +39,25 @@ import qualified Network.HTTP.Client  as HTTP
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
--- Config and Env ----------------------------------------------------------
-
-newtype Token = Token { unToken :: Text }
-
-newtype Config = Config { cToken :: Token }
-
-instance Aeson.FromJSON Config where
-  parseJSON = Aeson.withObject "Telegram.Config" $ \o -> Config
-    <$> (Token <$> o .: "token")
-
 data Env = Env
-  { envToken     :: Token
-  , envLogger    :: Logger App
-  , envLock      :: Lock
-  , envRequester :: Requester App
+  { envToken         :: Token
+  , envDefaultRepeat :: DefaultRepeat
+  , envRepetitions   :: IORef Repetitions
+  , envLogger        :: Logger (App Env)
+  , envLock          :: Lock
+  , envRequester     :: Requester (App Env)
+  , envHelpText      :: HelpText
+  , envRepeatText    :: RepeatText
   }
 
-instance Has Lock            Env where getter = envLock
-instance Has (Logger App)    Env where getter = envLogger
-instance Has (Requester App) Env where getter = envRequester
-instance Has Token           Env where getter = envToken
-
--- App ---------------------------------------------------------------------
-
-newtype App a = App { unApp :: ReaderT Env IO a } deriving
-  (Functor, Applicative, Monad, MonadReader Env, MonadIO, MonadThrow)
-
-instance MonadLogger App where
-  logConsole   = liftIO . TextIO.putStr
-  logFile path = liftIO . TextIO.appendFile path
-
-instance Logger.MonadTime App where
-  getTime = liftIO getCurrentTime
-
-instance MonadRequester App where
-  requester manager req = liftIO $ HTTP.httpLbs req manager
+instance Has Lock                  Env where getter = envLock
+instance Has (Logger (App Env))    Env where getter = envLogger
+instance Has (Requester (App Env)) Env where getter = envRequester
+instance Has Token                 Env where getter = envToken
+instance Has DefaultRepeat         Env where getter = envDefaultRepeat
+instance Has HelpText              Env where getter = envHelpText
+instance Has RepeatText            Env where getter = envRepeatText
+instance Has (IORef Repetitions)   Env where getter = envRepetitions
 
 -- Response ----------------------------------------------------------------
 
@@ -97,7 +83,7 @@ instance Loggable a => Loggable (Response a) where
 
 newtype GetUpdates = GetUpdates (Maybe Integer)
 
-instance (Has Token r, MonadReader r m, Monad m) => ToRequest m GetUpdates where
+instance (TelegramReader r m, Monad m) => ToRequest m GetUpdates where
   toRequest (GetUpdates Nothing) = do
     token <- obtain
     return $
@@ -138,14 +124,19 @@ instance Loggable Update where
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-app :: App ()
-app = do
-  logInfo ("Application getting started" :: Text)
-  --getUpdates $ GetUpdates Nothing
+app :: App Env ()
+app = start
 
-mkApp :: Config -> Logger.Config -> Lock -> HTTP.Manager -> Env
-mkApp Config {..} cLogger lock = Env cToken logger lock . mkRequester
-  where logger = mkLogger cLogger "Telegram"
+mkApp Config {..} Shared.Config {..} logger lock ref manager =
+  let envLock          = lock
+      envLogger        = mkLogger logger "Telegram"
+      envToken         = cToken
+      envRequester     = mkRequester manager
+      envDefaultRepeat = cDefaultRepeat
+      envRepeatText    = cRepeatText
+      envHelpText      = cHelpText
+      envRepetitions   = ref
+   in Env {..}
 
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)

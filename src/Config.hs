@@ -3,7 +3,7 @@
 module Config ( Config (..) ) where
 
 import qualified App.Shared.Config     as Shared
-import qualified App.Telegram          as Telegram
+import qualified App.Telegram.Config   as Telegram
 import qualified App.Vk.Config         as Vk
 import qualified Infrastructure.Logger as Logger
 

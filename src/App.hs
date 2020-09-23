@@ -23,6 +23,7 @@ run = do
       lock    <- newMVar ()
       manager <- newTlsManager
       vkMap   <- newIORef mempty
-      let vk  = Vk.mkApp       cVk       cShared cLogger lock vkMap manager
-          tel = Telegram.mkApp cTelegram cLogger lock manager
+      telMap  <- newIORef mempty
+      let vk  = Vk.mkApp       cVk       cShared cLogger lock vkMap  manager
+          tel = Telegram.mkApp cTelegram cShared cLogger lock telMap manager
       concurrently_ (Vk.runApp vk) (Telegram.runApp tel)
