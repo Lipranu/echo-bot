@@ -1,43 +1,68 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE DeriveGeneric     #-}
 
 module App.Telegram.Responses
-  ( Response (..)
+  ( ResponseException (..)
   , Update (..)
   ) where
 
 -- IMPORTS --------------------------------------------------------------------
+
+import App.Shared.Responses
 
 import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
 import Data.Aeson.Extended ( (.:) )
 import Data.Text.Extended  ( Text )
+import Control.Monad.Catch ( Exception )
+import GHC.Generics        ( Generic )
 
 import qualified Data.Aeson.Extended as Aeson
 import qualified Data.Text.Extended  as Text
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
--- Response ----------------------------------------------------------------
+-- ResponseException -------------------------------------------------------
 
-data Response a
-  = Succes a
-  | Error Integer Text
+data ResponseException = ResponseException
+  { eErrorCode          :: Integer
+  , eDescription        :: Text
+  , eResponseParameters :: Maybe ResponseParameters
+  } deriving (Show, Generic)
 
-instance Aeson.FromJSON a => Aeson.FromJSON (Response a) where
-  parseJSON = Aeson.withObject "App.Vk.Response" $ \o ->
-        Succes <$> o .: "result"
-    <|> Error  <$> o .: "error_code"
-               <*> o .: "description"
+instance Exception ResponseException
 
-instance Loggable a => Loggable (Response a) where
-  toLog (Succes x) = toLog x
+instance Aeson.FromJSON ResponseException where
+  parseJSON = Aeson.parseJsonDrop
 
-  toLog (Error code description)
-    = "An error occurred as a result of the request\n\
-    \ | Error Code: "        <> Text.showt code <> "\n\
-    \ | Error Description: " <> description
+instance Loggable ResponseException where
+  toLog ResponseException {..}
+    = mkToLog "An error occurred as a result of the request:"
+    [ ("Error Code"        , Text.showt eErrorCode)
+    , ("Error Message"     , eDescription)
+    ] [ ("ResponseParameters", toLog <$> eResponseParameters) ]
+
+instance HasPriority ResponseException where logData = logError . toLog
+
+-- ResponseParameters ------------------------------------------------------
+
+data ResponseParameters
+  = MigrateToChatId Integer
+  | RetryAfter Integer
+  deriving (Show)
+
+instance Aeson.FromJSON ResponseParameters where
+  parseJSON = Aeson.withObject
+    (path <> "ResponseException.ResponseParameters") $ \o ->
+          MigrateToChatId <$> o .: "migrate_to_chat_id"
+      <|> RetryAfter      <$> o .: "retry_after"
+
+instance Loggable ResponseParameters where
+  toLog (MigrateToChatId i) = "Migrate to chat id: " <> Text.showt i
+  toLog (RetryAfter i)      = "Retry after: "        <> Text.showt i
 
 -- Update ------------------------------------------------------------------
 
@@ -52,3 +77,8 @@ instance Loggable [Update] where
 
 instance Loggable Update where
   toLog (Post i) = "Proccess post with id: " <> Text.showt i
+
+-- FUNCTIONS ---------------------------------------------------------------
+
+path :: String
+path = "App.Telegram.Responses."
