@@ -35,13 +35,15 @@ import App.Shared.Responses
 import Infrastructure.Has
 import Infrastructure.Logger
 
-import Control.Applicative  ( (<|>) )
-import Control.Monad.Catch  ( Exception )
-import Data.Aeson           ( (.:), (.:?) )
-import Data.List            ( sort )
-import Data.Vector          ( (!?) )
-import Data.Text.Extended   ( Text )
-import GHC.Generics         ( Generic )
+import Control.Applicative ( (<|>) )
+import Control.Monad       ( (>=>) )
+import Control.Monad.Catch ( Exception )
+import Data.Aeson          ( (.:), (.:?) )
+import Data.List           ( sort )
+import Data.Text.Extended  ( Text )
+import Data.Traversable    ( for )
+import Data.Vector         ( (!?) )
+import GHC.Generics        ( Generic )
 
 import qualified Data.Aeson.Extended as Aeson
 import qualified Data.Text.Extended  as Text
@@ -202,20 +204,24 @@ data Message = Message
   , mMessage     :: Maybe Text
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
+  , mReplyId     :: Maybe Integer
   , mAttachments :: [Aeson.Value]
   , mPayload     :: Maybe Payload
   }
 
 instance Aeson.FromJSON Message where
-  parseJSON = Aeson.withObject "App.Vk.Responses.Message" $ \o -> Message
-    <$> o .:  "from_id"
-    <*> o .:  "peer_id"
-    <*> o .:? "text"
-    <*> (coord o "latitude"  <|> pure Nothing)
-    <*> (coord o "longitude" <|> pure Nothing)
-    <*> o .:  "attachments"
-    <*> o .:? "payload"
-    where coord o t = o .: "geo" >>= (.: "coordinates") >>= (.: t)
+  parseJSON = Aeson.withObject "App.Vk.Responses.Message" $ \o -> do
+    mFromId      <- o .:  "from_id"
+    mPeerId      <- o .:  "peer_id"
+    mMessage     <- o .:? "text"
+    mAttachments <- o .:  "attachments"
+    mPayload     <- o .:? "payload"
+    mReply       <- o .:? "reply_message"
+    mGeo         <- o .:? "geo"
+    mReplyId     <- for mReply (.:  "id")
+    mLatitude    <- for mGeo $ (.: "coordinates") >=> (.: "latitude")
+    mLongitude   <- for mGeo $ (.: "coordinates") >=> (.: "longitude")
+    pure Message {..}
 
 instance Loggable Message where
   toLog Message {..} = mkToLog "Message data:"
@@ -226,6 +232,7 @@ instance Loggable Message where
     [ ("Message"    , mMessage)
     , ("Latitude"   , Text.showt <$> mLatitude)
     , ("Longitude"  , Text.showt <$> mLongitude)
+    , ("Reply Id"   , Text.showt <$> mReplyId)
     , ("Payload"    , toLog      <$> mPayload)
     ]
 

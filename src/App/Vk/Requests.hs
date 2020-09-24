@@ -100,6 +100,7 @@ data SendMessage = SendMessage
   , smMessage     :: Maybe Text
   , smLatitude    :: Maybe Double
   , smLongitude   :: Maybe Double
+  , smReplyId     :: Maybe Integer
   , smAttachments :: Maybe Text
   , smSticker     :: Maybe Integer
   , smKeyboard    :: Maybe Keyboard
@@ -117,6 +118,7 @@ instance (Monad m, VkReader r m) => ToRequest m SendMessage where
                      , ("lat"       , encodeShowUtf8 <$> smLatitude)
                      , ("long"      , encodeShowUtf8 <$> smLongitude)
                      , ("sticker_id", encodeShowUtf8 <$> smSticker)
+                     , ("reply_to"  , encodeShowUtf8 <$> smReplyId)
                      , ("keyboard"  , keyboard)
                      ]
           keyboard = LBS.toStrict . Aeson.encode <$> smKeyboard
