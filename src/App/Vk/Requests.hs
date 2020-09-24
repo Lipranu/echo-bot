@@ -101,6 +101,7 @@ data SendMessage = SendMessage
   , smLatitude    :: Maybe Double
   , smLongitude   :: Maybe Double
   , smReplyId     :: Maybe Integer
+  , smForwardsId  :: Maybe Text--[Integer]
   , smAttachments :: Maybe Text
   , smSticker     :: Maybe Integer
   , smKeyboard    :: Maybe Keyboard
@@ -110,18 +111,21 @@ instance (Monad m, VkReader r m) => ToRequest m SendMessage where
   toRequest SendMessage {..} = do
     df <- defaultBody
     return $ HTTP.urlEncodedBody (mergeBodies mBody $ body <> df) request
-    where body     = [ ("peer_id"   , encodeShowUtf8 smPeerId)
-                     , ("random_id" , encodeShowUtf8 smRandomId)
+    where body     = [ ("peer_id"         , encodeShowUtf8 smPeerId)
+                     , ("random_id"       , encodeShowUtf8 smRandomId)
+                   --  , ("forward_messages", forwards)
                      ]
-          mBody    = [ ("attachment", encodeUtf8     <$> smAttachments)
-                     , ("message"   , encodeUtf8     <$> smMessage)
-                     , ("lat"       , encodeShowUtf8 <$> smLatitude)
-                     , ("long"      , encodeShowUtf8 <$> smLongitude)
-                     , ("sticker_id", encodeShowUtf8 <$> smSticker)
-                     , ("reply_to"  , encodeShowUtf8 <$> smReplyId)
-                     , ("keyboard"  , keyboard)
+          mBody    = [ ("attachment"      , encodeUtf8     <$> smAttachments)
+                     , ("message"         , encodeUtf8     <$> smMessage)
+                     , ("lat"             , encodeShowUtf8 <$> smLatitude)
+                     , ("long"            , encodeShowUtf8 <$> smLongitude)
+                     , ("sticker_id"      , encodeShowUtf8 <$> smSticker)
+                     , ("reply_to"        , encodeShowUtf8 <$> smReplyId)
+                     , ("forward_messages", encodeUtf8     <$> smForwardsId)
+                     , ("keyboard"        , keyboard)
                      ]
           keyboard = LBS.toStrict . Aeson.encode <$> smKeyboard
+          --forwards = LBS.toStrict $ Aeson.encode $ smForwardsId
           request  = defaultRequest
                      { HTTP.method = "POST"
                      , HTTP.path   = "method/messages.send"

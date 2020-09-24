@@ -156,9 +156,10 @@ mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
       smSticker     = asSticker
       smKeyboard    = keyboard
       smReplyId     = mReplyId
-      smAttachments = case asAttachments of
-        [] -> Nothing
-        xs -> Just $ Text.intercalate "," $ reverse xs
+      smForwardsId  = listToText $ Text.showt <$> mForwardsId
+      smAttachments = listToText $ reverse asAttachments
+      listToText [] = Nothing
+      listToText xs = Just $ Text.intercalate "," xs
    in SendMessage {..}
 
 mkCommandReply :: Message -> Text -> Int -> SendMessage
@@ -171,6 +172,7 @@ mkCommandReply Message {..} text randomId =
       smKeyboard    = Nothing
       smAttachments = Nothing
       smReplyId     = Nothing
+      smForwardsId  = Nothing
       smMessage     = Just text
    in SendMessage {..}
 

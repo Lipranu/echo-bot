@@ -205,6 +205,7 @@ data Message = Message
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
   , mReplyId     :: Maybe Integer
+  , mForwardsId  :: [Integer]
   , mAttachments :: [Aeson.Value]
   , mPayload     :: Maybe Payload
   }
@@ -217,7 +218,9 @@ instance Aeson.FromJSON Message where
     mAttachments <- o .:  "attachments"
     mPayload     <- o .:? "payload"
     mReply       <- o .:? "reply_message"
+    mForwards    <- o .:  "fwd_messages"
     mGeo         <- o .:? "geo"
+    mForwardsId  <- for mForwards (.: "id")
     mReplyId     <- for mReply (.:  "id")
     mLatitude    <- for mGeo $ (.: "coordinates") >=> (.: "latitude")
     mLongitude   <- for mGeo $ (.: "coordinates") >=> (.: "longitude")
@@ -225,9 +228,10 @@ instance Aeson.FromJSON Message where
 
 instance Loggable Message where
   toLog Message {..} = mkToLog "Message data:"
-    [ ("From id"    , Text.showt mFromId)
-    , ("Peer id"    , Text.showt mPeerId)
-    , ("Attachments", Text.showt $ length mAttachments)
+    [ ("From id"         , Text.showt mFromId)
+    , ("Peer id"         , Text.showt mPeerId)
+    , ("Attachments"     , Text.showt $ length mAttachments)
+    , ("Forward Messages", Text.showt $ length mForwardsId)
     ]
     [ ("Message"    , mMessage)
     , ("Latitude"   , Text.showt <$> mLatitude)
