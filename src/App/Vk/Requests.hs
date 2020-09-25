@@ -4,6 +4,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE TupleSections         #-}
 {-# LANGUAGE UndecidableInstances  #-}
 
 module App.Vk.Requests
@@ -26,37 +27,62 @@ module App.Vk.Requests
 import App.Vk.Config            ( VkReader, Token (..), Group (..) )
 
 import Infrastructure.Has
-import Infrastructure.Logger    ( Loggable (..), HasPriority (..), logInfo )
-import Infrastructure.Requester ( ToRequest (..) )
+import Infrastructure.Logger
+import Infrastructure.Requester
 
-import Control.Monad.IO.Class      ( MonadIO, liftIO )
-import Control.Monad.State         ( MonadState )
-import Control.Monad.Catch         ( MonadThrow )
-import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
-import Data.Text.Extended          ( Text )
-import GHC.Generics                ( Generic )
+import Control.Monad.Catch    ( MonadThrow )
+import Control.Monad.IO.Class ( MonadIO (..) )
+import Control.Monad.State    ( MonadState )
+import Data.ByteString.Lazy   ( toStrict )
+import Data.Maybe             ( catMaybes )
+import Data.Text.Encoding     ( encodeUtf8 )
+import Data.Text.Extended     ( Text, showt, unpack )
+import GHC.Generics           ( Generic )
 
 import qualified Data.Aeson.Extended                   as Aeson
 import qualified Data.ByteString                       as BS
-import qualified Data.ByteString.Lazy                  as LBS
-import qualified Data.Text.Extended                    as Text
 import qualified Network.HTTP.Client                   as HTTP
 import qualified Network.HTTP.Client.MultipartFormData as MP
 
+-- CLASSES -----------------------------------------------------------------
+
+class ToRequestValue a where
+  toValue :: a -> BS.ByteString
+
+class ToRequestBody a where
+  toBody :: a -> [(BS.ByteString, BS.ByteString)]
+
+class ToRequestFields a where
+  mkRequest :: a -> HTTP.Request
+
 -- TYPES AND INSTANCES -----------------------------------------------------
+
+instance ToRequestValue Text where
+  toValue = encodeUtf8
+
+instance ToRequestValue Integer where
+  toValue = encodeUtf8 . showt
+
+instance ToRequestValue Int where
+  toValue = encodeUtf8 . showt
+
+instance ToRequestValue Double where
+  toValue = encodeUtf8 . showt
 
 -- GetLongPollServer -------------------------------------------------------
 
 data GetLongPollServer = GetLongPollServer
 
+instance ToRequestBody GetLongPollServer where toBody _ = []
+
+instance ToRequestFields GetLongPollServer where
+  mkRequest _ = defaultRequest
+    { HTTP.path   = "/method/groups.getLongPollServer"
+    , HTTP.method = "GET"
+    }
+
 instance (Monad m, VkReader r m) => ToRequest m GetLongPollServer where
-  toRequest GetLongPollServer = HTTP.urlEncodedBody
-    <$> defaultBody
-    <*> pure request
-    where request = defaultRequest
-                    { HTTP.path   = "/method/groups.getLongPollServer"
-                    , HTTP.method = "GET"
-                    }
+  toRequest = requestBuilder
 
 instance Loggable GetLongPollServer where
   toLog _ = "Requesting long poll server"
@@ -72,20 +98,24 @@ data GetUpdates = GetUpdates
   , guHost :: Text
   }
 
+instance ToRequestBody GetUpdates where
+  toBody GetUpdates {..} =
+    [ ("key" , toValue guKey)
+    , ("ts"  , toValue guTs)
+    , ("act" , "a_check")
+    , ("wait", "25")
+    , ("mode", "2")
+    ]
+
+instance ToRequestFields GetUpdates where
+  mkRequest GetUpdates {..} = defaultRequest
+    { HTTP.path   = encodeUtf8 guPath
+    , HTTP.host   = encodeUtf8 guHost
+    , HTTP.method = "GET"
+    }
+
 instance Monad m => ToRequest m GetUpdates where
-  toRequest GetUpdates {..} = return $ body request
-    where body    = HTTP.urlEncodedBody
-                    [ ("act" , "a_check")
-                    , ("key" , encodeUtf8 guKey)
-                    , ("wait", "25")
-                    , ("ts"  , encodeUtf8 guTs)
-                    , ("mode", "2")
-                    ]
-          request = defaultRequest
-                    { HTTP.path   = encodeUtf8 guPath
-                    , HTTP.host   = encodeUtf8 guHost
-                    , HTTP.method = "GET"
-                    }
+  toRequest gu = pure $ HTTP.urlEncodedBody (toBody gu) $ mkRequest gu
 
 instance Loggable GetUpdates where
   toLog GetUpdates {..} = "Requesting updates with ts: " <> guTs
@@ -101,39 +131,37 @@ data SendMessage = SendMessage
   , smLatitude    :: Maybe Double
   , smLongitude   :: Maybe Double
   , smReplyId     :: Maybe Integer
-  , smForwardsId  :: Maybe Text--[Integer]
+  , smForwardsId  :: Maybe Text
   , smAttachments :: Maybe Text
-  , smSticker     :: Maybe Integer
+  , smStickerId   :: Maybe Integer
   , smKeyboard    :: Maybe Keyboard
   }
 
+instance ToRequestBody SendMessage where
+  toBody SendMessage {..} = body <> catMaybes mBody
+    where mValue name value = (name,) . toValue <$> value
+          body  = [ ("peer_id"  , toValue smPeerId)
+                  , ("random_id", toValue smRandomId)
+                  ]
+          mBody = [ mValue "message"          smMessage
+                  , mValue "lat"              smLatitude
+                  , mValue "long"             smLongitude
+                  , mValue "sticker_id"       smStickerId
+                  , mValue "attachment"       smAttachments
+                  , mValue "forward_messages" smForwardsId
+                  , mValue "reply_to"         smReplyId
+                  , mValue "keyboard"         smKeyboard
+                  ]
+
+instance ToRequestFields SendMessage where
+  mkRequest _ = defaultRequest { HTTP.path = "method/messages.send" }
+
 instance (Monad m, VkReader r m) => ToRequest m SendMessage where
-  toRequest SendMessage {..} = do
-    df <- defaultBody
-    return $ HTTP.urlEncodedBody (mergeBodies mBody $ body <> df) request
-    where body     = [ ("peer_id"         , encodeShowUtf8 smPeerId)
-                     , ("random_id"       , encodeShowUtf8 smRandomId)
-                   --  , ("forward_messages", forwards)
-                     ]
-          mBody    = [ ("attachment"      , encodeUtf8     <$> smAttachments)
-                     , ("message"         , encodeUtf8     <$> smMessage)
-                     , ("lat"             , encodeShowUtf8 <$> smLatitude)
-                     , ("long"            , encodeShowUtf8 <$> smLongitude)
-                     , ("sticker_id"      , encodeShowUtf8 <$> smSticker)
-                     , ("reply_to"        , encodeShowUtf8 <$> smReplyId)
-                     , ("forward_messages", encodeUtf8     <$> smForwardsId)
-                     , ("keyboard"        , keyboard)
-                     ]
-          keyboard = LBS.toStrict . Aeson.encode <$> smKeyboard
-          --forwards = LBS.toStrict $ Aeson.encode $ smForwardsId
-          request  = defaultRequest
-                     { HTTP.method = "POST"
-                     , HTTP.path   = "method/messages.send"
-                     }
+  toRequest = requestBuilder
 
 instance Loggable SendMessage where
   toLog SendMessage {..} = "Sending message with peer id: "
-    <> Text.showt smPeerId
+    <> showt smPeerId
 
 instance HasPriority SendMessage where logData = logInfo . toLog
 
@@ -147,6 +175,9 @@ data Keyboard = Keyboard
 
 instance Aeson.ToJSON Keyboard where
   toJSON = Aeson.toJsonDrop
+
+instance ToRequestValue Keyboard where
+  toValue = toStrict . Aeson.encode
 
 -- Button ------------------------------------------------------------------
 
@@ -173,19 +204,21 @@ instance Aeson.ToJSON Action where
 
 newtype GetName = GetName Integer
 
+instance ToRequestBody GetName where
+  toBody (GetName id) = [("user_ids", toValue id)]
+
+instance ToRequestFields GetName where
+  mkRequest _ = defaultRequest
+    { HTTP.method = "GET"
+    , HTTP.path   = "/method/users.get"
+    }
+
 instance (Monad m, VkReader r m) => ToRequest m GetName where
-  toRequest (GetName id) = do
-    df <- defaultBody
-    return $ HTTP.urlEncodedBody (body <> df) request
-    where body    = [ ("user_ids"   , encodeShowUtf8 id) ]
-          request = defaultRequest
-                    { HTTP.method = "GET"
-                    , HTTP.path   = "/method/users.get"
-                    }
+  toRequest = requestBuilder
 
 instance Loggable GetName where
   toLog (GetName id) = "Performing a request for a username with an id: "
-    <> Text.showt id
+    <> showt id
 
 instance HasPriority GetName where logData = logInfo . toLog
 
@@ -194,7 +227,7 @@ instance HasPriority GetName where logData = logInfo . toLog
 newtype GetFile = GetFile Text
 
 instance MonadThrow m => ToRequest m GetFile where
-  toRequest (GetFile url) = HTTP.parseRequest $ Text.unpack url
+  toRequest (GetFile url) = HTTP.parseRequest $ unpack url
 
 instance Loggable GetFile where
   toLog _ = "Downloading file from attachment url"
@@ -203,30 +236,27 @@ instance HasPriority GetFile where logData = logInfo . toLog
 
 -- GetUploadServer ---------------------------------------------------------
 
-newtype PeerId = PeerId Integer
+newtype PeerId = PeerId { unPeerId :: Integer }
 
 data GetUploadServer
   = FileUploadServer Text
   | PhotoUploadServer
 
-instance (Monad m, VkReader r m, MonadState s m, Has PeerId s)
-  => ToRequest m GetUploadServer where
-  toRequest gus = do
-    df           <- defaultBody
-    (PeerId pid) <- grab
-    return $ HTTP.urlEncodedBody (body pid <> df) request
-    where body pid = [("peer_id", "0")] <> case gus of
-            FileUploadServer t -> [ ("type", encodeUtf8 t)
-                                  , ("peer_id", encodeShowUtf8 pid)
-                                  ]
-            PhotoUploadServer  -> [ ("peer_id", "0") ]
-          request  = defaultRequest
-                     { HTTP.method = "GET"
-                     , HTTP.path   = path <> ".getMessagesUploadServer"
-                     }
-          path     = "/method/" <> case gus of
+instance ToRequestFields GetUploadServer where
+  mkRequest x = defaultRequest
+    { HTTP.method = "GET"
+    , HTTP.path   = path <> ".getMessagesUploadServer"
+    }
+    where path = "/method/" <> case x of
             FileUploadServer _ -> "docs"
             PhotoUploadServer  -> "photos"
+
+instance (Monad m, VkReader r m, MonadState s m, Has PeerId s)
+  => ToRequest m GetUploadServer where
+  toRequest x@PhotoUploadServer    = requestBuilderBS x [("peer_id", "0")]
+  toRequest x@(FileUploadServer t) = do
+    id <- ("peer_id",) . toValue . unPeerId <$> grab
+    requestBuilderBS x [id, ("type", toValue t)]
 
 instance Loggable GetUploadServer where
   toLog PhotoUploadServer    = "Requesting photo upload server"
@@ -235,7 +265,7 @@ instance Loggable GetUploadServer where
 
 instance HasPriority GetUploadServer where logData = logInfo . toLog
 
--- UploadFile ----------------------------------------------------------
+-- UploadFile --------------------------------------------------------------
 
 data UploadFile = UploadFile
   { ufFile  :: BS.ByteString
@@ -246,13 +276,13 @@ data UploadFile = UploadFile
 
 instance (MonadThrow m, MonadIO m) => ToRequest m UploadFile where
   toRequest UploadFile {..} = do
-    request <- HTTP.parseRequest $ Text.unpack ufUrl
+    request <- HTTP.parseRequest $ unpack ufUrl
     liftIO $ MP.formDataBody
-      [part { MP.partFilename = Just $ Text.unpack ufTitle }]
+      [part { MP.partFilename = Just $ unpack ufTitle }]
       request
     where part = flip MP.partBS ufFile $ case ufType of
             "photo" -> "photo"
-            rest    -> "file"
+            _       -> "file"
 
 instance Loggable UploadFile where
   toLog UploadFile {..} = "Uploading file: " <> ufTitle
@@ -265,27 +295,25 @@ data SaveFile
   = SaveDocument Text Text
   | SavePhoto Text Integer Text Text
 
-instance (Monad m, VkReader r m) => ToRequest m SaveFile where
-  toRequest sf = do
-    df <- defaultBody
-    return $ HTTP.urlEncodedBody (body <> df) request
-    where body    = case sf of
-            SaveDocument title file ->
-              [ ("file" , encodeUtf8 file)
-              , ("title", encodeUtf8 title)
-              ]
-            SavePhoto _ server hash photo ->
-              [ ("server", encodeShowUtf8 server)
-              , ("hash"  , encodeUtf8 hash)
-              , ("photo" , encodeUtf8 photo)
-              ]
-          request = defaultRequest
-                    { HTTP.path   = "/method/" <> path
-                    , HTTP.method = "POST"
-                    }
-          path    = case sf of
+instance ToRequestFields SaveFile where
+  mkRequest sf = defaultRequest { HTTP.path = "/method/" <> path }
+    where path = case sf of
             SaveDocument { } -> "docs.save"
             SavePhoto    { } -> "photos.saveMessagesPhoto"
+
+instance ToRequestBody SaveFile where
+  toBody (SaveDocument title file) =
+    [ ("file" , toValue file)
+    , ("title", toValue title)
+    ]
+  toBody (SavePhoto _ server hash photo) =
+    [ ("server", toValue server)
+    , ("hash"  , toValue hash)
+    , ("photo" , toValue photo)
+    ]
+
+instance (Monad m, VkReader r m) => ToRequest m SaveFile where
+  toRequest = requestBuilder
 
 instance Loggable SaveFile where
   toLog (SaveDocument title _)  = "Saving document: " <> title
@@ -295,20 +323,6 @@ instance HasPriority SaveFile where logData = logInfo . toLog
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-mergeBodies :: [(a, Maybe b)] -> [(a, b)] -> [(a, b)]
-mergeBodies mBody body = foldr filterMaybe body mBody
-  where filterMaybe (_, Nothing)       xs = xs
-        filterMaybe (name, Just value) xs = (name, value) : xs
-
-defaultBody :: VkReader r m => m [(BS.ByteString, BS.ByteString)]
-defaultBody = do
-  token <- obtain
-  group <- obtain
-  return [ ("access_token", encodeUtf8 $ unToken token)
-         , ("group_id"    , encodeUtf8 $ unGroup group)
-         , ("v"           , "5.124")
-         ]
-
 defaultRequest :: HTTP.Request
 defaultRequest = HTTP.defaultRequest
   { HTTP.host   = "api.vk.com"
@@ -316,3 +330,18 @@ defaultRequest = HTTP.defaultRequest
   , HTTP.secure = True
   , HTTP.port   = 443
   }
+
+requestBuilderBS :: (VkReader r m, ToRequestFields a)
+                 => a
+                 -> [(BS.ByteString, BS.ByteString)]
+                 -> m HTTP.Request
+requestBuilderBS x body = do
+  token <- ("access_token",) . toValue . unToken <$> obtain
+  group <- ("group_id",)     . toValue . unGroup <$> obtain
+  pure $ HTTP.urlEncodedBody (v : group : token : body) $ mkRequest x
+  where v = ("v", "5.124")
+
+requestBuilder :: (VkReader r m, ToRequestBody a, ToRequestFields a)
+               => a
+               -> m HTTP.Request
+requestBuilder x = requestBuilderBS x $ toBody x
