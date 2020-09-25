@@ -38,7 +38,6 @@ instance (TelegramReader r m, Monad m) => ToRequest m GetUpdates where
       HTTP.urlEncodedBody defaultGetUpdatesBody $
       defaultRequest
       { HTTP.path = defaultPath token <> "/getUpdates"
-      , HTTP.method = "GET"
       }
 
   toRequest (GetUpdates (Just n)) = do

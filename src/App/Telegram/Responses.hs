@@ -66,12 +66,12 @@ instance Loggable ResponseParameters where
 
 -- Update ------------------------------------------------------------------
 
-data Update = Post Integer Aeson.Value
+data Update = Update Integer MessageType
 
 instance Aeson.FromJSON Update where
-  parseJSON = Aeson.withObject "App.Vk.Update" $ \o -> Post
+  parseJSON = Aeson.withObject "App.Vk.Update" $ \o -> Update
     <$> o .: "update_id"
-    <*> o .: "message"
+    <*> Aeson.parseJSON (Aeson.Object o)
 
 instance Loggable [Update] where
   toLog v = "Updates resived: " <> Text.showt (length v)
@@ -79,7 +79,18 @@ instance Loggable [Update] where
 instance HasPriority [Update] where logData = logInfo . toLog
 
 instance Loggable Update where
-  toLog (Post i _) = "Proccess post with id: " <> Text.showt i
+  toLog (Update i _) = "Proccess post with id: " <> Text.showt i
+
+-- MessageType -------------------------------------------------------------
+
+data MessageType
+  = Message Aeson.Value
+  | UnsupportedType
+
+instance Aeson.FromJSON MessageType where
+  parseJSON = Aeson.withObject (path <> "MessageType") $ \o ->
+        Message <$> o .: "message"
+    <|> pure UnsupportedType
 
 -- FUNCTIONS ---------------------------------------------------------------
 

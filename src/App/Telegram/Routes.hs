@@ -50,7 +50,7 @@ processUpdate :: MonadEffects r m
               => Maybe Integer
               -> Update
               -> m (Maybe Integer)
-processUpdate current p@(Post id _) = do
+processUpdate current p@(Update id _) = do
   logDebug p
   return (max current $ Just id)
 
