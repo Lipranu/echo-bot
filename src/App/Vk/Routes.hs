@@ -143,7 +143,6 @@ routeAttachment :: ( MonadEffects r m
                 -> m ()
 routeAttachment a = logData a >> case a of
   Attachment body -> addAttachment body
-  Wall body       -> addAttachment body
   Photo body      -> fromContext body
   Document body   -> processDocument $ toUploadRequests body
   Sticker id      -> addSticker id

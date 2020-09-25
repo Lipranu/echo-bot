@@ -9,23 +9,22 @@
 module App.Vk.Responses
   ( Attachment (..)
   , AttachmentBody (..)
+  , Command (..)
   , DocumentBody (..)
-  , PhotoBody (..)
-  , PhotoSaved (..)
   , FileSaved (..)
   , FileUploaded (..)
   , LongPollServer (..)
   , Message (..)
   , MessageSended (..)
+  , Payload (..)
+  , PhotoBody (..)
+  , PhotoSaved (..)
   , ResponseException
   , Update (..)
   , Updates (..)
   , UploadException
   , UploadServer (..)
   , UserName (..)
-  , WallBody (..)
-  , Payload (..)
-  , Command (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -36,12 +35,10 @@ import Infrastructure.Has
 import Infrastructure.Logger
 
 import Control.Applicative ( (<|>) )
-import Control.Monad       ( (>=>) )
 import Control.Monad.Catch ( Exception )
 import Data.Aeson          ( (.:), (.:?) )
 import Data.List           ( sort )
 import Data.Text.Extended  ( Text )
-import Data.Traversable    ( for )
 import Data.Vector         ( (!?) )
 import GHC.Generics        ( Generic )
 
@@ -140,18 +137,16 @@ data Updates
   | DataLost
 
 instance Aeson.FromJSON Updates where
-  parseJSON = Aeson.withObject "App.Vk.Responses.Updates" $ \o -> do
+  parseJSON = Aeson.withObject (path <> "Updates") $ \o -> do
     result <- o .:? "updates"
     case result of
-      Just updates -> do
-        ts <- o .: "ts"
-        return $ Updates updates ts
+      Just updates -> Updates updates <$> o .: "ts"
       Nothing -> do
         code <- o .: "failed"
         case code :: Integer of
           1 -> OutOfDate <$> o .: "ts"
-          2 -> return KeyExpired
-          3 -> return DataLost
+          2 -> pure KeyExpired
+          3 -> pure DataLost
           e -> fail $ "App.Vk.Responses.Updates: Unknown error key: "
             <> show e
 
@@ -172,8 +167,8 @@ instance Loggable Updates where
 instance HasPriority Updates where
   logData u@(Updates _ _) = logDebug   $ toLog u
   logData u@(OutOfDate _) = logWarning $ toLog u
-  logData KeyExpired      = logInfo    $ toLog KeyExpired
-  logData DataLost        = logWarning $ toLog DataLost
+  logData u@KeyExpired    = logInfo    $ toLog u
+  logData u@DataLost      = logWarning $ toLog u
 
 -- Update ------------------------------------------------------------------
 
@@ -182,7 +177,7 @@ data Update
   | NotSupported Text
 
 instance Aeson.FromJSON Update where
-  parseJSON = Aeson.withObject "App.Vk.Responses.Update" $ \o -> do
+  parseJSON = Aeson.withObject (path <> "Update") $ \o -> do
     t <- o .: "type"
     case t of
       "message_new" -> NewMessage <$> (o .: "object" >>= (.: "message"))
@@ -211,19 +206,17 @@ data Message = Message
   }
 
 instance Aeson.FromJSON Message where
-  parseJSON = Aeson.withObject "App.Vk.Responses.Message" $ \o -> do
+  parseJSON = Aeson.withObject (path <> "Message") $ \o -> do
     mFromId      <- o .:  "from_id"
     mPeerId      <- o .:  "peer_id"
-    mMessage     <- o .:? "text"
     mAttachments <- o .:  "attachments"
     mPayload     <- o .:? "payload"
-    mReply       <- o .:? "reply_message"
-    mForwards    <- o .:  "fwd_messages"
-    mGeo         <- o .:? "geo"
-    mForwardsId  <- for mForwards (.: "id")
-    mReplyId     <- for mReply (.:  "id")
-    mLatitude    <- for mGeo $ (.: "coordinates") >=> (.: "latitude")
-    mLongitude   <- for mGeo $ (.: "coordinates") >=> (.: "longitude")
+    mMessage     <- o .:? "text"
+    mReplyId     <- o .:? "reply_message" >>= traverse (.: "id")
+    mForwardsId  <- o .:  "fwd_messages"  >>= traverse (.: "id")
+    mCoordinates <- o .:? "geo"           >>= traverse (.: "coordinates")
+    mLatitude    <- traverse (.: "latitude")  mCoordinates
+    mLongitude   <- traverse (.: "longitude") mCoordinates
     pure Message {..}
 
 instance Loggable Message where
@@ -254,7 +247,7 @@ instance Has (Maybe Command) Message where
 data Payload = Payload Text Command
 
 instance Aeson.FromJSON Payload where
-  parseJSON = Aeson.withText "App.Vk.Responses.Payload" $ \t -> Payload t
+  parseJSON = Aeson.withText (path <> "Payload") $ \t -> Payload t
     <$> Aeson.parseJSON (Aeson.String t)
 
 instance Loggable Payload where toLog (Payload t _) = t
@@ -268,7 +261,7 @@ data Command
   | UnknownCommand Text
 
 instance Aeson.FromJSON Command where
-  parseJSON = Aeson.withText "App.Vk.Responses.Payload.Command" $ \case
+  parseJSON = Aeson.withText (path <> "Command") $ \case
     "101" -> pure Help
     "102" -> pure Repeat
     "201" -> pure $ NewCount 1
@@ -315,18 +308,14 @@ data Attachment
   | Photo PhotoBody
   | Document DocumentBody
   | Sticker Integer
-  | Wall WallBody
 
 instance Aeson.FromJSON Attachment where
-  parseJSON = Aeson.withObject "App.Vk.Responses.Attachment" $ \o -> do
-    aType      <- o .: "type"
+  parseJSON = Aeson.withObject (path <> "Attachment") $ \o -> do
+    aType <- o .: "type"
     case aType of
       "doc"     -> Document <$> (o .: aType >>= Aeson.parseJSON)
       "photo"   -> Photo    <$> (o .: aType >>= Aeson.parseJSON)
       "sticker" -> Sticker  <$> (o .: aType >>= (.: "sticker_id"))
-      "wall"    -> do
-        body <- o .: aType >>= Aeson.parseJSON
-        return $ Wall $ body aType
       _         -> do
         body <- o .: aType >>= Aeson.parseJSON
         return $ Attachment $ body aType
@@ -335,7 +324,6 @@ instance Loggable Attachment where
   toLog (Attachment body) = toLog body
   toLog (Document   body) = toLog body
   toLog (Photo      body) = toLog body
-  toLog (Wall       body) = toLog body
   toLog (Sticker      id) = "Processing sticker with id: " <> Text.showt id
 
 instance HasPriority Attachment where logData = logDebug . toLog
@@ -350,11 +338,11 @@ data AttachmentBody = AttachmentBody
   } deriving Generic
 
 instance Aeson.FromJSON (Text -> AttachmentBody) where
-  parseJSON = Aeson.withObject "App.Vk.Responses.AttachmentBody"
-    $ \o -> AttachmentBody
-    <$> o .:  "id"
-    <*> o .:  "owner_id"
-    <*> o .:? "access_key"
+  parseJSON = Aeson.withObject (path <> "AttachmentBody") $ \o -> do
+    aId        <- o .: "id"
+    aOwnerId   <- o .: "owner_id" <|> o .: "to_id"
+    aAccessKey <- o .: "access_key"
+    pure $ \aType -> AttachmentBody {..}
 
 instance Loggable AttachmentBody where
   toLog AttachmentBody {..} = mkToLog "Processing AttachmentBody:"
@@ -373,15 +361,14 @@ data PhotoBody = PhotoBody
   }
 
 instance Aeson.FromJSON PhotoBody where
-  parseJSON = Aeson.withObject path $ \o -> do
+  parseJSON = Aeson.withObject (path <> "PhotoBody") $ \o -> do
     pbId        <- o .:  "id"
     pbOwnerId   <- o .:  "owner_id"
     pbAccessKey <- o .:? "access_key"
     pbUrl       <- o .:  "sizes" >>= getUrl . sort
     pure PhotoBody {..}
-    where path      = "App.Vk.Responses.Attachment.PhotoBody"
-          getUrl sx = case (sx :: [UrlAndSize]) of
-            [] -> fail $ path <> ": absent url"
+    where getUrl xs = case (xs :: [UrlAndSize]) of
+            [] -> fail $ path <> "PhotoBody: absent url"
             (UrlAndSize url _):_ -> pure url
 
 instance Loggable PhotoBody where
@@ -403,17 +390,16 @@ instance Ord UrlAndSize where
   compare (UrlAndSize _ x) (UrlAndSize _ y) = compare x y
 
 instance Aeson.FromJSON UrlAndSize where
-  parseJSON = Aeson.withObject path $ \o -> UrlAndSize
+  parseJSON = Aeson.withObject (path <> "UrlAndSize") $ \o -> UrlAndSize
     <$> o .: "url"
     <*> o .: "type"
-    where path = "App.Vk.Responses.Attachment.PhotoBody.UrlAndSize.Size"
 
 -- Size --------------------------------------------------------------------
 
 data Size = W | Z | Y | R | Q | P | O | X | M | S deriving (Eq, Ord)
 
 instance Aeson.FromJSON Size where
-  parseJSON = Aeson.withText path $ \case
+  parseJSON = Aeson.withText (path <> "Size") $ \case
     "s" -> pure S
     "m" -> pure M
     "x" -> pure X
@@ -425,29 +411,6 @@ instance Aeson.FromJSON Size where
     "z" -> pure Z
     "w" -> pure W
     t   -> fail $ path <> ": unknown size: " <> Text.unpack t
-    where path ="App.Vk.Responses.Attachment.PhotoBody.UrlAndSize.Size"
-
--- WallBody ----------------------------------------------------------------
-
-data WallBody = WallBody
-  { wId        :: Integer
-  , wToId      :: Integer
-  , wAccessKey :: Maybe Text
-  , wType      :: Text
-  } deriving Generic
-
-instance Aeson.FromJSON (Text -> WallBody) where
-  parseJSON = Aeson.withObject "App.Vk.Responses.WallBody" $ \o -> WallBody
-    <$> o .:  "id"
-    <*> o .:  "to_id"
-    <*> o .:? "access_key"
-
-instance Loggable WallBody where
-  toLog WallBody {..} = mkToLog "Processing WallBody:"
-    [ ("Type"    , wType)
-    , ("To id"   , Text.showt wToId)
-    , ("Media id", Text.showt wId)
-    ] [("Access Key", wAccessKey)]
 
 -- DocumentBody ------------------------------------------------------------
 
@@ -470,7 +433,7 @@ instance Loggable DocumentBody where
 newtype UploadServer = UploadServer Text
 
 instance Aeson.FromJSON UploadServer where
-  parseJSON = Aeson.withObject "App.Vk.Responses.UploadServer" $ \o ->
+  parseJSON = Aeson.withObject (path <> "UploadServer") $ \o ->
     UploadServer <$> o .: "upload_url"
 
 instance Loggable UploadServer where
@@ -486,11 +449,9 @@ data FileUploaded
   | PhotoUploaded Integer Text Text
 
 instance Aeson.FromJSON FileUploaded where
-  parseJSON = Aeson.withObject "App.Vk.Responses.FileUploaded" $ \o ->
+  parseJSON = Aeson.withObject (path <> "FileUploaded") $ \o ->
         DocumentUploaded <$> o .: "file"
-    <|> PhotoUploaded    <$> o .: "server"
-                         <*> o .: "hash"
-                         <*> o .: "photo"
+    <|> PhotoUploaded    <$> o .: "server" <*> o .: "hash" <*> o .: "photo"
 
 instance Loggable FileUploaded where
   toLog (DocumentUploaded file) = mkToLog "Document uploaded:"
@@ -514,13 +475,13 @@ data FileSaved = FileSaved
   }
 
 instance Aeson.FromJSON FileSaved where
-  parseJSON = Aeson.withObject "App.Vk.Responses.FileSaved" $ \o -> do
+  parseJSON = Aeson.withObject (path <> "FileSaved") $ \o -> do
     fsType      <- o    .:  "type"
-    body        <- o    .: fsType
+    body        <- o    .:  fsType
     fsMediaId   <- body .:  "id"
     fsOwnerId   <- body .:  "owner_id"
     fsAccessKey <- body .:? "access_key"
-    return FileSaved {..}
+    pure FileSaved {..}
 
 instance Loggable FileSaved where
   toLog FileSaved {..} = mkToLog "File saved:"
@@ -540,13 +501,13 @@ data PhotoSaved = PhotoSaved
   }
 
 instance Aeson.FromJSON PhotoSaved where
-  parseJSON = Aeson.withArray path $ \a -> case a !? 0 of
+  parseJSON = Aeson.withArray (path <> "PhotoSaved") $ \a -> case a !? 0 of
     Nothing -> fail $ path <> ": empty array"
-    Just x -> (flip $ Aeson.withObject path) x $ \o -> PhotoSaved
-      <$> o .: "id"
-      <*> o .: "owner_id"
-      <*> o .:? "access_key"
-    where path = "App.Vk.Responses.PhotoSaved"
+    Just x -> (flip $ Aeson.withObject path) x $ \o -> do
+      psMediaId   <- o .:  "id"
+      psOwnerId   <- o .:  "owner_id"
+      psAccessKey <- o .:? "access_key"
+      pure PhotoSaved {..}
 
 instance Loggable PhotoSaved where
   toLog PhotoSaved {..} = mkToLog "Photo saved:"
@@ -566,3 +527,8 @@ instance Loggable MessageSended where
     <> Text.showt id
 
 instance HasPriority MessageSended where logData = logInfo . toLog
+
+-- FUNCTIONS ---------------------------------------------------------------
+
+path :: String
+path = "App.Vk.Responses."

@@ -74,10 +74,6 @@ instance ToAttachment AttachmentBody where
   toAttachment AttachmentBody {..}
     = mkAttachment aType aOwnerId aId aAccessKey
 
-instance ToAttachment WallBody where
-  toAttachment WallBody {..}
-    = mkAttachment wType wToId wId wAccessKey
-
 instance ToAttachment PhotoBody where
   toAttachment PhotoBody {..}
     = mkAttachment "photo" pbOwnerId pbId pbAccessKey
