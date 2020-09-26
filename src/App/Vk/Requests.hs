@@ -15,7 +15,6 @@ module App.Vk.Requests
   , SaveFile (..)
   , SendMessage (..)
   , GetName (..)
-  , PeerId (..)
   , UploadFile (..)
   , Keyboard (..)
   , Button (..)
@@ -236,10 +235,10 @@ instance HasPriority GetFile where logData = logInfo . toLog
 
 -- GetUploadServer ---------------------------------------------------------
 
-newtype PeerId = PeerId { unPeerId :: Integer }
+--newtype PeerId = PeerId { unPeerId :: Integer }
 
 data GetUploadServer
-  = FileUploadServer Text
+  = FileUploadServer Text Integer
   | PhotoUploadServer
 
 instance ToRequestFields GetUploadServer where
@@ -248,19 +247,26 @@ instance ToRequestFields GetUploadServer where
     , HTTP.path   = path <> ".getMessagesUploadServer"
     }
     where path = "/method/" <> case x of
-            FileUploadServer _ -> "docs"
-            PhotoUploadServer  -> "photos"
+            FileUploadServer _ _ -> "docs"
+            PhotoUploadServer    -> "photos"
 
-instance (Monad m, VkReader r m, MonadState s m, Has PeerId s)
-  => ToRequest m GetUploadServer where
-  toRequest x@PhotoUploadServer    = requestBuilderBS x [("peer_id", "0")]
-  toRequest x@(FileUploadServer t) = do
-    id <- ("peer_id",) . toValue . unPeerId <$> grab
-    requestBuilderBS x [id, ("type", toValue t)]
+instance ToRequestBody GetUploadServer where
+  toBody PhotoUploadServer = [("peer_id", "0")]
+  toBody (FileUploadServer fType peerId) =
+    [ ("peer_id", toValue peerId)
+    , ("type"   , toValue fType)
+    ]
+
+instance (Monad m, VkReader r m) => ToRequest m GetUploadServer where
+  toRequest = requestBuilder
+--  x@PhotoUploadServer    = requestBuilderBS x [("peer_id", "0")]
+--  toRequest x@(FileUploadServer t) = do
+--    id <- ("peer_id",) . toValue . unPeerId <$> grab
+--    requestBuilderBS x [id, ("type", toValue t)]
 
 instance Loggable GetUploadServer where
-  toLog PhotoUploadServer    = "Requesting photo upload server"
-  toLog (FileUploadServer t) = "Requesting docs upload server, file type: "
+  toLog PhotoUploadServer      = "Requesting photo upload server"
+  toLog (FileUploadServer t _) = "Requesting docs upload server, file type: "
     <> t
 
 instance HasPriority GetUploadServer where logData = logInfo . toLog

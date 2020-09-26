@@ -34,7 +34,7 @@ import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, execStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Maybe             ( fromMaybe, listToMaybe )
-import Data.Text.Extended     ( showt )
+import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
 
 -- TYPES -------------------------------------------------------------------
@@ -90,20 +90,19 @@ processCommand :: ( MonadRepetitions r m
                -> Command
                -> Context
                -> m ()
-processCommand m command context= do
+processCommand m command context = do
   performCommand
-  name <- getName
+  name <- getName context $ mFromId m
   text <- getCommandText
-  sendMessage $ mkCommandReply m $ mkCommandText m context name text
+  sendMessage
+    $ mkCommandReply m
+    $ mkCommandText context text name
+    $ mFromId m
   where
     performCommand = logData command >> case command of
       NewCount i       -> putRepeats m i
       UnknownCommand c -> processMessage m
       _                -> pure ()
-
-    getName = case context of
-      Private -> pure Nothing
-      Chat    -> listToMaybe <$> withLog fromResponseR (mkGetName m)
 
     getCommandText = case command of
       Help             -> unHelpText <$> obtain
@@ -115,7 +114,12 @@ processCommand m command context= do
         repeats <- fromMaybe def   <$> getRepeats m
         pure $ text <> "\nCurrent repeat count: " <> showt repeats
 
-processMessage :: ( MonadEffects r m
+getName :: (MonadEffects r m, VkReader r m, MonadThrow m) => Context -> FromId -> m (Maybe UserName)
+getName Private _   = pure Nothing
+getName Chat fromId = listToMaybe <$> withLog fromResponseR (mkGetName fromId)
+
+processMessage :: ( Applicative m
+                  , MonadEffects r m
                   , MonadRepetitions r m
                   , VkReader r m
                   , MonadThrow m
@@ -133,7 +137,8 @@ processMessage m = do
           Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
           Just i  -> pure (Nothing, i)
 
-routeAttachment :: ( MonadEffects r m
+routeAttachment :: ( Applicative m
+                   , MonadEffects r m
                    , MonadIO m
                    , MonadState AttachmentsState m
                    , VkReader r m
@@ -142,17 +147,35 @@ routeAttachment :: ( MonadEffects r m
                 => Attachment
                 -> m ()
 routeAttachment a = logData a >> case a of
+  Graffiti          -> sendNotification "graffiti"
   Attachment   body -> addAttachment body
   Photo        body -> fromContext   body
   Document     body -> fromType      body
-  AudioMessage body -> processDocument $ toUploadRequests body
+  AudioMessage body -> toUploadRequests body >>= processDocument
   Sticker      id   -> addSticker    id
   where fromContext x = grab >>= \case
           Private -> addAttachment x
-          Chat    -> processDocument $ toUploadRequests x
+          Chat    -> toUploadRequests x >>= processDocument
         fromType doc  = case dbType doc of
-          "photo" -> processDocument $ toUploadRequests $ docToPhoto doc
-          _       -> processDocument $ toUploadRequests $ doc
+          "graffiti" -> sendNotification "graffiti"
+          "photo"    -> toUploadRequests (docToPhoto doc) >>= processDocument
+          _          -> toUploadRequests doc              >>= processDocument
+
+sendNotification :: ( MonadEffects r m
+                    , MonadIO m
+                    , MonadState AttachmentsState m
+                    , MonadThrow m
+                    , VkReader r m
+                    )
+                 => Text
+                 -> m ()
+sendNotification aType = do
+  peerId    <- grab
+  fromId    <- grab
+  messageId <- grab
+  context   <- grab
+  name      <- getName context fromId
+  sendMessage $ mkNotification context name messageId fromId peerId aType
 
 addAttachment :: (ToAttachment a, MonadState AttachmentsState m)
               => a

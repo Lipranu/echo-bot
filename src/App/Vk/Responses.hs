@@ -26,6 +26,9 @@ module App.Vk.Responses
   , UploadException
   , UploadServer (..)
   , UserName (..)
+  , MessageId (..)
+  , PeerId (..)
+  , FromId (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -195,9 +198,14 @@ instance HasPriority Update where
 
 -- Message -----------------------------------------------------------------
 
+newtype MessageId = MessageId { unMessageId :: Integer }
+newtype FromId    = FromId    { unFromId    :: Integer }
+newtype PeerId    = PeerId    { unPeerId    :: Integer }
+
 data Message = Message
-  { mFromId      :: Integer
-  , mPeerId      :: Integer
+  { mId          :: MessageId
+  , mFromId      :: FromId
+  , mPeerId      :: PeerId
   , mMessage     :: Maybe Text
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
@@ -209,8 +217,9 @@ data Message = Message
 
 instance Aeson.FromJSON Message where
   parseJSON = Aeson.withObject (path <> "Message") $ \o -> do
-    mFromId      <- o .:  "from_id"
-    mPeerId      <- o .:  "peer_id"
+    mId          <- MessageId <$> o .: "id"
+    mFromId      <- FromId    <$> o .: "from_id"
+    mPeerId      <- PeerId    <$> o .: "peer_id"
     mAttachments <- o .:  "attachments"
     mPayload     <- o .:? "payload"
     mMessage     <- o .:? "text"
@@ -223,8 +232,9 @@ instance Aeson.FromJSON Message where
 
 instance Loggable Message where
   toLog Message {..} = mkToLog "Message data:"
-    [ ("From id"         , Text.showt mFromId)
-    , ("Peer id"         , Text.showt mPeerId)
+    [ ("Message id"      , Text.showt $ unMessageId mId)
+    , ("From id"         , Text.showt $ unFromId mFromId)
+    , ("Peer id"         , Text.showt $ unPeerId mPeerId)
     , ("Attachments"     , Text.showt $ length mAttachments)
     , ("Forward Messages", Text.showt $ length mForwardsId)
     ]
@@ -237,7 +247,8 @@ instance Loggable Message where
 
 instance HasPriority Message where logData = logDebug . toLog
 
-instance Has Key Message where getter Message {..} = (mFromId, mPeerId)
+instance Has Key Message where
+  getter Message {..} = (unFromId mFromId, unPeerId mPeerId)
 
 instance Has (Maybe Command) Message where
   getter Message {..} = case mPayload of
@@ -310,23 +321,24 @@ data Attachment
   | Photo PhotoBody
   | Document DocumentBody
   | AudioMessage AudioMessageBody
---  | Graffiti GraffitiBody
+  | Graffiti
   | Sticker Integer
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o -> do
     aType <- o .: "type"
     case aType of
+      "graffiti"      -> pure Graffiti
       "doc"           -> Document     <$> (o .: aType >>= Aeson.parseJSON)
       "photo"         -> Photo        <$> (o .: aType >>= Aeson.parseJSON)
       "audio_message" -> AudioMessage <$> (o .: aType >>= Aeson.parseJSON)
---      "graffiti"      -> Graffiti     <$> (o .: aType >>= Aeson.parseJSON)
       "sticker"       -> Sticker      <$> (o .: aType >>= (.: "sticker_id"))
       _               -> do
         body <- o .: aType >>= Aeson.parseJSON
-        return $ Attachment $ body aType
+        pure $ Attachment $ body aType
 
 instance Loggable Attachment where
+  toLog Graffiti            = "Processing graffiti"
   toLog (Attachment   body) = toLog body
   toLog (Document     body) = toLog body
   toLog (AudioMessage body) = toLog body

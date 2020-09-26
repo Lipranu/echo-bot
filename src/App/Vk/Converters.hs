@@ -2,6 +2,9 @@
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RecordWildCards        #-}
+{-# LANGUAGE FlexibleInstances      #-}
+{-# LANGUAGE UndecidableInstances   #-}
+--{-# LANGUAGE AllowAmbiguousTypes    #-}
 
 module App.Vk.Converters
   ( AttachmentsState (..)
@@ -16,6 +19,7 @@ module App.Vk.Converters
   , mkContext
   , mkKeyboard
   , mkGetName
+  , mkNotification
   , mkGetUpdates
   , mkSaveFile
   , mkSendMessage
@@ -30,8 +34,9 @@ import App.Vk.Responses
 
 import Infrastructure.Has
 
-import Data.Maybe            ( fromMaybe )
-import Data.Text.Extended    ( Text )
+import Control.Monad.State ( MonadState )
+import Data.Maybe          ( fromMaybe )
+import Data.Text.Extended  ( Text )
 
 import qualified Data.Text.Extended   as Text
 import qualified Data.ByteString.Lazy as LBS
@@ -41,8 +46,8 @@ import qualified Data.ByteString.Lazy as LBS
 class ToAttachment a where
   toAttachment :: a -> Text
 
-class ToUploadRequests a b | a -> b where
-  toUploadRequests :: a -> UploadRequests b
+class ToUploadRequests m a b | a -> b where
+  toUploadRequests :: a -> m (UploadRequests b)
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -54,6 +59,8 @@ data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
   , asSticker     :: Maybe Integer
   , asPeerId      :: PeerId
+  , asFromId      :: FromId
+  , asMessageId   :: MessageId
   , asContext     :: Context
   }
 
@@ -62,6 +69,12 @@ instance Has Context AttachmentsState where
 
 instance Has PeerId AttachmentsState where
   getter = asPeerId
+
+instance Has FromId AttachmentsState where
+  getter = asFromId
+
+instance Has MessageId AttachmentsState where
+  getter = asMessageId
 
 instance ToAttachment FileSaved where
   toAttachment FileSaved {..}
@@ -79,10 +92,6 @@ instance ToAttachment PhotoBody where
   toAttachment PhotoBody {..}
     = mkAttachment "photo" pbOwnerId pbId pbAccessKey
 
-instance ToAttachment AudioMessageBody where
-  toAttachment AudioMessageBody {..}
-    = mkAttachment "audio_message" ambOwnerId ambId ambAccessKey
-
 data UploadRequests a = UploadRequests
   { getUploadServer :: GetUploadServer
   , getFile         :: GetFile
@@ -90,29 +99,31 @@ data UploadRequests a = UploadRequests
   , saveFile        :: FileUploaded -> SaveFile
   }
 
-instance ToUploadRequests PhotoBody PhotoSaved where
+instance Applicative m => ToUploadRequests m PhotoBody PhotoSaved where
   toUploadRequests PhotoBody {..} =
     let getUploadServer = PhotoUploadServer
         getFile         = GetFile pbUrl
         uploadFile      = mkUploadFile "photo" pbTitle
         saveFile        = mkSaveFile pbTitle
-     in UploadRequests {..}
+     in pure UploadRequests {..}
 
-instance ToUploadRequests DocumentBody FileSaved where
-  toUploadRequests DocumentBody {..} =
-    let getUploadServer = FileUploadServer dbType
-        getFile         = GetFile dbUrl
+instance (MonadState s m, Has PeerId s)
+  => ToUploadRequests m DocumentBody FileSaved where
+  toUploadRequests DocumentBody {..} = do
+    let getFile         = GetFile dbUrl
         uploadFile      = mkUploadFile dbType dbTitle
         saveFile        = mkSaveFile dbTitle
-     in UploadRequests {..}
+    getUploadServer <- mkFileUploadServer dbType
+    pure UploadRequests {..}
 
-instance ToUploadRequests AudioMessageBody FileSaved where
-  toUploadRequests AudioMessageBody {..} =
-    let getUploadServer = FileUploadServer "audio_message"
-        getFile         = GetFile ambUrl
+instance (MonadState s m, Has PeerId s)
+  => ToUploadRequests m AudioMessageBody FileSaved where
+  toUploadRequests AudioMessageBody {..} = do
+    let getFile         = GetFile ambUrl
         uploadFile      = mkUploadFile "audio_message" ambTitle
         saveFile        = mkSaveFile ambTitle
-     in UploadRequests {..}
+    getUploadServer <- mkFileUploadServer "audio_message"
+    pure UploadRequests {..}
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -136,19 +147,23 @@ mkGetUpdates LongPollServer {..} =
 
 mkState :: Message -> AttachmentsState
 mkState message =
-  let asPeerId      = PeerId $ mPeerId message
+  let asPeerId      = mPeerId message
+      asFromId      = mFromId message
       asAttachments = []
       asSticker     = Nothing
+      asMessageId   = mId message
       asContext     = mkContext message
    in AttachmentsState {..}
 
 mkContext :: Message -> Context
 mkContext Message {..}
-  | mPeerId == mFromId = Private
-  | otherwise          = Chat
+  | peerId == fromId = Private
+  | otherwise        = Chat
+  where peerId = unPeerId mPeerId
+        fromId = unFromId mFromId
 
-mkGetName :: Message -> GetName
-mkGetName Message {..} = GetName mFromId
+mkGetName :: FromId -> GetName
+mkGetName = GetName . unFromId
 
 mkSendMessage :: Message
               -> AttachmentsState
@@ -156,7 +171,7 @@ mkSendMessage :: Message
               -> Int
               -> SendMessage
 mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
-  let smPeerId      = mPeerId
+  let smPeerId      = unPeerId mPeerId
       smRandomId    = randomId
       smMessage     = mMessage
       smLatitude    = mLatitude
@@ -172,7 +187,7 @@ mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
 
 mkCommandReply :: Message -> Text -> Int -> SendMessage
 mkCommandReply Message {..} text randomId =
-  let smPeerId      = mPeerId
+  let smPeerId      = unPeerId mPeerId
       smRandomId    = randomId
       smLatitude    = Nothing
       smLongitude   = Nothing
@@ -184,10 +199,34 @@ mkCommandReply Message {..} text randomId =
       smMessage     = Just text
    in SendMessage {..}
 
-mkCommandText :: Message -> Context -> Maybe UserName -> Text -> Text
-mkCommandText _ Private _ text = text
-mkCommandText Message {..} Chat un text
-  = "@id" <> Text.showt mFromId <> case un of
+mkNotification :: Context
+               -> Maybe UserName
+               -> MessageId
+               -> FromId
+               -> PeerId
+               -> Text
+               -> Int
+               -> SendMessage
+mkNotification context user messageId fromId peerId mType randomId =
+  let smPeerId      = unPeerId peerId
+      smRandomId    = randomId
+      smLatitude    = Nothing
+      smLongitude   = Nothing
+      smStickerId   = Nothing
+      smKeyboard    = Nothing
+      smAttachments = Nothing
+      smForwardsId  = Nothing
+      smMessage     = Just $ mkCommandText context text user fromId
+      text          = "Can't send message of type: " <> mType
+      smReplyId     = case context of
+        Chat    -> Nothing
+        Private -> Just $ unMessageId messageId
+   in SendMessage {..}
+
+mkCommandText :: Context -> Text -> Maybe UserName -> FromId -> Text
+mkCommandText Private text _ _ = text
+mkCommandText Chat text user fromId
+  = "@id" <> Text.showt (unFromId fromId) <> case user of
     Nothing           -> ", " <> text
     Just (UserName n) -> " (" <> n <> "), " <> text
 
@@ -245,6 +284,11 @@ indexAction index =
       abLabel   = index
       abPayload = "20" <> index
    in Action {..}
+
+mkFileUploadServer :: (MonadState s m, Has PeerId s)
+                   => Text
+                   -> m GetUploadServer
+mkFileUploadServer dType = FileUploadServer dType <$> unPeerId <$> grab
 
 mkUploadFile :: Text -> Text -> UploadServer -> LBS.ByteString -> UploadFile
 mkUploadFile ufType ufTitle (UploadServer ufUrl) file =
