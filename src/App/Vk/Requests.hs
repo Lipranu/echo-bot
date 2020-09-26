@@ -23,7 +23,8 @@ module App.Vk.Requests
 
 -- IMPORTS -----------------------------------------------------------------
 
-import App.Vk.Config            ( VkReader, Token (..), Group (..) )
+import App.Vk.Config    ( VkReader, Token (..), Group (..) )
+import App.Vk.Responses ( FromId (..), PeerId (..), MessageId (..) )
 
 import Infrastructure.Has
 import Infrastructure.Logger
@@ -31,7 +32,6 @@ import Infrastructure.Requester
 
 import Control.Monad.Catch    ( MonadThrow )
 import Control.Monad.IO.Class ( MonadIO (..) )
-import Control.Monad.State    ( MonadState )
 import Data.ByteString.Lazy   ( toStrict )
 import Data.Maybe             ( catMaybes )
 import Data.Text.Encoding     ( encodeUtf8 )
@@ -67,6 +67,15 @@ instance ToRequestValue Int where
 
 instance ToRequestValue Double where
   toValue = encodeUtf8 . showt
+
+instance ToRequestValue PeerId where
+  toValue = encodeUtf8 . showt . unPeerId
+
+instance ToRequestValue FromId where
+  toValue = encodeUtf8 . showt . unFromId
+
+instance ToRequestValue MessageId where
+  toValue = encodeUtf8 . showt . unMessageId
 
 -- GetLongPollServer -------------------------------------------------------
 
@@ -124,7 +133,7 @@ instance HasPriority GetUpdates where logData = logInfo . toLog
 -- SendMessage -------------------------------------------------------------
 
 data SendMessage = SendMessage
-  { smPeerId      :: Integer
+  { smPeerId      :: PeerId
   , smRandomId    :: Int
   , smMessage     :: Maybe Text
   , smLatitude    :: Maybe Double
@@ -160,7 +169,7 @@ instance (Monad m, VkReader r m) => ToRequest m SendMessage where
 
 instance Loggable SendMessage where
   toLog SendMessage {..} = "Sending message with peer id: "
-    <> showt smPeerId
+    <> showt (unPeerId smPeerId)
 
 instance HasPriority SendMessage where logData = logInfo . toLog
 
@@ -201,7 +210,7 @@ instance Aeson.ToJSON Action where
 
 -- GetName -----------------------------------------------------------------
 
-newtype GetName = GetName Integer
+newtype GetName = GetName FromId
 
 instance ToRequestBody GetName where
   toBody (GetName id) = [("user_ids", toValue id)]
@@ -217,7 +226,7 @@ instance (Monad m, VkReader r m) => ToRequest m GetName where
 
 instance Loggable GetName where
   toLog (GetName id) = "Performing a request for a username with an id: "
-    <> showt id
+    <> showt (unFromId id)
 
 instance HasPriority GetName where logData = logInfo . toLog
 
@@ -235,10 +244,8 @@ instance HasPriority GetFile where logData = logInfo . toLog
 
 -- GetUploadServer ---------------------------------------------------------
 
---newtype PeerId = PeerId { unPeerId :: Integer }
-
 data GetUploadServer
-  = FileUploadServer Text Integer
+  = FileUploadServer Text PeerId
   | PhotoUploadServer
 
 instance ToRequestFields GetUploadServer where
@@ -259,10 +266,6 @@ instance ToRequestBody GetUploadServer where
 
 instance (Monad m, VkReader r m) => ToRequest m GetUploadServer where
   toRequest = requestBuilder
---  x@PhotoUploadServer    = requestBuilderBS x [("peer_id", "0")]
---  toRequest x@(FileUploadServer t) = do
---    id <- ("peer_id",) . toValue . unPeerId <$> grab
---    requestBuilderBS x [id, ("type", toValue t)]
 
 instance Loggable GetUploadServer where
   toLog PhotoUploadServer      = "Requesting photo upload server"
@@ -337,17 +340,11 @@ defaultRequest = HTTP.defaultRequest
   , HTTP.port   = 443
   }
 
-requestBuilderBS :: (VkReader r m, ToRequestFields a)
-                 => a
-                 -> [(BS.ByteString, BS.ByteString)]
-                 -> m HTTP.Request
-requestBuilderBS x body = do
-  token <- ("access_token",) . toValue . unToken <$> obtain
-  group <- ("group_id",)     . toValue . unGroup <$> obtain
-  pure $ HTTP.urlEncodedBody (v : group : token : body) $ mkRequest x
-  where v = ("v", "5.124")
-
-requestBuilder :: (VkReader r m, ToRequestBody a, ToRequestFields a)
+requestBuilder :: (VkReader r m, ToRequestFields a, ToRequestBody a)
                => a
                -> m HTTP.Request
-requestBuilder x = requestBuilderBS x $ toBody x
+requestBuilder x = do
+  token <- ("access_token",) . toValue . unToken <$> obtain
+  group <- ("group_id",)     . toValue . unGroup <$> obtain
+  pure $ HTTP.urlEncodedBody (v : group : token : toBody x) $ mkRequest x
+  where v = ("v", "5.124")

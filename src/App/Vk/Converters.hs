@@ -163,7 +163,7 @@ mkContext Message {..}
         fromId = unFromId mFromId
 
 mkGetName :: FromId -> GetName
-mkGetName = GetName . unFromId
+mkGetName = GetName
 
 mkSendMessage :: Message
               -> AttachmentsState
@@ -171,7 +171,7 @@ mkSendMessage :: Message
               -> Int
               -> SendMessage
 mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
-  let smPeerId      = unPeerId mPeerId
+  let smPeerId      = mPeerId
       smRandomId    = randomId
       smMessage     = mMessage
       smLatitude    = mLatitude
@@ -187,7 +187,7 @@ mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
 
 mkCommandReply :: Message -> Text -> Int -> SendMessage
 mkCommandReply Message {..} text randomId =
-  let smPeerId      = unPeerId mPeerId
+  let smPeerId      = mPeerId
       smRandomId    = randomId
       smLatitude    = Nothing
       smLongitude   = Nothing
@@ -208,7 +208,7 @@ mkNotification :: Context
                -> Int
                -> SendMessage
 mkNotification context user messageId fromId peerId mType randomId =
-  let smPeerId      = unPeerId peerId
+  let smPeerId      = peerId
       smRandomId    = randomId
       smLatitude    = Nothing
       smLongitude   = Nothing
@@ -288,7 +288,7 @@ indexAction index =
 mkFileUploadServer :: (MonadState s m, Has PeerId s)
                    => Text
                    -> m GetUploadServer
-mkFileUploadServer dType = FileUploadServer dType <$> unPeerId <$> grab
+mkFileUploadServer dType = FileUploadServer dType <$> grab
 
 mkUploadFile :: Text -> Text -> UploadServer -> LBS.ByteString -> UploadFile
 mkUploadFile ufType ufTitle (UploadServer ufUrl) file =
