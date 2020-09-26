@@ -10,6 +10,7 @@ module App.Vk.Converters
   , ToAttachment (..)
   , UploadRequests (..)
   , ToUploadRequests (..)
+  , docToPhoto
   , mkCommandReply
   , mkCommandText
   , mkContext
@@ -78,6 +79,10 @@ instance ToAttachment PhotoBody where
   toAttachment PhotoBody {..}
     = mkAttachment "photo" pbOwnerId pbId pbAccessKey
 
+instance ToAttachment AudioMessageBody where
+  toAttachment AudioMessageBody {..}
+    = mkAttachment "audio_message" ambOwnerId ambId ambAccessKey
+
 data UploadRequests a = UploadRequests
   { getUploadServer :: GetUploadServer
   , getFile         :: GetFile
@@ -89,17 +94,24 @@ instance ToUploadRequests PhotoBody PhotoSaved where
   toUploadRequests PhotoBody {..} =
     let getUploadServer = PhotoUploadServer
         getFile         = GetFile pbUrl
-        uploadFile      = mkUploadFile "photo" title
-        saveFile        = mkSaveFile title
-        title           = snd $ Text.breakOnEnd "/" pbUrl
+        uploadFile      = mkUploadFile "photo" pbTitle
+        saveFile        = mkSaveFile pbTitle
      in UploadRequests {..}
 
 instance ToUploadRequests DocumentBody FileSaved where
   toUploadRequests DocumentBody {..} =
-    let getUploadServer = FileUploadServer "doc"
-        getFile         = GetFile dUrl
-        uploadFile      = mkUploadFile "doc" dTitle
-        saveFile        = mkSaveFile dTitle
+    let getUploadServer = FileUploadServer dbType
+        getFile         = GetFile dbUrl
+        uploadFile      = mkUploadFile dbType dbTitle
+        saveFile        = mkSaveFile dbTitle
+     in UploadRequests {..}
+
+instance ToUploadRequests AudioMessageBody FileSaved where
+  toUploadRequests AudioMessageBody {..} =
+    let getUploadServer = FileUploadServer "audio_message"
+        getFile         = GetFile ambUrl
+        uploadFile      = mkUploadFile "audio_message" ambTitle
+        saveFile        = mkSaveFile ambTitle
      in UploadRequests {..}
 
 -- FUNCTIONS ---------------------------------------------------------------
@@ -243,3 +255,12 @@ mkSaveFile :: Text -> FileUploaded -> SaveFile
 mkSaveFile title (DocumentUploaded file) = SaveDocument title file
 mkSaveFile title (PhotoUploaded server hash photo) =
   SavePhoto title server hash photo
+
+docToPhoto :: DocumentBody -> PhotoBody
+docToPhoto DocumentBody {..} =
+  let pbUrl       = dbUrl
+      pbTitle     = dbTitle
+      pbId        = dbId
+      pbOwnerId   = dbOwnerId
+      pbAccessKey = dbAccessKey
+   in PhotoBody {..}

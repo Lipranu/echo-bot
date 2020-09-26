@@ -142,13 +142,17 @@ routeAttachment :: ( MonadEffects r m
                 => Attachment
                 -> m ()
 routeAttachment a = logData a >> case a of
-  Attachment body -> addAttachment body
-  Photo body      -> fromContext body
-  Document body   -> processDocument $ toUploadRequests body
-  Sticker id      -> addSticker id
-  where fromContext a = grab >>= \case
-          Private -> addAttachment a
-          Chat    -> processDocument $ toUploadRequests a
+  Attachment   body -> addAttachment body
+  Photo        body -> fromContext   body
+  Document     body -> fromType      body
+  AudioMessage body -> processDocument $ toUploadRequests body
+  Sticker      id   -> addSticker    id
+  where fromContext x = grab >>= \case
+          Private -> addAttachment x
+          Chat    -> processDocument $ toUploadRequests x
+        fromType doc  = case dbType doc of
+          "photo" -> processDocument $ toUploadRequests $ docToPhoto doc
+          _       -> processDocument $ toUploadRequests $ doc
 
 addAttachment :: (ToAttachment a, MonadState AttachmentsState m)
               => a

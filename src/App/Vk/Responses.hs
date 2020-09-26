@@ -9,6 +9,7 @@
 module App.Vk.Responses
   ( Attachment (..)
   , AttachmentBody (..)
+  , AudioMessageBody (..)
   , Command (..)
   , DocumentBody (..)
   , FileSaved (..)
@@ -35,6 +36,7 @@ import Infrastructure.Has
 import Infrastructure.Logger
 
 import Control.Applicative ( (<|>) )
+import Control.Monad       ( join )
 import Control.Monad.Catch ( Exception )
 import Data.Aeson          ( (.:), (.:?) )
 import Data.List           ( sort )
@@ -307,24 +309,29 @@ data Attachment
   = Attachment AttachmentBody
   | Photo PhotoBody
   | Document DocumentBody
+  | AudioMessage AudioMessageBody
+--  | Graffiti GraffitiBody
   | Sticker Integer
 
 instance Aeson.FromJSON Attachment where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o -> do
     aType <- o .: "type"
     case aType of
-      "doc"     -> Document <$> (o .: aType >>= Aeson.parseJSON)
-      "photo"   -> Photo    <$> (o .: aType >>= Aeson.parseJSON)
-      "sticker" -> Sticker  <$> (o .: aType >>= (.: "sticker_id"))
-      _         -> do
+      "doc"           -> Document     <$> (o .: aType >>= Aeson.parseJSON)
+      "photo"         -> Photo        <$> (o .: aType >>= Aeson.parseJSON)
+      "audio_message" -> AudioMessage <$> (o .: aType >>= Aeson.parseJSON)
+--      "graffiti"      -> Graffiti     <$> (o .: aType >>= Aeson.parseJSON)
+      "sticker"       -> Sticker      <$> (o .: aType >>= (.: "sticker_id"))
+      _               -> do
         body <- o .: aType >>= Aeson.parseJSON
         return $ Attachment $ body aType
 
 instance Loggable Attachment where
-  toLog (Attachment body) = toLog body
-  toLog (Document   body) = toLog body
-  toLog (Photo      body) = toLog body
-  toLog (Sticker      id) = "Processing sticker with id: " <> Text.showt id
+  toLog (Attachment   body) = toLog body
+  toLog (Document     body) = toLog body
+  toLog (AudioMessage body) = toLog body
+  toLog (Photo        body) = toLog body
+  toLog (Sticker        id) = "Processing sticker with id: " <> Text.showt id
 
 instance HasPriority Attachment where logData = logDebug . toLog
 
@@ -339,9 +346,9 @@ data AttachmentBody = AttachmentBody
 
 instance Aeson.FromJSON (Text -> AttachmentBody) where
   parseJSON = Aeson.withObject (path <> "AttachmentBody") $ \o -> do
-    aId        <- o .: "id"
-    aOwnerId   <- o .: "owner_id" <|> o .: "to_id"
-    aAccessKey <- o .: "access_key"
+    aId        <- o .:  "id"
+    aOwnerId   <- o .:  "owner_id" <|> o .: "to_id"
+    aAccessKey <- o .:? "access_key"
     pure $ \aType -> AttachmentBody {..}
 
 instance Loggable AttachmentBody where
@@ -358,6 +365,7 @@ data PhotoBody = PhotoBody
   , pbOwnerId   :: Integer
   , pbAccessKey :: Maybe Text
   , pbUrl       :: Text
+  , pbTitle     :: Text
   }
 
 instance Aeson.FromJSON PhotoBody where
@@ -366,17 +374,19 @@ instance Aeson.FromJSON PhotoBody where
     pbOwnerId   <- o .:  "owner_id"
     pbAccessKey <- o .:? "access_key"
     pbUrl       <- o .:  "sizes" >>= getUrl . sort
+    let pbTitle = urlToTitle pbUrl
     pure PhotoBody {..}
     where getUrl xs = case (xs :: [UrlAndSize]) of
             [] -> fail $ path <> "PhotoBody: absent url"
             (UrlAndSize url _):_ -> pure url
 
 instance Loggable PhotoBody where
-  toLog PhotoBody {..} = mkToLog "Processing AttachmentBody:"
+  toLog PhotoBody {..} = mkToLog "Processing PhotoBody:"
     [ ("Type"    , "photo")
     , ("Owner id", Text.showt pbOwnerId)
     , ("Media id", Text.showt pbId)
     , ("Url"     , pbUrl)
+    , ("Title"   , pbTitle)
     ] [("Access Key", pbAccessKey)]
 
 -- UrlAndSize --------------------------------------------------------------
@@ -412,21 +422,74 @@ instance Aeson.FromJSON Size where
     "w" -> pure W
     t   -> fail $ path <> ": unknown size: " <> Text.unpack t
 
+-- AudioMessageBody --------------------------------------------------------
+
+data AudioMessageBody = AudioMessageBody
+  { ambId        :: Integer
+  , ambOwnerId   :: Integer
+  , ambAccessKey :: Maybe Text
+  , ambUrl       :: Text
+  , ambTitle     :: Text
+  }
+
+instance Aeson.FromJSON AudioMessageBody where
+  parseJSON = Aeson.withObject (path <> "AudioMessageBody") $ \o -> do
+    ambId        <- o .:  "id"
+    ambOwnerId   <- o .:  "owner_id"
+    ambUrl       <- o .:  "link_ogg" <|> o .: "link_mp3"
+    ambAccessKey <- o .:? "access_key"
+    let ambTitle = urlToTitle ambUrl
+    pure AudioMessageBody {..}
+
+instance Loggable AudioMessageBody where
+  toLog AudioMessageBody {..} = mkToLog "Processing AudioMessageBody:"
+    [ ("Type"    , "audio_message")
+    , ("Owner id", Text.showt ambOwnerId)
+    , ("Media id", Text.showt ambId)
+    , ("Url"     , ambUrl)
+    , ("Title"   , ambTitle)
+    ] [("Access Key", ambAccessKey)]
+
 -- DocumentBody ------------------------------------------------------------
 
 data DocumentBody = DocumentBody
-  { dUrl    :: Text
-  , dTitle  :: Text
-  } deriving Generic
+  { dbUrl       :: Text
+  , dbTitle     :: Text
+  , dbId        :: Integer
+  , dbOwnerId   :: Integer
+  , dbType      :: Text
+  , dbAccessKey :: Maybe Text
+  }
 
 instance Aeson.FromJSON DocumentBody where
-  parseJSON = Aeson.parseJsonDrop
+  parseJSON = Aeson.withObject (path <> "DocumentBody") $ \o -> do
+    dbUrl       <- o .:  "url"
+    dbTitle     <- o .:  "title"
+    dbId        <- o .:  "id"
+    dbOwnerId   <- o .:  "owner_id"
+    dbTypeInt   <- o .:  "type"
+    dbAccessKey <- o .:? "access_key"
+    dbPreview   <- o .:? "preview"
+    dbPreviewG  <- traverse (.:? "graffiti") dbPreview
+    dbPreviewA  <- traverse (.:? "audio_message") dbPreview
+    let dbType = case join dbPreviewG :: Maybe Aeson.Object of
+          Just _ -> "graffiti"
+          _      -> case join dbPreviewA :: Maybe Aeson.Object of
+            Just _ -> "audio_message"
+            _      -> case dbTypeInt :: Integer of
+              3 -> "photo"
+              4 -> "photo"
+              _ -> "doc"
+    pure DocumentBody {..}
 
 instance Loggable DocumentBody where
   toLog DocumentBody {..} = mkToLog "Processing DocumentBody:"
-    [ ("Title", dTitle)
-    , ("Url"  ,dUrl)
-    ] []
+    [ ("Type"    , dbType)
+    , ("Owner id", Text.showt dbOwnerId)
+    , ("Media id", Text.showt dbId)
+    , ("Url"     , dbUrl)
+    , ("Title"   , dbTitle)
+    ] [("Access Key", dbAccessKey)]
 
 -- UploadServer ------------------------------------------------------------
 
@@ -529,6 +592,9 @@ instance Loggable MessageSended where
 instance HasPriority MessageSended where logData = logInfo . toLog
 
 -- FUNCTIONS ---------------------------------------------------------------
+
+urlToTitle :: Text -> Text
+urlToTitle = snd . Text.breakOnEnd "/"
 
 path :: String
 path = "App.Vk.Responses."
