@@ -4,7 +4,7 @@
 {-# LANGUAGE RecordWildCards        #-}
 {-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE UndecidableInstances   #-}
---{-# LANGUAGE AllowAmbiguousTypes    #-}
+{-# LANGUAGE LambdaCase             #-}
 
 module App.Vk.Converters
   ( AttachmentsState (..)
@@ -19,6 +19,7 @@ module App.Vk.Converters
   , mkContext
   , mkKeyboard
   , mkGetName
+  , mkGetName'
   , mkNotification
   , mkGetUpdates
   , mkSaveFile
@@ -165,6 +166,9 @@ mkContext Message {..}
 mkGetName :: FromId -> GetName
 mkGetName = GetName
 
+mkGetName' :: (Has FromId s, MonadState s m) => m GetName
+mkGetName' = GetName <$> grab
+
 mkSendMessage :: Message
               -> AttachmentsState
               -> Maybe Keyboard
@@ -229,6 +233,18 @@ mkCommandText Chat text user fromId
   = "@id" <> Text.showt (unFromId fromId) <> case user of
     Nothing           -> ", " <> text
     Just (UserName n) -> " (" <> n <> "), " <> text
+
+mkAppeal :: (Has Context s, Has FromId s, MonadState s m)
+              => Text
+              -> Maybe UserName
+              -> m Text
+mkAppeal text user = grab >>= \case
+  Private -> pure text
+  Chat    -> do
+    fromId <- Text.showt . unFromId <$> grab
+    pure $ "@id" <> fromId <> case user of
+      Nothing -> ", " <> text
+      Just name -> " (" <> unFirstName name <> "), " <> text
 
 mkKeyboard :: Maybe Keyboard
 mkKeyboard =

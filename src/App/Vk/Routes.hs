@@ -33,6 +33,7 @@ import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, execStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
+import Data.Functor           ( (<&>) )
 import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
@@ -72,6 +73,32 @@ routeUpdate (NewMessage msg) = logData msg >> case getter msg of
   Nothing  -> processMessage msg
   Just cmd -> processCommand msg cmd $ mkContext msg
 routeUpdate rest = logData rest
+
+--processMessage' msg = do
+--  continue <- evalState (processCommand' $ getter msg) msg
+
+--processCommand' Nothing  = pure True
+--processCommand' Just cmd = logData cmd >> case cmd of
+--  UnknownCommand -> pure True
+--  rest -> do
+--    name <- getName' context $ mFromId m
+--    text <- getCommandText
+--    sendMessage
+--      $ mkCommandReply m
+--      $ mkCommandText context text name
+--      $ mFromId m
+
+getName' :: ( Has FromId s
+            , Has Context s
+            , MonadEffects r m
+            , VkReader r m
+            , MonadState s m
+            , MonadThrow m
+            )
+         => m (Maybe UserName)
+getName' = grab >>= \case
+  Private -> pure Nothing
+  Chat    -> mkGetName' >>= withLog fromResponseR <&> listToMaybe
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
