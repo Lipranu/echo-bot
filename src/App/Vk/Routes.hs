@@ -94,17 +94,13 @@ getName' :: ( Has FromId s
             , VkReader r m
             , MonadState s m
             , MonadThrow m
+            , MonadCatch m
             )
          => m (Maybe UserName)
 getName' = grab >>= \case
   Private -> pure Nothing
-  Chat    -> do
-    name <- mkGetName'
-    response <- withLog fromResponseR name --`cathes` nameHandlers
-    pure $ listToMaybe response
---  where 
---      . handle (\
---      . withLog fromResponseR -- <&> listToMaybe
+  Chat    -> mkGetName'
+    >>= fmap listToMaybe . withLog fromResponseWithHandleR
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
@@ -245,6 +241,22 @@ fromResponseR, fromResponseU
   -> m output
 fromResponseR = fromResponse @ResponseException @output
 fromResponseU = fromResponse @UploadException   @output
+
+fromResponseWithHandleR
+  :: forall output input env m
+   . ( FromJSON output
+     , MonadCatch m
+     , MonadEffects env m
+     , MonadThrow m
+     , Monoid output
+     , ToRequest m input
+     )
+  => input
+  -> m output
+fromResponseWithHandleR = fromResponseWithHandle
+  @ResponseException
+  @output
+  handlers
 
 fromValues :: (FromJSON a, MonadCatch m, HasLogger r m)
            => (a -> m ())

@@ -10,6 +10,7 @@ module App.Shared.Routes
   , MonadRepetitions
   , Repetitions
   , fromResponse
+  , fromResponseWithHandle
   , getRepeats
   , putRepeats
   , handleValues
@@ -118,9 +119,25 @@ fromResponse :: forall error output input env m
              -> m output
 fromResponse x = requestAndDecode x >>= handleResponse @error
 
-handleValues :: (FromJSON a, MonadCatch m)
-             => [Handler m ()]
-             -> (a -> m ())
+fromResponseWithHandle
+  :: forall error output input env m
+   . ( Exception error
+     , FromJSON error
+     , FromJSON output
+     , HasRequester env m
+     , MonadCatch m
+     , Monoid output
+     , ToRequest m input
+     )
+  => [Handler m output]
+  -> input
+  -> m output
+fromResponseWithHandle handler x =
+  fromResponse @error @output x `catches` handler
+
+handleValues :: (Monoid output, FromJSON a, MonadCatch m)
+             => [Handler m output]
+             -> (a -> m output)
              -> [Value]
              -> m ()
 handleValues handlers f = traverse_ handle
