@@ -126,10 +126,10 @@ handleValues :: (FromJSON a, MonadCatch m)
 handleValues handlers f = traverse_ handle
   where handle x = (parse x >>= f) `catches` handlers
 
-sharedHandlers :: HasLogger env m => [Handler m () ]
+sharedHandlers :: (Monoid output, HasLogger env m) => [Handler m output]
 sharedHandlers =
-  [ Handler $ \(e :: HttpException)   -> logError $ toLog e
-  , Handler $ \(e :: DecodeException) -> logError $ toLog e
+  [ Handler $ \(e :: HttpException)   -> logData e >> pure mempty
+  , Handler $ \(e :: DecodeException) -> logData e >> pure mempty
   ]
 
 start, shutdown :: HasLogger env m => m ()

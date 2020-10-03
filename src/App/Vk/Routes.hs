@@ -98,7 +98,13 @@ getName' :: ( Has FromId s
          => m (Maybe UserName)
 getName' = grab >>= \case
   Private -> pure Nothing
-  Chat    -> mkGetName' >>= withLog fromResponseR <&> listToMaybe
+  Chat    -> do
+    name <- mkGetName'
+    response <- withLog fromResponseR name --`cathes` nameHandlers
+    pure $ listToMaybe response
+--  where 
+--      . handle (\
+--      . withLog fromResponseR -- <&> listToMaybe
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
@@ -246,8 +252,8 @@ fromValues :: (FromJSON a, MonadCatch m, HasLogger r m)
            -> m ()
 fromValues = handleValues handlers
 
-handlers :: HasLogger r m => [Handler m () ]
+handlers :: (Monoid output, HasLogger env m) => [Handler m output]
 handlers = sharedHandlers <>
-  [ Handler $ \(e :: ResponseException) -> logError $ toLog e
-  , Handler $ \(e :: UploadException)   -> logError $ toLog e
+  [ Handler $ \(e :: ResponseException) -> logData e >> pure mempty
+  , Handler $ \(e :: UploadException)   -> logData e >> pure mempty
   ]
