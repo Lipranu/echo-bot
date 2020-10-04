@@ -9,6 +9,7 @@ module App.Shared.Routes
   ( MonadEffects
   , MonadRepetitions
   , Repetitions
+  , Key
   , fromResponse
   , fromResponseWithHandle
   , getRepeats
@@ -64,15 +65,15 @@ type MonadRepetitions r m =
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-getRepeats :: (MonadRepetitions r m, Has Key a) => a -> m (Maybe Int)
+getRepeats :: (MonadRepetitions r m) => Key -> m (Maybe Int)
 getRepeats key = do
   rep <- liftIO . readIORef =<< obtain @(IORef Repetitions)
-  return $ lookup (getter key) rep
+  return $ lookup key rep
 
-putRepeats :: (MonadRepetitions r m, Has Key a) => a -> Int -> m ()
-putRepeats key value = do
+putRepeats :: (MonadRepetitions r m) => Int -> Key -> m ()
+putRepeats value key = do
   map <- obtain @(IORef Repetitions)
-  liftIO $ modifyIORef' map $ insert (getter key) value
+  liftIO $ modifyIORef' map $ insert key value
 
 inputLog :: (HasPriority input, HasLogger env m)
          => (input -> m output)
