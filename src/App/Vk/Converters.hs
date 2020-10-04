@@ -15,6 +15,7 @@ module App.Vk.Converters
   , ToUploadRequests (..)
   , docToPhoto
   , mkCommandReply
+  , mkCommandReply'
   , mkCommandText
   , mkContext
   , mkKeyboard
@@ -202,6 +203,26 @@ mkCommandReply Message {..} text randomId =
       smForwardsId  = Nothing
       smMessage     = Just text
    in SendMessage {..}
+
+mkCommandReply' :: ( Has Context s
+                   , Has FromId s
+                   , Has PeerId s
+                   , MonadState s m
+                   )
+                => Text
+                -> Maybe UserName
+                -> m (Int -> SendMessage)
+mkCommandReply' text user = do
+  let smLatitude    = Nothing
+      smLongitude   = Nothing
+      smStickerId   = Nothing
+      smKeyboard    = Nothing
+      smAttachments = Nothing
+      smReplyId     = Nothing
+      smForwardsId  = Nothing
+  smPeerId  <- grab
+  smMessage <- Just <$> mkAppeal text user
+  pure $ \smRandomId -> SendMessage {..}
 
 mkNotification :: Context
                -> Maybe UserName

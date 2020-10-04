@@ -33,7 +33,6 @@ import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, execStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
-import Data.Functor           ( (<&>) )
 import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
@@ -77,16 +76,32 @@ routeUpdate rest = logData rest
 --processMessage' msg = do
 --  continue <- evalState (processCommand' $ getter msg) msg
 
---processCommand' Nothing  = pure True
---processCommand' Just cmd = logData cmd >> case cmd of
---  UnknownCommand -> pure True
---  rest -> do
---    name <- getName' context $ mFromId m
---    text <- getCommandText
---    sendMessage
---      $ mkCommandReply m
---      $ mkCommandText context text name
---      $ mFromId m
+processCommand' :: ( MonadEffects env m
+                   , MonadRepetitions env m
+                   , MonadState s m
+                   , AppReader env m
+                   , Has Key s
+                   , Has PeerId s
+                   , Has FromId s
+                   , Has Context s
+                   , MonadCatch m
+                   )
+                => Maybe Command
+                -> m Bool
+processCommand' Nothing    = pure True
+processCommand' (Just cmd) = logData cmd >> case cmd of
+  UnknownCommand _ -> pure True
+  Help             -> (unHelpText <$> obtain) >>= replyCommand >> pure False
+  NewCount i       -> replyCommand ("Repeat count set to: " <> showt i)
+                   >> pure False
+  Repeat           -> do
+    text    <- unRepeatText    <$> obtain
+    def     <- unDefaultRepeat <$> obtain
+    current <- getRepeats      =<< grab
+    let repeats = fromMaybe def current
+    replyCommand $ text <> "\nCurrent repeat count: " <> showt repeats
+    pure False
+  where replyCommand text = getName' >>= mkCommandReply' text >>= sendMessage
 
 getName' :: ( Has FromId s
             , Has Context s
@@ -129,7 +144,7 @@ processCommand m command context = do
     $ mFromId m
   where
     performCommand = logData command >> case command of
-      NewCount i       -> putRepeats m i
+      NewCount i       -> putRepeats i $ getter m
       UnknownCommand c -> processMessage m
       _                -> pure ()
 
@@ -140,7 +155,7 @@ processCommand m command context = do
       Repeat           -> do
         text    <- unRepeatText    <$> obtain
         def     <- unDefaultRepeat <$> obtain
-        repeats <- fromMaybe def   <$> getRepeats m
+        repeats <- fromMaybe def   <$> getRepeats (getter m)
         pure $ text <> "\nCurrent repeat count: " <> showt repeats
 
 getName :: (MonadEffects r m, VkReader r m, MonadThrow m) => Context -> FromId -> m (Maybe UserName)
@@ -162,7 +177,7 @@ processMessage m = do
   (keyboard, repeats) <- findUser
   let sm = mkSendMessage m aState keyboard
   replicateM_ repeats $ sendMessage sm
-  where findUser = getRepeats m >>= \case
+  where findUser = getRepeats (getter m) >>= \case
           Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
           Just i  -> pure (Nothing, i)
 
