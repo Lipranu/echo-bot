@@ -10,6 +10,7 @@ module App.Shared.Routes
   , MonadRepetitions
   , Repetitions
   , Key
+  , resultWithHandle
   , fromResponse
   , fromResponseWithHandle
   , getRepeats
@@ -33,6 +34,7 @@ import Infrastructure.Requester
 import App.Shared.Responses
 import App.Shared.Config
 
+import Control.Monad          ( foldM )
 import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow
                               , MonadCatch, throwM, catches
                               )
@@ -68,7 +70,7 @@ type MonadRepetitions r m =
 getRepeats :: (MonadRepetitions r m) => Key -> m (Maybe Int)
 getRepeats key = do
   rep <- liftIO . readIORef =<< obtain @(IORef Repetitions)
-  return $ lookup key rep
+  pure $ lookup key rep
 
 putRepeats :: (MonadRepetitions r m) => Int -> Key -> m ()
 putRepeats value key = do
@@ -130,24 +132,32 @@ fromResponseWithHandle
      , Monoid output
      , ToRequest m input
      )
-  => [Handler m output]
+  => (output -> [Handler m output])
   -> input
   -> m output
-fromResponseWithHandle handler x =
-  fromResponse @error @output x `catches` handler
+fromResponseWithHandle handlers x =
+  fromResponse @error @output x `catches` handlers mempty
 
 handleValues :: (Monoid output, FromJSON a, MonadCatch m)
-             => [Handler m output]
+             => (output -> [Handler m output])
              -> (a -> m output)
              -> [Value]
              -> m ()
 handleValues handlers f = traverse_ handle
-  where handle x = (parse x >>= f) `catches` handlers
+  where handle x = (parse x >>= f) `catches` handlers mempty
 
-sharedHandlers :: (Monoid output, HasLogger env m) => [Handler m output]
-sharedHandlers =
-  [ Handler $ \(e :: HttpException)   -> logData e >> pure mempty
-  , Handler $ \(e :: DecodeException) -> logData e >> pure mempty
+resultWithHandle :: (FromJSON a, MonadCatch m)
+                 => ([output] -> [Handler m [output]])
+                 -> (a -> m output)
+                 -> [Value]
+                 -> m [output]
+resultWithHandle handlers f = foldM collect []
+  where collect xs x = (parse x >>= f >>= pure . (:xs)) `catches` handlers xs
+
+sharedHandlers :: HasLogger env m => output -> [Handler m output]
+sharedHandlers output =
+  [ Handler $ \(e :: HttpException)   -> logData e >> pure output
+  , Handler $ \(e :: DecodeException) -> logData e >> pure output
   ]
 
 start, shutdown :: HasLogger env m => m ()
