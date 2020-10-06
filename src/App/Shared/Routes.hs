@@ -6,23 +6,23 @@
 {-# LANGUAGE TypeApplications    #-}
 
 module App.Shared.Routes
-  ( MonadEffects
+  ( Key
+  , MonadEffects
   , MonadRepetitions
   , Repetitions
-  , Key
-  , resultWithHandle
   , fromResponse
-  , fromResponseWithHandle
+  , fromResponseH
+  , fromValues
+  , fromValues_
   , getRepeats
+  , handlers
+  , inputLog
+  , outputLog
   , putRepeats
-  , handleValues
-  , sharedHandlers
   , shutdown
   , start
   , withLog
   , withLog_
-  , inputLog
-  , outputLog
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -34,7 +34,7 @@ import Infrastructure.Requester
 import App.Shared.Responses
 import App.Shared.Config
 
-import Control.Monad          ( foldM )
+import Control.Monad          ( (>=>) )
 import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow
                               , MonadCatch, throwM, catches
                               )
@@ -67,62 +67,66 @@ type MonadRepetitions r m =
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-getRepeats :: (MonadRepetitions r m) => Key -> m (Maybe Int)
+getRepeats :: MonadRepetitions env m => Key -> m (Maybe Int)
 getRepeats key = do
-  rep <- liftIO . readIORef =<< obtain @(IORef Repetitions)
-  pure $ lookup key rep
+  rep <- obtain @(IORef Repetitions)
+  map <- liftIO $ readIORef rep
+  pure $ lookup key map
 
-putRepeats :: (MonadRepetitions r m) => Int -> Key -> m ()
+putRepeats :: MonadRepetitions env m => Int -> Key -> m ()
 putRepeats value key = do
   map <- obtain @(IORef Repetitions)
-  liftIO $ modifyIORef' map $ insert key value
+  let f = insert key value
+  liftIO $ modifyIORef' map f
 
-inputLog :: (HasPriority input, HasLogger env m)
-         => (input -> m output)
-         -> input
-         -> m output
+inputLog
+  :: (HasPriority input, HasLogger env m)
+  => (input -> m output)
+  -> input
+  -> m output
 inputLog f x = logData x >> f x
 
-outputLog :: (HasPriority output, HasLogger env m)
-          => output
-          -> m output
+outputLog
+  :: (HasPriority output, HasLogger env m)
+  => output
+  -> m output
 outputLog x = logData x >> pure x
 
-withLog :: (HasPriority input, HasPriority output, HasLogger env m)
-        => (input -> m output)
-        -> input
-        -> m output
-withLog f x = inputLog f x >>= outputLog
+withLog
+  :: (HasPriority input, HasPriority output, HasLogger env m)
+  => (input -> m output)
+  -> input
+  -> m output
+withLog f = inputLog f >=> outputLog
 
-withLog_ :: (HasPriority input, HasPriority output, HasLogger env m)
-         => (input -> m output)
-         -> input
-         -> m ()
-withLog_ f x = inputLog f x >>= logData
+withLog_
+  :: (HasPriority input, HasPriority output, HasLogger env m)
+  => (input -> m output)
+  -> input
+  -> m ()
+withLog_ f = inputLog f >=> logData
 
-handleResponse :: ( Exception  error
-                  , FromJSON   error
-                  , FromJSON   output
-                  , MonadThrow m
-                  )
-               => Response error output
-               -> m output
-handleResponse (Success x) = return x
+handleResponse
+  :: (Exception error, FromJSON error, FromJSON output, MonadThrow m)
+  => Response error output
+  -> m output
+handleResponse (Success x) = pure   x
 handleResponse (Error   e) = throwM e
 
-fromResponse :: forall error output input env m
-              . ( Exception    error
-                , FromJSON     error
-                , FromJSON     output
-                , HasRequester env m
-                , MonadThrow   m
-                , ToRequest    m input
-                )
-             => input
-             -> m output
-fromResponse x = requestAndDecode x >>= handleResponse @error
+fromResponse
+  :: forall error output input env m
+   . ( Exception error
+     , FromJSON error
+     , FromJSON output
+     , HasRequester env m
+     , MonadThrow m
+     , ToRequest m input
+     )
+  => input
+  -> m output
+fromResponse = requestAndDecode >=> handleResponse @error
 
-fromResponseWithHandle
+fromResponseH
   :: forall error output input env m
    . ( Exception error
      , FromJSON error
@@ -132,32 +136,33 @@ fromResponseWithHandle
      , Monoid output
      , ToRequest m input
      )
-  => (output -> [Handler m output])
+  => ([Handler m output])
   -> input
   -> m output
-fromResponseWithHandle handlers x =
-  fromResponse @error @output x `catches` handlers mempty
+fromResponseH handlers x = fromResponse @error @output x `catches` handlers
 
-handleValues :: (Monoid output, FromJSON a, MonadCatch m)
-             => (output -> [Handler m output])
-             -> (a -> m output)
-             -> [Value]
-             -> m ()
-handleValues handlers f = traverse_ handle
-  where handle x = (parse x >>= f) `catches` handlers mempty
+fromValues_
+  :: (FromJSON input, MonadCatch m)
+  => ([Handler m ()])
+  -> (input -> m ())
+  -> [Value]
+  -> m ()
+fromValues_ handlers f = traverse_ go
+  where go x = (parse >=> f) x `catches` handlers
 
-resultWithHandle :: (FromJSON a, MonadCatch m)
-                 => ([output] -> [Handler m [output]])
-                 -> (a -> m output)
-                 -> [Value]
-                 -> m [output]
-resultWithHandle handlers f = foldM collect []
-  where collect xs x = (parse x >>= f >>= pure . (:xs)) `catches` handlers xs
+fromValues
+  :: (FromJSON input, MonadCatch m)
+  => ([Handler m output])
+  -> (input -> m output)
+  -> [Value]
+  -> m [output]
+fromValues handlers f = traverse go
+  where go x = (parse >=> f) x `catches` handlers
 
-sharedHandlers :: HasLogger env m => output -> [Handler m output]
-sharedHandlers output =
-  [ Handler $ \(e :: HttpException)   -> logData e >> pure output
-  , Handler $ \(e :: DecodeException) -> logData e >> pure output
+handlers :: (Monoid output, HasLogger env m) => [Handler m output]
+handlers =
+  [ Handler $ \(e :: HttpException)   -> logData e >> pure mempty
+  , Handler $ \(e :: DecodeException) -> logData e >> pure mempty
   ]
 
 start, shutdown :: HasLogger env m => m ()
