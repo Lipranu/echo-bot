@@ -17,7 +17,12 @@ module App.Vk.Routes
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Shared.Config
-import App.Shared.Routes
+import App.Shared.Routes hiding ( fromValues
+                                , fromValues_
+                                , fromResponse
+                                , fromResponseH
+                                , handlers
+                                )
 
 import App.Vk.Config     ( VkReader )
 import App.Vk.Converters
@@ -28,10 +33,12 @@ import Infrastructure.Has
 import Infrastructure.Logger    hiding ( Priority (..) )
 import Infrastructure.Requester
 
-import Control.Monad          ( replicateM_ )
+import qualified App.Shared.Routes as Shared
+
+import Control.Monad          ( (>=>), replicateM_, when )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
-import Control.Monad.State    ( MonadState, execStateT, modify )
+import Control.Monad.State    ( MonadState, execStateT, evalStateT, runStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
@@ -56,7 +63,7 @@ getUpdates :: ( AppReader r m
            => GetUpdates
            -> m ()
 getUpdates gu = withLog requestAndDecode gu >>= \case
-  Updates xs ts -> fromValues routeUpdate xs >> getUpdates gu { guTs = ts }
+  Updates xs ts -> fromValues_ routeUpdate xs >> getUpdates gu { guTs = ts }
   OutOfDate ts  -> getUpdates gu { guTs = showt ts }
   rest          -> getLongPollServer >>= getUpdates
 
@@ -73,8 +80,11 @@ routeUpdate (NewMessage msg) = logData msg >> case getter msg of
   Just cmd -> processCommand msg cmd $ mkContext msg
 routeUpdate rest = logData rest
 
---processMessage' msg = do
---  continue <- evalState (processCommand' $ getter msg) msg
+processMessage' msg = do
+  continue <- evalStateT (processCommand' $ getter msg) msg
+  when continue $ do
+    (attachments, message) <- runStateT (pure (0,msg)) msg
+    pure ()
 
 processCommand' :: ( MonadEffects env m
                    , MonadRepetitions env m
@@ -114,8 +124,7 @@ getName' :: ( Has FromId s
          => m (Maybe UserName)
 getName' = grab >>= \case
   Private -> pure Nothing
-  Chat    -> mkGetName'
-    >>= fmap listToMaybe . withLog fromResponseWithHandleR
+  Chat    -> mkGetName' >>= fmap listToMaybe . withLog fromResponseH
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
@@ -173,7 +182,7 @@ processMessage :: ( Applicative m
                -> m ()
 processMessage m = do
   aState  <- execStateT
-    (fromValues routeAttachment $ mAttachments m) $ mkState m
+    (fromValues_ routeAttachment $ mAttachments m) $ mkState m
   (keyboard, repeats) <- findUser
   let sm = mkSendMessage m aState keyboard
   replicateM_ repeats $ sendMessage sm
@@ -195,15 +204,15 @@ routeAttachment a = logData a >> case a of
   Attachment   body -> addAttachment body
   Photo        body -> fromContext   body
   Document     body -> fromType      body
-  AudioMessage body -> toUploadRequests body >>= processDocument
+  AudioMessage body -> toUploadRequests >=> processDocument $ body
   Sticker      id   -> addSticker    id
   where fromContext x = grab >>= \case
           Private -> addAttachment x
-          Chat    -> toUploadRequests x >>= processDocument
+          Chat    -> toUploadRequests >=> processDocument $ x
         fromType doc  = case dbType doc of
           "graffiti" -> sendNotification "graffiti"
-          "photo"    -> toUploadRequests (docToPhoto doc) >>= processDocument
-          _          -> toUploadRequests doc              >>= processDocument
+          "photo"    -> toUploadRequests >=> processDocument $ docToPhoto doc
+          _          -> toUploadRequests >=> processDocument $ doc
 
 sendNotification :: ( MonadEffects r m
                     , MonadIO m
@@ -254,10 +263,10 @@ fromResponseR, fromResponseU
    . (ToRequest m input, FromJSON output, MonadThrow m, HasRequester env m)
   => input
   -> m output
-fromResponseR = fromResponse @ResponseException @output
-fromResponseU = fromResponse @UploadException   @output
+fromResponseR = Shared.fromResponse @ResponseException @output
+fromResponseU = Shared.fromResponse @UploadException   @output
 
-fromResponseWithHandleR
+fromResponseH
   :: forall output input env m
    . ( FromJSON output
      , MonadCatch m
@@ -268,19 +277,24 @@ fromResponseWithHandleR
      )
   => input
   -> m output
-fromResponseWithHandleR = fromResponseWithHandle
-  @ResponseException
-  @output
-  handlers
+fromResponseH = Shared.fromResponseH @ResponseException @output handlers
 
-fromValues :: (FromJSON a, MonadCatch m, HasLogger r m)
-           => (a -> m ())
-           -> [Value]
-           -> m ()
-fromValues = handleValues handlers
+fromValues_
+  :: (FromJSON a, MonadCatch m, HasLogger r m)
+  => (a -> m ())
+  -> [Value]
+  -> m ()
+fromValues_ = Shared.fromValues_ handlers
+
+fromValues
+  :: (Monoid output, FromJSON input, MonadCatch m, HasLogger env m)
+  => (input -> m output)
+  -> [Value]
+  -> m [output]
+fromValues = Shared.fromValues handlers
 
 handlers :: (Monoid output, HasLogger env m) => [Handler m output]
-handlers = sharedHandlers <>
+handlers = Shared.handlers <>
   [ Handler $ \(e :: ResponseException) -> logData e >> pure mempty
   , Handler $ \(e :: UploadException)   -> logData e >> pure mempty
   ]

@@ -12,7 +12,7 @@ import Infrastructure.Logger    ( Logger, Lock, mkLogger )
 import Infrastructure.Requester ( Requester, mkRequester )
 
 import App.Shared
-import App.Shared.Routes
+import App.Shared.Routes        ( Repetitions, start, shutdown )
 import App.Shared.Config hiding ( Config )
 
 import App.Vk.Config
@@ -53,28 +53,28 @@ instance Has (IORef Repetitions)   Env where getter = envRepetitions
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App Env ()
-app = start
-  >> (getLongPollServer >>= getUpdates) `catches` handlers
-  >> shutdown
+app = start >> loop >> shutdown
+  where loop = (getLongPollServer >>= getUpdates) `catches` handlers
 
-mkApp :: Config
-      -> Shared.Config
-      -> Logger.Config
-      -> Lock
-      -> IORef Repetitions
-      -> Manager
-      -> Env
-mkApp Config {..} Shared.Config {..} logger lock ref manager =
-  let envLock          = lock
-      envLogger        = mkLogger logger "Vk"
-      envToken         = cToken
-      envGroup         = cGroup
-      envRequester     = mkRequester manager
-      envDefaultRepeat = cDefaultRepeat
-      envRepeatText    = cRepeatText
-      envHelpText      = cHelpText
-      envRepetitions   = ref
-   in Env {..}
+mkApp
+  :: Config
+  -> Shared.Config
+  -> Logger.Config
+  -> Lock
+  -> IORef Repetitions
+  -> Manager
+  -> Env
+mkApp Config {..} Shared.Config {..} logger lock ref manager = Env
+  { envLock          = lock
+  , envLogger        = mkLogger logger "Vk"
+  , envToken         = cToken
+  , envGroup         = cGroup
+  , envRequester     = mkRequester manager
+  , envDefaultRepeat = cDefaultRepeat
+  , envRepeatText    = cRepeatText
+  , envHelpText      = cHelpText
+  , envRepetitions   = ref
+  }
 
 runApp :: Env -> IO ()
 runApp = runReaderT (unApp app)
