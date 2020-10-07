@@ -182,13 +182,6 @@ mkNotification aType user = do
     Private -> Just . unMessageId <$> grab
   mkReply replyId text user
 
-mkCommandText :: Context -> Text -> Maybe UserName -> FromId -> Text
-mkCommandText Private text _ _ = text
-mkCommandText Chat text user fromId
-  = "@id" <> Text.showt (unFromId fromId) <> case user of
-    Nothing           -> ", " <> text
-    Just (UserName n) -> " (" <> n <> "), " <> text
-
 mkAppeal
   :: (Has Context s, Has FromId s, MonadState s m)
   => Text
