@@ -110,20 +110,20 @@ processCommand (Just cmd) = logData cmd >> case cmd of
   UnknownCommand _ -> pure True
   Help             -> do
     text <- unHelpText <$> obtain
-    replyCommand text
+    reply text
     pure False
   NewCount i       -> do
     putRepeats i =<< grab
-    replyCommand $ "Repeat count set to: " <> showt i
+    reply $ "Repeat count set to: " <> showt i
     pure False
   Repeat           -> do
     text    <- unRepeatText    <$> obtain
     def     <- unDefaultRepeat <$> obtain
     current <- getRepeats      =<< grab
     let repeats = fromMaybe def current
-    replyCommand $ text <> "\nCurrent repeat count: " <> showt repeats
+    reply $ text <> "\nCurrent repeat count: " <> showt repeats
     pure False
-  where replyCommand text = getName >>= mkCommandReply text >>= sendMessage
+  where reply text = getName >>= mkCommandReply text >>= sendMessage
 
 getName
   :: ( Has FromId s
@@ -155,15 +155,15 @@ processAttachment
      )
   => Attachment
   -> m (Maybe Text)
-processAttachment Graffiti     = sendNotification "graffiti" >> pure Nothing
-processAttachment (Sticker id) = addSticker id >> pure Nothing
+processAttachment Graffiti     = notify "graffiti" >> pure Nothing
+processAttachment (Sticker id) = addSticker id     >> pure Nothing
 processAttachment (Attachment   body) = addAttachment body
 processAttachment (AudioMessage body) = uploadAttachment body
 processAttachment (Photo        body) = grab >>= \case
   Private -> addAttachment body
   Chat    -> uploadAttachment body
 processAttachment (Document     body) = case dbType body of
-  "graffiti" -> sendNotification "graffiti" >> pure Nothing
+  "graffiti" -> notify "graffiti" >> pure Nothing
   "photo"    -> uploadAttachment $ docToPhoto body
   _          -> uploadAttachment body
 
@@ -181,23 +181,21 @@ uploadAttachment
   -> m (Maybe Text)
 uploadAttachment = toUploadRequests >=> processDocument
 
-sendNotification
-  :: ( MonadEffects r m
-     , MonadIO m
-     , MonadState Message m
-     , MonadThrow m
+notify
+  :: ( Has Context s
+     , Has FromId s
+     , Has MessageId s
+     , Has PeerId s
      , MonadCatch m
-     , VkReader r m
+     , MonadEffects env m
+     , MonadIO m
+     , MonadState s m
+     , MonadThrow m
+     , VkReader env m
      )
   => Text
   -> m ()
-sendNotification aType = do
-  peerId    <- grab
-  fromId    <- grab
-  messageId <- grab
-  context   <- grab
-  name      <- getName
-  sendMessage $ mkNotification context name messageId fromId peerId aType
+notify aType = getName >>= mkNotification aType >>= sendMessage
 
 addAttachment
   :: forall input m

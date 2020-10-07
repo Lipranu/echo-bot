@@ -14,7 +14,6 @@ module App.Vk.Converters
   , ToUploadRequests (..)
   , docToPhoto
   , mkCommandReply
-  , mkCommandText
   , mkKeyboard
   , mkGetName
   , mkNotification
@@ -141,46 +140,47 @@ mkSendMessage Message {..} attachments keyboard randomId =
       listToText xs = Just $ Text.intercalate "," xs
    in SendMessage {..}
 
-mkCommandReply
+mkReply
   :: (Has Context s, Has FromId s, Has PeerId s, MonadState s m)
-  => Text
+  => Maybe Integer
+  -> Text
   -> Maybe UserName
   -> m (Int -> SendMessage)
-mkCommandReply text user = do
+mkReply replyId text user = do
   let smLatitude    = Nothing
       smLongitude   = Nothing
       smStickerId   = Nothing
       smKeyboard    = Nothing
       smAttachments = Nothing
-      smReplyId     = Nothing
       smForwardsId  = Nothing
+      smReplyId     = replyId
   smPeerId  <- grab
   smMessage <- Just <$> mkAppeal text user
   pure $ \smRandomId -> SendMessage {..}
 
-mkNotification :: Context
-               -> Maybe UserName
-               -> MessageId
-               -> FromId
-               -> PeerId
-               -> Text
-               -> Int
-               -> SendMessage
-mkNotification context user messageId fromId peerId mType randomId =
-  let smPeerId      = peerId
-      smRandomId    = randomId
-      smLatitude    = Nothing
-      smLongitude   = Nothing
-      smStickerId   = Nothing
-      smKeyboard    = Nothing
-      smAttachments = Nothing
-      smForwardsId  = Nothing
-      smMessage     = Just $ mkCommandText context text user fromId
-      text          = "Can't send message of type: " <> mType
-      smReplyId     = case context of
-        Chat    -> Nothing
-        Private -> Just $ unMessageId messageId
-   in SendMessage {..}
+mkCommandReply
+  :: (Has Context s, Has FromId s, Has PeerId s, MonadState s m)
+  => Text
+  -> Maybe UserName
+  -> m (Int -> SendMessage)
+mkCommandReply = mkReply Nothing
+
+mkNotification
+  :: ( Has Context s
+     , Has FromId s
+     , Has MessageId s
+     , Has PeerId s
+     , MonadState s m
+     )
+  => Text
+  -> Maybe UserName
+  -> m (Int -> SendMessage)
+mkNotification aType user = do
+  let text = "Can't send message of type: " <> aType
+  replyId <- grab >>= \case
+    Chat    -> pure Nothing
+    Private -> Just . unMessageId <$> grab
+  mkReply replyId text user
 
 mkCommandText :: Context -> Text -> Maybe UserName -> FromId -> Text
 mkCommandText Private text _ _ = text
@@ -189,16 +189,17 @@ mkCommandText Chat text user fromId
     Nothing           -> ", " <> text
     Just (UserName n) -> " (" <> n <> "), " <> text
 
-mkAppeal :: (Has Context s, Has FromId s, MonadState s m)
-              => Text
-              -> Maybe UserName
-              -> m Text
+mkAppeal
+  :: (Has Context s, Has FromId s, MonadState s m)
+  => Text
+  -> Maybe UserName
+  -> m Text
 mkAppeal text user = grab >>= \case
   Private -> pure text
   Chat    -> do
     fromId <- Text.showt . unFromId <$> grab
     pure $ "@id" <> fromId <> case user of
-      Nothing -> ", " <> text
+      Nothing   -> ", " <> text
       Just name -> " (" <> unFirstName name <> "), " <> text
 
 mkKeyboard :: Maybe Keyboard
