@@ -35,16 +35,16 @@ import App.Shared.Responses
 import App.Shared.Config
 
 import Control.Monad          ( (>=>) )
-import Control.Monad.Catch    ( Handler (..), Exception, MonadThrow
-                              , MonadCatch, throwM, catches
+import Control.Monad.Catch    ( Exception, Handler (..), MonadCatch
+                              , MonadThrow, catches, throwM
                               )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( MonadReader )
 import Data.Aeson.Extended    ( FromJSON, Value )
+import Data.Foldable          ( traverse_ )
 import Data.IORef             ( IORef, readIORef, modifyIORef' )
 import Data.Map.Strict        ( Map, lookup, insert )
 import Data.Text              ( Text )
-import Data.Foldable          ( traverse_ )
 import Network.HTTP.Client    ( HttpException )
 
 import Prelude         hiding ( lookup )
@@ -118,46 +118,55 @@ fromResponse
    . ( Exception error
      , FromJSON error
      , FromJSON output
-     , HasRequester env m
+     , HasPriority input
+     , HasPriority output
+     , MonadEffects env m
      , MonadThrow m
      , ToRequest m input
      )
   => input
   -> m output
-fromResponse = requestAndDecode >=> handleResponse @error
+fromResponse = withLog (requestAndDecode >=> handleResponse @error)
 
 fromResponseH
   :: forall error output input env m
    . ( Exception error
      , FromJSON error
      , FromJSON output
-     , HasRequester env m
+     , HasPriority input
+     , HasPriority output
      , MonadCatch m
+     , MonadEffects env m
      , Monoid output
      , ToRequest m input
      )
-  => ([Handler m output])
+  => [Handler m output]
   -> input
   -> m output
 fromResponseH handlers x = fromResponse @error @output x `catches` handlers
 
 fromValues_
-  :: (FromJSON input, MonadCatch m)
-  => ([Handler m ()])
+  :: (FromJSON input, MonadCatch m, HasLogger env m, HasPriority input)
+  => [Handler m ()]
   -> (input -> m ())
   -> [Value]
   -> m ()
 fromValues_ handlers f = traverse_ go
-  where go x = (parse >=> f) x `catches` handlers
+  where go x = (parse >=> inputLog f) x `catches` handlers
 
 fromValues
-  :: (FromJSON input, MonadCatch m)
-  => ([Handler m output])
+  :: ( FromJSON input
+     , HasLogger env m
+     , HasPriority input
+     , HasPriority output
+     , MonadCatch m
+     )
+  => [Handler m output]
   -> (input -> m output)
   -> [Value]
   -> m [output]
 fromValues handlers f = traverse go
-  where go x = (parse >=> f) x `catches` handlers
+  where go x = (parse >=> withLog f) x `catches` handlers
 
 handlers :: (Monoid output, HasLogger env m) => [Handler m output]
 handlers =
