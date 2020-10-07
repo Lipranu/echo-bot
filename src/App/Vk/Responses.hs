@@ -11,6 +11,7 @@ module App.Vk.Responses
   , AttachmentBody (..)
   , AudioMessageBody (..)
   , Command (..)
+  , Context (..)
   , DocumentBody (..)
   , FileSaved (..)
   , FileUploaded (..)
@@ -247,6 +248,13 @@ instance Loggable Message where
 
 instance HasPriority Message where logData = logDebug . toLog
 
+instance Has PeerId Message where getter = mPeerId
+instance Has FromId Message where getter = mFromId
+
+instance Has Context Message where
+  getter Message {..} | unFromId mFromId == unPeerId mPeerId = Private
+                      | otherwise                            = Chat
+
 instance Has Key Message where
   getter Message {..} = (unFromId mFromId, unPeerId mPeerId)
 
@@ -254,6 +262,10 @@ instance Has (Maybe Command) Message where
   getter Message {..} = case mPayload of
     Nothing            -> Nothing
     Just (Payload _ c) -> Just c
+
+-- Context -----------------------------------------------------------------
+
+data Context = Private | Chat deriving Eq
 
 -- Payload -----------------------------------------------------------------
 

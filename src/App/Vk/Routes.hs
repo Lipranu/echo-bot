@@ -50,18 +50,20 @@ type AppReader r m = (SharedReader r m, VkReader r m)
 
 -- FUNCTIONS ---------------------------------------------------------------
 
-getLongPollServer :: (VkReader r m, MonadEffects r m, MonadThrow m)
-                  => m GetUpdates
+getLongPollServer
+  :: (VkReader r m, MonadEffects r m, MonadThrow m)
+  => m GetUpdates
 getLongPollServer = mkGetUpdates <$> withLog fromResponseR GetLongPollServer
 
-getUpdates :: ( AppReader r m
-              , MonadCatch m
-              , MonadEffects r m
-              , MonadRepetitions r m
-              , MonadThrow m
-              )
-           => GetUpdates
-           -> m ()
+getUpdates
+  :: ( AppReader r m
+     , MonadCatch m
+     , MonadEffects r m
+     , MonadRepetitions r m
+     , MonadThrow m
+     )
+  => GetUpdates
+  -> m ()
 getUpdates gu = withLog requestAndDecode gu >>= \case
   Updates xs ts -> fromValues_ routeUpdate xs >> getUpdates gu { guTs = ts }
   OutOfDate ts  -> getUpdates gu { guTs = showt ts }
@@ -80,24 +82,27 @@ routeUpdate (NewMessage msg) = logData msg >> case getter msg of
   Just cmd -> processCommand msg cmd $ mkContext msg
 routeUpdate rest = logData rest
 
-processMessage' msg = do
-  continue <- evalStateT (processCommand' $ getter msg) msg
-  when continue $ do
-    (attachments, message) <- runStateT (pure (0,msg)) msg
-    pure ()
+processMessage' upd = logData upd >> case upd of
+  NewMessage msg -> do
+    continue <- evalStateT (processCommand' $ getter msg) msg
+    when continue $ do
+      (attachments, message) <- runStateT (pure (0,msg)) msg
+      pure ()
+  rest -> pure mempty
 
-processCommand' :: ( MonadEffects env m
-                   , MonadRepetitions env m
-                   , MonadState s m
-                   , AppReader env m
-                   , Has Key s
-                   , Has PeerId s
-                   , Has FromId s
-                   , Has Context s
-                   , MonadCatch m
-                   )
-                => Maybe Command
-                -> m Bool
+processCommand'
+  :: ( MonadEffects env m
+     , MonadRepetitions env m
+     , MonadState s m
+     , AppReader env m
+     , Has Key s
+     , Has PeerId s
+     , Has FromId s
+     , Has Context s
+     , MonadCatch m
+     )
+  => Maybe Command
+  -> m Bool
 processCommand' Nothing    = pure True
 processCommand' (Just cmd) = logData cmd >> case cmd of
   UnknownCommand _ -> pure True
@@ -129,9 +134,9 @@ getName' = grab >>= \case
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
             -> m ()
-sendMessage sm = sm
-  <$> liftIO randomIO
-  >>= withLog_ (fromResponseR @MessageSended)
+sendMessage sm = do
+  msg <- sm <$> liftIO randomIO
+  withLog_ (fromResponseR @MessageSended) msg
 
 processCommand :: ( MonadRepetitions r m
                   , AppReader r m
@@ -260,7 +265,13 @@ processDocument UploadRequests {..} = do
 
 fromResponseR, fromResponseU
   :: forall output input env m
-   . (ToRequest m input, FromJSON output, MonadThrow m, HasRequester env m)
+   . ( ToRequest m input
+     , FromJSON output
+     , MonadThrow m
+     , HasPriority input
+     , HasPriority output
+     , MonadEffects env m
+     )
   => input
   -> m output
 fromResponseR = Shared.fromResponse @ResponseException @output
@@ -273,6 +284,8 @@ fromResponseH
      , MonadEffects env m
      , MonadThrow m
      , Monoid output
+     , HasPriority input
+     , HasPriority output
      , ToRequest m input
      )
   => input
@@ -280,14 +293,20 @@ fromResponseH
 fromResponseH = Shared.fromResponseH @ResponseException @output handlers
 
 fromValues_
-  :: (FromJSON a, MonadCatch m, HasLogger r m)
-  => (a -> m ())
+  :: (FromJSON input, MonadCatch m, HasLogger env m, HasPriority input)
+  => (input -> m ())
   -> [Value]
   -> m ()
 fromValues_ = Shared.fromValues_ handlers
 
 fromValues
-  :: (Monoid output, FromJSON input, MonadCatch m, HasLogger env m)
+  :: ( FromJSON input
+     , HasLogger env m
+     , HasPriority input
+     , HasPriority output
+     , MonadCatch m
+     , Monoid output
+     )
   => (input -> m output)
   -> [Value]
   -> m [output]

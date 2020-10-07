@@ -53,10 +53,6 @@ class ToUploadRequests m a b | a -> b where
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
-data Context
-  = Private
-  | Chat
-
 data AttachmentsState = AttachmentsState
   { asAttachments :: [Text]
   , asSticker     :: Maybe Integer

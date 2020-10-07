@@ -56,7 +56,13 @@ processUpdate current p@(Update id _) = do
 
 fromResponseR
   :: forall output input env m
-   . (ToRequest m input, FromJSON output, MonadThrow m, HasRequester env m)
+   . ( ToRequest m input
+     , FromJSON output
+     , MonadThrow m
+     , HasPriority input
+     , HasPriority output
+     , MonadEffects env m
+     )
   => input
   -> m output
 fromResponseR = fromResponse @ResponseException @output
