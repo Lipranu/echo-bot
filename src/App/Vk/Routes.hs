@@ -20,6 +20,7 @@ import App.Shared.Config
 import App.Shared.Routes hiding ( fromValues
                                 , fromValues_
                                 , fromResponse
+                                , fromResponse_
                                 , fromResponseH
                                 , handlers
                                 )
@@ -136,8 +137,7 @@ sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             -> m ()
 sendMessage sm = do
   msg <- sm <$> liftIO randomIO
-  fromResponseR @MessageSended msg
-  pure ()
+  fromResponse_ @MessageSended msg
 
 processCommand :: ( MonadRepetitions r m
                   , AppReader r m
@@ -280,6 +280,19 @@ fromResponseR, fromResponseU
   -> m output
 fromResponseR = Shared.fromResponse @ResponseException @output
 fromResponseU = Shared.fromResponse @UploadException   @output
+
+fromResponse_
+  :: forall output input env m
+   . ( FromJSON output
+     , HasPriority input
+     , HasPriority output
+     , MonadEffects env m
+     , MonadThrow m
+     , ToRequest m input
+     )
+  => input
+  -> m ()
+fromResponse_ = Shared.fromResponse_ @ResponseException @output
 
 fromResponseH
   :: forall output input env m
