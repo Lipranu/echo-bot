@@ -53,7 +53,7 @@ type AppReader r m = (SharedReader r m, VkReader r m)
 getLongPollServer
   :: (VkReader r m, MonadEffects r m, MonadThrow m)
   => m GetUpdates
-getLongPollServer = mkGetUpdates <$> withLog fromResponseR GetLongPollServer
+getLongPollServer = mkGetUpdates <$> fromResponseR GetLongPollServer
 
 getUpdates
   :: ( AppReader r m
@@ -129,14 +129,15 @@ getName' :: ( Has FromId s
          => m (Maybe UserName)
 getName' = grab >>= \case
   Private -> pure Nothing
-  Chat    -> mkGetName' >>= fmap listToMaybe . withLog fromResponseH
+  Chat    -> mkGetName' >>= fmap listToMaybe . fromResponseH
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
             -> m ()
 sendMessage sm = do
   msg <- sm <$> liftIO randomIO
-  withLog_ (fromResponseR @MessageSended) msg
+  fromResponseR @MessageSended msg
+  pure ()
 
 processCommand :: ( MonadRepetitions r m
                   , AppReader r m
@@ -172,9 +173,12 @@ processCommand m command context = do
         repeats <- fromMaybe def   <$> getRepeats (getter m)
         pure $ text <> "\nCurrent repeat count: " <> showt repeats
 
-getName :: (MonadEffects r m, VkReader r m, MonadThrow m) => Context -> FromId -> m (Maybe UserName)
+getName :: (MonadEffects r m, VkReader r m, MonadThrow m)
+        => Context
+        -> FromId
+        -> m (Maybe UserName)
 getName Private _   = pure Nothing
-getName Chat fromId = listToMaybe <$> withLog fromResponseR (mkGetName fromId)
+getName Chat fromId = listToMaybe <$> fromResponseR (mkGetName fromId)
 
 processMessage :: ( Applicative m
                   , MonadEffects r m
@@ -257,20 +261,20 @@ processDocument :: forall result env m
                 => UploadRequests result
                 -> m ()
 processDocument UploadRequests {..} = do
-  server   <- withLog fromResponseR getUploadServer
+  server   <- fromResponseR getUploadServer
   file     <- inputLog request getFile
-  uploaded <- withLog fromResponseU $ uploadFile server file
-  saved    <- withLog (fromResponseR @result) $ saveFile uploaded
-  addAttachment saved
+  uploaded <- fromResponseU $ uploadFile server file
+  saved    <- fromResponseR $ saveFile uploaded
+  addAttachment @result saved
 
 fromResponseR, fromResponseU
   :: forall output input env m
-   . ( ToRequest m input
-     , FromJSON output
-     , MonadThrow m
+   . ( FromJSON output
      , HasPriority input
      , HasPriority output
      , MonadEffects env m
+     , MonadThrow m
+     , ToRequest m input
      )
   => input
   -> m output
@@ -280,12 +284,12 @@ fromResponseU = Shared.fromResponse @UploadException   @output
 fromResponseH
   :: forall output input env m
    . ( FromJSON output
+     , HasPriority input
+     , HasPriority output
      , MonadCatch m
      , MonadEffects env m
      , MonadThrow m
      , Monoid output
-     , HasPriority input
-     , HasPriority output
      , ToRequest m input
      )
   => input
