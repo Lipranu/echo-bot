@@ -11,6 +11,7 @@ module App.Shared.Routes
   , MonadRepetitions
   , Repetitions
   , fromResponse
+  , fromResponse_
   , fromResponseH
   , fromValues
   , fromValues_
@@ -126,7 +127,22 @@ fromResponse
      )
   => input
   -> m output
-fromResponse = withLog (requestAndDecode >=> handleResponse @error)
+fromResponse = withLog (requestAndDecode >=> handleResponse @error @output)
+
+fromResponse_
+  :: forall error output input env m
+   . ( Exception error
+     , FromJSON error
+     , FromJSON output
+     , HasPriority input
+     , HasPriority output
+     , MonadEffects env m
+     , MonadThrow m
+     , ToRequest m input
+     )
+  => input
+  -> m ()
+fromResponse_ = withLog_ (requestAndDecode >=> handleResponse @error @output)
 
 fromResponseH
   :: forall error output input env m
