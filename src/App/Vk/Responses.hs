@@ -42,7 +42,7 @@ import Infrastructure.Logger
 import Control.Applicative ( (<|>) )
 import Control.Monad       ( join )
 import Control.Monad.Catch ( Exception )
-import Data.Aeson          ( (.:), (.:?) )
+import Data.Aeson          ( Value, (.:), (.:?) )
 import Data.List           ( sort )
 import Data.Text.Extended  ( Text )
 import Data.Vector         ( (!?) )
@@ -210,6 +210,7 @@ data Message = Message
   , mMessage     :: Maybe Text
   , mLatitude    :: Maybe Double
   , mLongitude   :: Maybe Double
+  , mSticker     :: Maybe Integer
   , mReplyId     :: Maybe Integer
   , mForwardsId  :: [Integer]
   , mAttachments :: [Aeson.Value]
@@ -218,6 +219,7 @@ data Message = Message
 
 instance Aeson.FromJSON Message where
   parseJSON = Aeson.withObject (path <> "Message") $ \o -> do
+    let mSticker  = Nothing
     mId          <- MessageId <$> o .: "id"
     mFromId      <- FromId    <$> o .: "from_id"
     mPeerId      <- PeerId    <$> o .: "peer_id"
@@ -248,8 +250,10 @@ instance Loggable Message where
 
 instance HasPriority Message where logData = logDebug . toLog
 
-instance Has PeerId Message where getter = mPeerId
-instance Has FromId Message where getter = mFromId
+instance Has MessageId Message where getter = mId
+instance Has PeerId    Message where getter = mPeerId
+instance Has FromId    Message where getter = mFromId
+instance Has [Value]   Message where getter = mAttachments
 
 instance Has Context Message where
   getter Message {..} | unFromId mFromId == unPeerId mPeerId = Private
