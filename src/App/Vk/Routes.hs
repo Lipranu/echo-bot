@@ -39,7 +39,7 @@ import qualified App.Shared.Routes as Shared
 import Control.Monad          ( (>=>), replicateM_, when )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
-import Control.Monad.State    ( MonadState, execStateT, evalStateT, runStateT, modify )
+import Control.Monad.State    ( MonadState, evalStateT, runStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
 import Data.Maybe             ( fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
@@ -57,41 +57,42 @@ getLongPollServer
 getLongPollServer = mkGetUpdates <$> fromResponseR GetLongPollServer
 
 getUpdates
-  :: ( AppReader r m
+  :: ( AppReader env m
      , MonadCatch m
-     , MonadEffects r m
-     , MonadRepetitions r m
+     , MonadEffects env m
+     , MonadRepetitions env m
      , MonadThrow m
      )
   => GetUpdates
   -> m ()
 getUpdates gu = withLog requestAndDecode gu >>= \case
-  Updates xs ts -> fromValues_ routeUpdate xs >> getUpdates gu { guTs = ts }
+  Updates xs ts -> do
+    fromValues_ processMessage xs
+    getUpdates gu { guTs = ts }
   OutOfDate ts  -> getUpdates gu { guTs = showt ts }
   rest          -> getLongPollServer >>= getUpdates
 
-routeUpdate :: ( MonadRepetitions r m
-               , AppReader r m
-               , MonadEffects r m
-               , MonadThrow m
-               , MonadCatch m
-               )
-            => Update
-            -> m ()
-routeUpdate (NewMessage msg) = logData msg >> case getter msg of
-  Nothing  -> processMessage msg
-  Just cmd -> processCommand msg cmd $ mkContext msg
-routeUpdate rest = logData rest
+processMessage
+  :: ( AppReader env m
+     , MonadCatch m
+     , MonadEffects env m
+     , MonadRepetitions env m
+     )
+  => Update
+  -> m ()
+processMessage (NewMessage m) = do
+  continue <- evalStateT (processCommand $ getter m) m
+  when continue $ do
+    (attachs, msg) <- runStateT (fromValues processAttachment $ getter m) m
+    (kb, repeats)  <- findUser $ getter m
+    let sm = mkSendMessage msg attachs kb
+    replicateM_ repeats $ sendMessage sm
+  where findUser x = getRepeats x >>= \case
+          Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
+          Just i  -> pure (Nothing, i)
+processMessage rest = pure mempty
 
-processMessage' upd = logData upd >> case upd of
-  NewMessage msg -> do
-    continue <- evalStateT (processCommand' $ getter msg) msg
-    when continue $ do
-      (attachments, message) <- runStateT (pure (0,msg)) msg
-      pure ()
-  rest -> pure mempty
-
-processCommand'
+processCommand
   :: ( MonadEffects env m
      , MonadRepetitions env m
      , MonadState s m
@@ -104,12 +105,17 @@ processCommand'
      )
   => Maybe Command
   -> m Bool
-processCommand' Nothing    = pure True
-processCommand' (Just cmd) = logData cmd >> case cmd of
+processCommand Nothing    = pure True
+processCommand (Just cmd) = logData cmd >> case cmd of
   UnknownCommand _ -> pure True
-  Help             -> (unHelpText <$> obtain) >>= replyCommand >> pure False
-  NewCount i       -> replyCommand ("Repeat count set to: " <> showt i)
-                   >> pure False
+  Help             -> do
+    text <- unHelpText <$> obtain
+    replyCommand text
+    pure False
+  NewCount i       -> do
+    putRepeats i =<< grab
+    replyCommand $ "Repeat count set to: " <> showt i
+    pure False
   Repeat           -> do
     text    <- unRepeatText    <$> obtain
     def     <- unDefaultRepeat <$> obtain
@@ -117,20 +123,21 @@ processCommand' (Just cmd) = logData cmd >> case cmd of
     let repeats = fromMaybe def current
     replyCommand $ text <> "\nCurrent repeat count: " <> showt repeats
     pure False
-  where replyCommand text = getName' >>= mkCommandReply' text >>= sendMessage
+  where replyCommand text = getName >>= mkCommandReply text >>= sendMessage
 
-getName' :: ( Has FromId s
-            , Has Context s
-            , MonadEffects r m
-            , VkReader r m
-            , MonadState s m
-            , MonadThrow m
-            , MonadCatch m
-            )
-         => m (Maybe UserName)
-getName' = grab >>= \case
+getName
+  :: ( Has FromId s
+     , Has Context s
+     , MonadEffects r m
+     , VkReader r m
+     , MonadState s m
+     , MonadThrow m
+     , MonadCatch m
+     )
+  => m (Maybe UserName)
+getName = grab >>= \case
   Private -> pure Nothing
-  Chat    -> mkGetName' >>= fmap listToMaybe . fromResponseH
+  Chat    -> mkGetName >>= fmap listToMaybe . fromResponseH
 
 sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
             => (Int -> SendMessage)
@@ -139,127 +146,81 @@ sendMessage sm = do
   msg <- sm <$> liftIO randomIO
   fromResponse_ @MessageSended msg
 
-processCommand :: ( MonadRepetitions r m
-                  , AppReader r m
-                  , MonadEffects r m
-                  , MonadThrow m
-                  , MonadCatch m
-                  )
-               => Message
-               -> Command
-               -> Context
-               -> m ()
-processCommand m command context = do
-  performCommand
-  name <- getName context $ mFromId m
-  text <- getCommandText
-  sendMessage
-    $ mkCommandReply m
-    $ mkCommandText context text name
-    $ mFromId m
-  where
-    performCommand = logData command >> case command of
-      NewCount i       -> putRepeats i $ getter m
-      UnknownCommand c -> processMessage m
-      _                -> pure ()
+processAttachment
+  :: ( MonadCatch m
+     , MonadEffects env m
+     , MonadIO m
+     , MonadState Message m
+     , VkReader env m
+     )
+  => Attachment
+  -> m (Maybe Text)
+processAttachment Graffiti     = sendNotification "graffiti" >> pure Nothing
+processAttachment (Sticker id) = addSticker id >> pure Nothing
+processAttachment (Attachment   body) = addAttachment body
+processAttachment (AudioMessage body) = uploadAttachment body
+processAttachment (Photo        body) = grab >>= \case
+  Private -> addAttachment body
+  Chat    -> uploadAttachment body
+processAttachment (Document     body) = case dbType body of
+  "graffiti" -> sendNotification "graffiti" >> pure Nothing
+  "photo"    -> uploadAttachment $ docToPhoto body
+  _          -> uploadAttachment body
 
-    getCommandText = case command of
-      Help             -> unHelpText <$> obtain
-      NewCount i       -> pure $ "Repeat count set to: " <> showt i
-      UnknownCommand t -> pure "Unknown command"
-      Repeat           -> do
-        text    <- unRepeatText    <$> obtain
-        def     <- unDefaultRepeat <$> obtain
-        repeats <- fromMaybe def   <$> getRepeats (getter m)
-        pure $ text <> "\nCurrent repeat count: " <> showt repeats
+uploadAttachment
+  :: ( FromJSON output
+     , HasPriority output
+     , MonadEffects env m
+     , MonadIO m
+     , MonadThrow m
+     , ToAttachment output
+     , ToUploadRequests m input output
+     , VkReader env m
+     )
+  => input
+  -> m (Maybe Text)
+uploadAttachment = toUploadRequests >=> processDocument
 
-getName :: (MonadEffects r m, VkReader r m, MonadThrow m)
-        => Context
-        -> FromId
-        -> m (Maybe UserName)
-getName Private _   = pure Nothing
-getName Chat fromId = listToMaybe <$> fromResponseR (mkGetName fromId)
-
-processMessage :: ( Applicative m
-                  , MonadEffects r m
-                  , MonadRepetitions r m
-                  , VkReader r m
-                  , MonadThrow m
-                  , MonadCatch m
-                  )
-               => Message
-               -> m ()
-processMessage m = do
-  aState  <- execStateT
-    (fromValues_ routeAttachment $ mAttachments m) $ mkState m
-  (keyboard, repeats) <- findUser
-  let sm = mkSendMessage m aState keyboard
-  replicateM_ repeats $ sendMessage sm
-  where findUser = getRepeats (getter m) >>= \case
-          Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
-          Just i  -> pure (Nothing, i)
-
-routeAttachment :: ( Applicative m
-                   , MonadEffects r m
-                   , MonadIO m
-                   , MonadState AttachmentsState m
-                   , VkReader r m
-                   , MonadThrow m
-                   )
-                => Attachment
-                -> m ()
-routeAttachment a = logData a >> case a of
-  Graffiti          -> sendNotification "graffiti"
-  Attachment   body -> addAttachment body
-  Photo        body -> fromContext   body
-  Document     body -> fromType      body
-  AudioMessage body -> toUploadRequests >=> processDocument $ body
-  Sticker      id   -> addSticker    id
-  where fromContext x = grab >>= \case
-          Private -> addAttachment x
-          Chat    -> toUploadRequests >=> processDocument $ x
-        fromType doc  = case dbType doc of
-          "graffiti" -> sendNotification "graffiti"
-          "photo"    -> toUploadRequests >=> processDocument $ docToPhoto doc
-          _          -> toUploadRequests >=> processDocument $ doc
-
-sendNotification :: ( MonadEffects r m
-                    , MonadIO m
-                    , MonadState AttachmentsState m
-                    , MonadThrow m
-                    , VkReader r m
-                    )
-                 => Text
-                 -> m ()
+sendNotification
+  :: ( MonadEffects r m
+     , MonadIO m
+     , MonadState Message m
+     , MonadThrow m
+     , MonadCatch m
+     , VkReader r m
+     )
+  => Text
+  -> m ()
 sendNotification aType = do
   peerId    <- grab
   fromId    <- grab
   messageId <- grab
   context   <- grab
-  name      <- getName context fromId
+  name      <- getName
   sendMessage $ mkNotification context name messageId fromId peerId aType
 
-addAttachment :: (ToAttachment a, MonadState AttachmentsState m)
-              => a
-              -> m ()
-addAttachment x = modify $ \as ->
-  as { asAttachments = toAttachment x : asAttachments as }
+addAttachment
+  :: forall input m
+   . (Applicative m, ToAttachment input)
+  => input
+  -> m (Maybe Text)
+addAttachment = pure . Just . toAttachment @input
 
-addSticker :: MonadState AttachmentsState m => Integer -> m ()
-addSticker id = modify $ \as -> as { asSticker = Just id }
+addSticker :: MonadState Message m => Integer -> m ()
+addSticker id = modify $ \m -> m { mSticker = Just id }
 
-processDocument :: forall result env m
-                 . ( MonadEffects env m
-                   , MonadIO m
-                   , MonadState AttachmentsState m
-                   , VkReader env m
-                   , MonadThrow m
-                   , ToAttachment result
-                   , HasPriority result
-                   , FromJSON result
-                   )
-                => UploadRequests result
-                -> m ()
+processDocument
+  :: forall result s env m
+   . ( FromJSON result
+     , HasPriority result
+     , MonadEffects env m
+     , MonadIO m
+     , MonadThrow m
+     , ToAttachment result
+     , VkReader env m
+     )
+  => UploadRequests result
+  -> m (Maybe Text)
 processDocument UploadRequests {..} = do
   server   <- fromResponseR getUploadServer
   file     <- inputLog request getFile
@@ -318,10 +279,9 @@ fromValues_ = Shared.fromValues_ handlers
 
 fromValues
   :: ( FromJSON input
+     , MonadCatch m
      , HasLogger env m
      , HasPriority input
-     , HasPriority output
-     , MonadCatch m
      , Monoid output
      )
   => (input -> m output)
