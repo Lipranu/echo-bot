@@ -7,8 +7,7 @@
 {-# LANGUAGE LambdaCase             #-}
 
 module App.Vk.Converters
-  ( AttachmentsState (..)
-  , Command (..)
+  ( Command (..)
   , Context (..)
   , ToAttachment (..)
   , UploadRequests (..)
@@ -16,14 +15,12 @@ module App.Vk.Converters
   , docToPhoto
   , mkCommandReply
   , mkCommandText
-  , mkContext
   , mkKeyboard
   , mkGetName
   , mkNotification
   , mkGetUpdates
   , mkSaveFile
   , mkSendMessage
-  , mkState
   , mkUploadFile
   ) where
 
@@ -50,27 +47,6 @@ class ToUploadRequests m a b | a -> b where
   toUploadRequests :: a -> m (UploadRequests b)
 
 -- TYPES AND INSTANCES -----------------------------------------------------
-
-data AttachmentsState = AttachmentsState
-  { asAttachments :: [Text]
-  , asSticker     :: Maybe Integer
-  , asPeerId      :: PeerId
-  , asFromId      :: FromId
-  , asMessageId   :: MessageId
-  , asContext     :: Context
-  }
-
-instance Has Context AttachmentsState where
-  getter = asContext
-
-instance Has PeerId AttachmentsState where
-  getter = asPeerId
-
-instance Has FromId AttachmentsState where
-  getter = asFromId
-
-instance Has MessageId AttachmentsState where
-  getter = asMessageId
 
 instance ToAttachment FileSaved where
   toAttachment FileSaved {..}
@@ -140,23 +116,6 @@ mkGetUpdates LongPollServer {..} =
                        $ fromMaybe lpsServer
                        $ Text.stripPrefix "https://" lpsServer
    in GetUpdates {..}
-
-mkState :: Message -> AttachmentsState
-mkState message =
-  let asPeerId      = mPeerId message
-      asFromId      = mFromId message
-      asAttachments = []
-      asSticker     = Nothing
-      asMessageId   = mId message
-      asContext     = mkContext message
-   in AttachmentsState {..}
-
-mkContext :: Message -> Context
-mkContext Message {..}
-  | peerId == fromId = Private
-  | otherwise        = Chat
-  where peerId = unPeerId mPeerId
-        fromId = unFromId mFromId
 
 mkGetName :: (Has FromId s, MonadState s m) => m GetName
 mkGetName = GetName <$> grab
