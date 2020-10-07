@@ -15,12 +15,10 @@ module App.Vk.Converters
   , ToUploadRequests (..)
   , docToPhoto
   , mkCommandReply
-  , mkCommandReply'
   , mkCommandText
   , mkContext
   , mkKeyboard
   , mkGetName
-  , mkGetName'
   , mkNotification
   , mkGetUpdates
   , mkSaveFile
@@ -37,7 +35,7 @@ import App.Vk.Responses
 import Infrastructure.Has
 
 import Control.Monad.State ( MonadState )
-import Data.Maybe          ( fromMaybe )
+import Data.Maybe          ( catMaybes, fromMaybe )
 import Data.Text.Extended  ( Text )
 
 import qualified Data.Text.Extended   as Text
@@ -160,55 +158,36 @@ mkContext Message {..}
   where peerId = unPeerId mPeerId
         fromId = unFromId mFromId
 
-mkGetName :: FromId -> GetName
-mkGetName = GetName
+mkGetName :: (Has FromId s, MonadState s m) => m GetName
+mkGetName = GetName <$> grab
 
-mkGetName' :: (Has FromId s, MonadState s m) => m GetName
-mkGetName' = GetName <$> grab
-
-mkSendMessage :: Message
-              -> AttachmentsState
-              -> Maybe Keyboard
-              -> Int
-              -> SendMessage
-mkSendMessage Message {..} AttachmentsState {..} keyboard randomId =
+mkSendMessage
+  :: Message
+  -> [Maybe Text]
+  -> Maybe Keyboard
+  -> Int
+  -> SendMessage
+mkSendMessage Message {..} attachments keyboard randomId =
   let smPeerId      = mPeerId
       smRandomId    = randomId
       smMessage     = mMessage
       smLatitude    = mLatitude
       smLongitude   = mLongitude
-      smStickerId   = asSticker
+      smStickerId   = mSticker
       smKeyboard    = keyboard
       smReplyId     = mReplyId
       smForwardsId  = listToText $ Text.showt <$> mForwardsId
-      smAttachments = listToText $ reverse asAttachments
+      smAttachments = listToText $ catMaybes attachments
       listToText [] = Nothing
       listToText xs = Just $ Text.intercalate "," xs
    in SendMessage {..}
 
-mkCommandReply :: Message -> Text -> Int -> SendMessage
-mkCommandReply Message {..} text randomId =
-  let smPeerId      = mPeerId
-      smRandomId    = randomId
-      smLatitude    = Nothing
-      smLongitude   = Nothing
-      smStickerId   = Nothing
-      smKeyboard    = Nothing
-      smAttachments = Nothing
-      smReplyId     = Nothing
-      smForwardsId  = Nothing
-      smMessage     = Just text
-   in SendMessage {..}
-
-mkCommandReply' :: ( Has Context s
-                   , Has FromId s
-                   , Has PeerId s
-                   , MonadState s m
-                   )
-                => Text
-                -> Maybe UserName
-                -> m (Int -> SendMessage)
-mkCommandReply' text user = do
+mkCommandReply
+  :: (Has Context s, Has FromId s, Has PeerId s, MonadState s m)
+  => Text
+  -> Maybe UserName
+  -> m (Int -> SendMessage)
+mkCommandReply text user = do
   let smLatitude    = Nothing
       smLongitude   = Nothing
       smStickerId   = Nothing
