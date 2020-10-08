@@ -41,9 +41,11 @@ import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, evalStateT, runStateT, modify )
 import Data.Aeson             ( FromJSON, Value )
-import Data.Maybe             ( fromMaybe, listToMaybe )
+import Data.Maybe             ( catMaybes, isJust, fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
+
+import qualified Data.Text.Extended as Text
 
 -- TYPES -------------------------------------------------------------------
 
@@ -83,13 +85,26 @@ processMessage
 processMessage (NewMessage m) = do
   continue <- evalStateT (processCommand $ getter m) m
   when continue $ do
-    (attachs, msg) <- runStateT (fromValues processAttachment $ getter m) m
+    result         <- runStateT (fromValues processAttachment $ getter m) m
     (kb, repeats)  <- findUser $ getter m
-    let sm = mkSendMessage msg attachs kb
-    replicateM_ repeats $ sendMessage sm
-  where findUser x = getRepeats x >>= \case
-          Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
-          Just i  -> pure (Nothing, i)
+    (sm, sendable) <- formAndCheck result kb
+    when sendable $ replicateM_ repeats $ sendMessage sm
+  where
+    findUser x = getRepeats x >>= \case
+      Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
+      Just i  -> pure (Nothing, i)
+
+    formAndCheck (attach, msg) kb = (mkSendMessage msg attach kb,) <$>
+      case checkMessage msg || checkAttachments attach of
+        True  -> logDebug   ("Message can be sended"   :: Text) >> pure True
+        False -> logWarning ("Cant send empty message" :: Text) >> pure False
+
+    checkAttachments = not . null . catMaybes
+
+    checkMessage Message {..} = isJust mSticker
+      || maybe False (not . Text.null) mMessage
+      || (isJust mLatitude && isJust mLongitude)
+
 processMessage rest = pure mempty
 
 processCommand
