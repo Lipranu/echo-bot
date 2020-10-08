@@ -63,6 +63,9 @@ instance ToAttachment PhotoBody where
   toAttachment PhotoBody {..}
     = mkAttachment "photo" pbOwnerId pbId pbAccessKey
 
+instance ToAttachment VideoBody where
+  toAttachment VideoBody {..}
+    = mkAttachment "video" vbOwnerId vbId vbAccessKey
 data UploadRequests a = UploadRequests
   { getUploadServer :: GetUploadServer
   , getFile         :: GetFile
