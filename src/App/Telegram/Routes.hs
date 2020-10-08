@@ -9,52 +9,50 @@ module App.Telegram.Routes
   , GetUpdates (..)
   ) where
 
--- IMPORTS --------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import App.Telegram.Requests
 import App.Telegram.Responses
-import App.Telegram.Config    ( TelegramReader )
+import App.Telegram.Config      ( TelegramReader )
 
-import App.Shared.Routes
+import App.Shared.Routes hiding ( fromResponse, fromValues, handlers )
 
 import Infrastructure.Has
 import Infrastructure.Logger
 import Infrastructure.Requester
 
+import qualified App.Shared.Routes as Shared
 import Data.Aeson          ( FromJSON, Value )
 import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch, catch )
-import Control.Monad       ( foldM )
+import Control.Monad       ( (>=>), foldM )
 import Data.Text.Extended  ( showt )
+import Data.Semigroup      ( Sum (..) )
 
 instance Loggable [Value] where
   toLog xs = "Get updates: " <> showt (length xs)
 
 instance HasPriority [Value] where logData = logInfo . toLog
 
-getUpdates :: (TelegramReader r m, MonadEffects r m, MonadThrow m, MonadCatch m)
-           => GetUpdates -> m ()
-getUpdates gu = withLog fromResponseR gu
-  >>= convertRawUpdates
-  >>= processUpdates
-  >>= getUpdates . GetUpdates
-
-convertRawUpdates :: (MonadCatch m, MonadEffects r m) => [Value] -> m [Update]
-convertRawUpdates = foldM convert []
-  where convert xs x = (parse x >>= return . (:xs)) `catch` handle xs
-        handle  xs e = logData (e :: DecodeException) >> return xs
-
-processUpdates :: (MonadEffects r m) => [Update] -> m (Maybe Integer)
-processUpdates = foldM processUpdate Nothing
+getUpdates
+  :: ( TelegramReader r m
+     , MonadEffects r m
+     , MonadThrow m
+     , MonadCatch m
+     )
+  => GetUpdates
+  -> m ()
+getUpdates = fromResponse
+  >=> fromValues processUpdate
+  >=> getUpdates . GetUpdates . fmap getSum . maximum
 
 processUpdate :: MonadEffects r m
-              => Maybe Integer
-              -> Update
-              -> m (Maybe Integer)
-processUpdate current p@(Update id _) = do
+              => Update
+              -> m (Maybe (Sum Integer))
+processUpdate p@(Update id _) = do
   logDebug p
-  return (max current $ Just id)
+  pure $ Just $ Sum id
 
-fromResponseR
+fromResponse
   :: forall output input env m
    . ( ToRequest m input
      , FromJSON output
@@ -65,4 +63,20 @@ fromResponseR
      )
   => input
   -> m output
-fromResponseR = fromResponse @ResponseException @output
+fromResponse = Shared.fromResponse @ResponseException @output
+
+fromValues
+  :: ( FromJSON input
+     , MonadCatch m
+     , HasLogger env m
+     , HasPriority input
+     , Monoid output
+     )
+  => (input -> m output)
+  -> [Value]
+  -> m [output]
+fromValues = Shared.fromValues handlers
+
+handlers :: (Monoid output, HasLogger env m) => [Handler m output]
+handlers = Handler (\(e :: ResponseException) -> logData e >> pure mempty)
+  : Shared.handlers

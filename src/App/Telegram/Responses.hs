@@ -81,6 +81,8 @@ instance HasPriority [Update] where logData = logInfo . toLog
 instance Loggable Update where
   toLog (Update i _) = "Proccess post with id: " <> Text.showt i
 
+instance HasPriority Update where
+  logData = logInfo . toLog
 -- MessageType -------------------------------------------------------------
 
 data MessageType
