@@ -195,7 +195,7 @@ instance Loggable Update where
   toLog (NotSupported t) = "Not supprted update of type: " <> t
 
 instance HasPriority Update where
-  logData u@(NewMessage   _) = logInfo    $ toLog u
+  logData u@(NewMessage   m) = logInfo (toLog u) >> logDebug (toLog m)
   logData u@(NotSupported _) = logWarning $ toLog u
 
 -- Message -----------------------------------------------------------------
