@@ -24,7 +24,7 @@ import Infrastructure.Requester
 import qualified App.Shared.Routes as Shared
 import Data.Aeson          ( FromJSON, Value )
 import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch, catch )
-import Control.Monad       ( (>=>), foldM )
+import Control.Monad       ( (>=>) )
 import Data.Text.Extended  ( showt )
 import Data.Semigroup      ( Sum (..) )
 

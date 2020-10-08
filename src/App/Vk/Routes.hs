@@ -95,9 +95,9 @@ processMessage (NewMessage m) = do
       Just i  -> pure (Nothing, i)
 
     formAndCheck (attach, msg) kb = (mkSendMessage msg attach kb,) <$>
-      case checkMessage msg || checkAttachments attach of
-        True  -> logDebug   ("Message can be sended"   :: Text) >> pure True
-        False -> logWarning ("Cant send empty message" :: Text) >> pure False
+      if   checkMessage msg || checkAttachments attach
+      then logDebug   ("Message can be sended"   :: Text) >> pure True
+      else logWarning ("Cant send empty message" :: Text) >> pure False
 
     checkAttachments = not . null . catMaybes
 
@@ -179,9 +179,9 @@ processAttachment (Photo        body) = grab >>= \case
   Chat    -> uploadAttachment body
 processAttachment (Video        body) = grab >>= \case
   Private -> addAttachment body
-  Chat    -> case vbCanResend body of
-    True  -> addAttachment body
-    False -> notify "uploaded video" >> pure Nothing
+  Chat    -> if vbCanResend body
+    then addAttachment body
+    else notify "uploaded video" >> pure Nothing
 processAttachment (Document     body) = case dbType body of
   "graffiti" -> notify "graffiti" >> pure Nothing
   "photo"    -> uploadAttachment $ docToPhoto body
