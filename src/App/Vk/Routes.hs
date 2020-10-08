@@ -162,6 +162,11 @@ processAttachment (AudioMessage body) = uploadAttachment body
 processAttachment (Photo        body) = grab >>= \case
   Private -> addAttachment body
   Chat    -> uploadAttachment body
+processAttachment (Video        body) = grab >>= \case
+  Private -> addAttachment body
+  Chat    -> case vbCanResend body of
+    True  -> addAttachment body
+    False -> notify "uploaded video" >> pure Nothing
 processAttachment (Document     body) = case dbType body of
   "graffiti" -> notify "graffiti" >> pure Nothing
   "photo"    -> uploadAttachment $ docToPhoto body
