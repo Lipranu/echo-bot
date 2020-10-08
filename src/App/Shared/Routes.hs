@@ -174,7 +174,6 @@ fromValues
   :: ( FromJSON input
      , HasLogger env m
      , HasPriority input
---     , HasPriority output
      , MonadCatch m
      )
   => [Handler m output]
@@ -183,27 +182,6 @@ fromValues
   -> m [output]
 fromValues handlers f = traverse go
   where go x = (parse >=> inputLog f) x `catches` handlers
-
---fromValues
---  :: ( FromJSON input
---     , HasLogger env m
---     , MonadCatch m
---     )
---  => [Handler m output]
---  -> (input -> m output)
---  -> [Value]
---  -> m [output]
---fromValues handlers f = traverse go
---  where go x = (parse >=> f) x `catches` handlers
---
---fromValues_
---  :: (FromJSON input, MonadCatch m, HasLogger env m)
---  => [Handler m ()]
---  -> (input -> m ())
---  -> [Value]
---  -> m ()
---fromValues_ handlers f = traverse_ go
---  where go x = (parse >=> f) x `catches` handlers
 
 handlers :: (Monoid output, HasLogger env m) => [Handler m output]
 handlers =
