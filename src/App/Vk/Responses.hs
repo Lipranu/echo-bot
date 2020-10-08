@@ -15,10 +15,13 @@ module App.Vk.Responses
   , DocumentBody (..)
   , FileSaved (..)
   , FileUploaded (..)
+  , FromId (..)
   , LongPollServer (..)
   , Message (..)
+  , MessageId (..)
   , MessageSended (..)
   , Payload (..)
+  , PeerId (..)
   , PhotoBody (..)
   , PhotoSaved (..)
   , ResponseException
@@ -27,9 +30,7 @@ module App.Vk.Responses
   , UploadException
   , UploadServer (..)
   , UserName (..)
-  , MessageId (..)
-  , PeerId (..)
-  , FromId (..)
+  , VideoBody (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -335,6 +336,7 @@ instance HasPriority UserName where logData = logDebug . toLog
 data Attachment
   = Attachment AttachmentBody
   | Photo PhotoBody
+  | Video VideoBody
   | Document DocumentBody
   | AudioMessage AudioMessageBody
   | Graffiti
@@ -347,6 +349,7 @@ instance Aeson.FromJSON Attachment where
       "graffiti"      -> pure Graffiti
       "doc"           -> Document     <$> (o .: aType >>= Aeson.parseJSON)
       "photo"         -> Photo        <$> (o .: aType >>= Aeson.parseJSON)
+      "video"         -> Video        <$> (o .: aType >>= Aeson.parseJSON)
       "audio_message" -> AudioMessage <$> (o .: aType >>= Aeson.parseJSON)
       "sticker"       -> Sticker      <$> (o .: aType >>= (.: "sticker_id"))
       _               -> do
@@ -359,6 +362,7 @@ instance Loggable Attachment where
   toLog (Document     body) = toLog body
   toLog (AudioMessage body) = toLog body
   toLog (Photo        body) = toLog body
+  toLog (Video        body) = toLog body
   toLog (Sticker        id) = "Processing sticker with id: " <> Text.showt id
 
 instance HasPriority Attachment where logData = logDebug . toLog
@@ -449,6 +453,34 @@ instance Aeson.FromJSON Size where
     "z" -> pure Z
     "w" -> pure W
     t   -> fail $ path <> ": unknown size: " <> Text.unpack t
+
+-- VideoBody ---------------------------------------------------------------
+
+data VideoBody = VideoBody
+  { vbId        :: Integer
+  , vbOwnerId   :: Integer
+  , vbAccessKey :: Maybe Text
+  , vbCanResend :: Bool
+  }
+
+instance Aeson.FromJSON VideoBody where
+  parseJSON = Aeson.withObject (path <> "VideoBody") $ \o -> do
+    vbId        <- o .:  "id"
+    vbOwnerId   <- o .:  "owner_id"
+    vbAccessKey <- o .:? "access_key"
+    vbCanAdd    <- o .:  "can_add"
+    let vbCanResend = case vbCanAdd :: Int of
+          0 -> False
+          1 -> True
+    pure VideoBody {..}
+
+instance Loggable VideoBody where
+  toLog VideoBody {..} = mkToLog "Processing VideoBody:"
+    [ ("Type"      , "video")
+    , ("Owner id"  , Text.showt vbOwnerId)
+    , ("Media id"  , Text.showt vbId)
+    , ("Can Resend", Text.showt vbCanResend)
+    ] [("Access Key", vbAccessKey)]
 
 -- AudioMessageBody --------------------------------------------------------
 
