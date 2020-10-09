@@ -1,5 +1,6 @@
 log
 bot.conf.local
+config.yaml
 .stack-work/
 stack*.yaml.lock
 .ghci

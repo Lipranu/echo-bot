@@ -1,0 +1,26 @@
+shared:
+  default_repeat: 1
+  repeat_text: repeat text
+  help_text: help text
+
+vk:
+  token: _
+  group_id: _
+
+telegram:
+  token: _
+
+logger:
+  console_logger:
+    enable: true
+    priority: debug
+    show_time: false
+    show_mode: true
+
+  file_logger:
+    enable: true
+    priority: debug
+    show_time: false
+    show_mode: true
+
+  log_path: log
