@@ -1,6 +1,8 @@
-{-# LANGUAGE ConstraintKinds   #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ConstraintKinds     #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE RecordWildCards     #-}
 
 module App.Shared.Config
   ( Config (..)
@@ -22,9 +24,9 @@ import Data.Text            ( Text )
 
 type SharedReader r m = (MonadReader r m, Has HelpText r, Has RepeatText r)
 
+newtype RepeatText    = RepeatText    { unRepeatText    :: Text }
+newtype HelpText      = HelpText      { unHelpText      :: Text }
 newtype DefaultRepeat = DefaultRepeat { unDefaultRepeat :: Int }
-newtype RepeatText    = RepeatText    { unRepeatText :: Text }
-newtype HelpText      = HelpText      { unHelpText   :: Text }
 
 data Config = Config
   { cDefaultRepeat :: DefaultRepeat
@@ -33,7 +35,14 @@ data Config = Config
   }
 
 instance FromJSON Config where
-  parseJSON = withObject "App.Shared.Config" $ \o -> Config
-    <$> (DefaultRepeat <$> o .: "default_repeat")
-    <*> (RepeatText    <$> o .: "repeat_text")
-    <*> (HelpText      <$> o .: "help_text")
+  parseJSON = withObject path $ \o -> do
+    cRepeatText    <- RepeatText <$> o .: "repeat_text"
+    cHelpText      <- HelpText   <$> o .: "help_text"
+    cDefaultRepeat <- o .: "default_repeat" >>= \(i :: Int) ->
+      if   i > 0 && i < 6
+      then pure $ DefaultRepeat i
+      else fail $ path
+        <> ".DefaultRepeat: the value should be between 1 and 5, but got: "
+        <> show i
+    pure Config {..}
+    where path = "App.Shared.Config"
