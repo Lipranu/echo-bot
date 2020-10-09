@@ -43,7 +43,9 @@ getUpdates
   -> m ()
 getUpdates = fromResponse
   >=> fromValues processUpdate
-  >=> getUpdates . GetUpdates . fmap getSum . maximum
+  >=> getUpdates . GetUpdates . check
+  where check xs | null xs   = Nothing
+                 | otherwise = fmap getSum $ maximum xs
 
 processUpdate :: MonadEffects r m
               => Update
