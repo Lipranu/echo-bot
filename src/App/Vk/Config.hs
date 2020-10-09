@@ -22,7 +22,7 @@ import Data.Text.Extended   ( Text )
 type VkReader r m = (Has Token r, Has Group r, MonadReader r m)
 
 newtype Token = Token { unToken :: Text }
-newtype Group = Group { unGroup :: Text }
+newtype Group = Group { unGroup :: Integer }
 
 data Config = Config
   { cToken :: Token
