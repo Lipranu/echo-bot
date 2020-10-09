@@ -33,6 +33,7 @@ dependencies:
 - text
 - time
 - vector
+- yaml
 - base >= 4.7 && < 5
 
 library:
