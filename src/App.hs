@@ -10,15 +10,15 @@ import qualified App.Vk       as Vk
 
 import Control.Concurrent.Async ( concurrently_ )
 import Control.Concurrent.MVar  ( newMVar )
-import Network.HTTP.Client.TLS  ( newTlsManager )
 import Data.IORef               ( newIORef )
-import Data.Aeson               ( eitherDecodeFileStrict )
+import Data.Yaml                ( ParseException, decodeFileEither)
+import Network.HTTP.Client.TLS  ( newTlsManager )
 
 run :: IO ()
 run = do
-  config <- eitherDecodeFileStrict "bot.conf.local"
-  case (config :: Either String Config) of
-    Left l -> putStrLn l
+  config <- decodeFileEither "config.yaml"
+  case (config :: Either ParseException Config) of
+    Left l -> print l
     Right Config {..} -> do
       lock    <- newMVar ()
       manager <- newTlsManager
