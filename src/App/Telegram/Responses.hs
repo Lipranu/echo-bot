@@ -6,6 +6,7 @@
 module App.Telegram.Responses
   ( ResponseException (..)
   , Update (..)
+  , Updates (..)
   ) where
 
 -- IMPORTS --------------------------------------------------------------------
@@ -15,8 +16,9 @@ import App.Shared.Responses
 import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
-import Data.Aeson.Extended ( (.:) )
-import Data.Text.Extended  ( Text )
+import Data.Aeson.Extended ( Value, (.:) )
+import Data.Text.Extended  ( Text, showt )
+import Data.Foldable       ( toList )
 import Control.Monad.Catch ( Exception )
 import GHC.Generics        ( Generic )
 
@@ -64,6 +66,19 @@ instance Loggable ResponseParameters where
   toLog (MigrateToChatId i) = "Migrate to chat id: " <> Text.showt i
   toLog (RetryAfter i)      = "Retry after: "        <> Text.showt i
 
+-- Updates ------------------------------------------------------------------
+
+newtype Updates = Updates { unUpdates :: [Value] }
+
+instance Aeson.FromJSON Updates where
+  parseJSON = Aeson.withArray (path <> "Updates") $ \a ->
+    pure . Updates $ toList a
+
+instance Loggable Updates where
+  toLog (Updates xs) = "Get updates: " <> showt (length xs)
+
+instance HasPriority Updates where logData = logInfo . toLog
+
 -- Update ------------------------------------------------------------------
 
 data Update = Update Integer MessageType
@@ -83,6 +98,7 @@ instance Loggable Update where
 
 instance HasPriority Update where
   logData = logInfo . toLog
+
 -- MessageType -------------------------------------------------------------
 
 data MessageType

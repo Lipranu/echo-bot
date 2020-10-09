@@ -28,10 +28,7 @@ import Control.Monad       ( (>=>) )
 import Data.Text.Extended  ( showt )
 import Data.Semigroup      ( Sum (..) )
 
-instance Loggable [Value] where
-  toLog xs = "Get updates: " <> showt (length xs)
-
-instance HasPriority [Value] where logData = logInfo . toLog
+-- FUNCTIONS ---------------------------------------------------------------
 
 getUpdates
   :: ( TelegramReader r m
@@ -42,7 +39,7 @@ getUpdates
   => GetUpdates
   -> m ()
 getUpdates = fromResponse
-  >=> fromValues processUpdate
+  >=> fromValues processUpdate . unUpdates
   >=> getUpdates . GetUpdates . check
   where check xs | null xs   = Nothing
                  | otherwise = getSum <$> maximum xs
