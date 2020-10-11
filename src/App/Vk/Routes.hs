@@ -36,7 +36,7 @@ import Infrastructure.Requester
 
 import qualified App.Shared.Routes as Shared
 
-import Control.Monad          ( (>=>), join, replicateM_, when )
+import Control.Monad          ( (>=>), replicateM_, when )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, evalStateT, runStateT, modify )
@@ -153,7 +153,7 @@ getName
   => m (Maybe UserName)
 getName = grab >>= \case
   Private -> pure Nothing
-  Chat    -> mkGetName >>= fromResponseH >>= pure . join . fmap listToMaybe
+  Chat    -> (listToMaybe =<<) <$> (mkGetName >>= fromResponseH)
 
 sendMessage
   :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)

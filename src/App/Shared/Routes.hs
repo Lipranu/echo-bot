@@ -160,7 +160,7 @@ fromResponseH
   => (Maybe output -> [Handler m (Maybe output)])
   -> input
   -> m (Maybe output)
-fromResponseH handlers x = (fromResponse @error @output x >>= pure . Just)
+fromResponseH handlers x = (Just <$> fromResponse @error @output x)
   `catches` handlers Nothing
 
 traverseHandled
@@ -186,7 +186,7 @@ fromValues
   => [Value]
   -> m [output]
 fromValues xs = reverse <$> foldM go [] xs
-  where go  xs x = (parse x >>= pure . (:xs)) `catch` err xs
+  where go  xs x = ((: xs) <$> parse x) `catch` err xs
         err xs e = logData (e :: DecodeException) >> pure xs
 
 decodeHandler, httpHandler :: HasLogger env m => output -> Handler m output

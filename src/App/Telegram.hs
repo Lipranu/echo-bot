@@ -5,7 +5,7 @@
 
 module App.Telegram ( mkApp, runApp ) where
 
--- IMPORTS --------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import App.Telegram.Config
 import App.Telegram.Routes
