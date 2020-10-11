@@ -17,12 +17,12 @@ module App.Vk.Routes
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Shared.Config
-import App.Shared.Routes hiding ( fromValues
-                                , fromValues_
-                                , fromResponse
-                                , fromResponse_
+import App.Shared.Routes hiding ( fromResponse
                                 , fromResponseH
+                                , fromResponse_
                                 , handlers
+                                , traverseHandled
+                                , traverseHandled_
                                 )
 
 import App.Vk.Config     ( VkReader )
@@ -36,12 +36,12 @@ import Infrastructure.Requester
 
 import qualified App.Shared.Routes as Shared
 
-import Control.Monad          ( (>=>), replicateM_, when )
+import Control.Monad          ( (>=>), join, replicateM_, when )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad.IO.Class ( MonadIO (..) )
 import Control.Monad.State    ( MonadState, evalStateT, runStateT, modify )
-import Data.Aeson             ( FromJSON, Value )
-import Data.Maybe             ( catMaybes, isJust, fromMaybe, listToMaybe )
+import Data.Aeson             ( FromJSON )
+import Data.Maybe             ( isJust, fromMaybe, listToMaybe )
 import Data.Text.Extended     ( Text, showt )
 import System.Random          ( randomIO )
 
@@ -69,7 +69,8 @@ getUpdates
   -> m ()
 getUpdates gu = withLog requestAndDecode gu >>= \case
   Updates xs ts -> do
-    fromValues_ processMessage xs
+    result <- fromValues xs
+    traverseHandled_ processMessage result
     getUpdates gu { guTs = ts }
   OutOfDate ts  -> getUpdates gu { guTs = showt ts }
   rest          -> getLongPollServer >>= getUpdates
@@ -85,27 +86,27 @@ processMessage
 processMessage (NewMessage m) = do
   continue <- evalStateT (processCommand $ getter m) m
   when continue $ do
-    result         <- runStateT (fromValues processAttachment $ getter m) m
+    result         <- runStateT stateFunc m
     (kb, repeats)  <- findUser $ getter m
     (sm, sendable) <- formAndCheck result kb
     when sendable $ replicateM_ repeats $ sendMessage sm
   where
-    findUser x = getRepeats x >>= \case
+    stateFunc = fromValues >=> traverseHandled processAttachment $ getter m
+
+    findUser  = getRepeats >=> \case
       Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
       Just i  -> pure (Nothing, i)
 
     formAndCheck (attach, msg) kb = (mkSendMessage msg attach kb,) <$>
-      if   checkMessage msg || checkAttachments attach
+      if   checkMessage msg || not (null attach)
       then logDebug   ("Message can be sended"   :: Text) >> pure True
       else logWarning ("Cant send empty message" :: Text) >> pure False
-
-    checkAttachments = not . null . catMaybes
 
     checkMessage Message {..} = isJust mSticker
       || maybe False (not . Text.null) mMessage
       || (isJust mLatitude && isJust mLongitude)
 
-processMessage rest = pure mempty
+processMessage rest = pure ()
 
 processCommand
   :: ( MonadEffects env m
@@ -152,11 +153,12 @@ getName
   => m (Maybe UserName)
 getName = grab >>= \case
   Private -> pure Nothing
-  Chat    -> mkGetName >>= fmap listToMaybe . fromResponseH
+  Chat    -> mkGetName >>= fromResponseH >>= pure . join . fmap listToMaybe
 
-sendMessage :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
-            => (Int -> SendMessage)
-            -> m ()
+sendMessage
+  :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
+  => (Int -> SendMessage)
+  -> m ()
 sendMessage sm = do
   msg <- sm <$> liftIO randomIO
   fromResponse_ @MessageSended msg
@@ -281,34 +283,28 @@ fromResponseH
      , MonadCatch m
      , MonadEffects env m
      , MonadThrow m
-     , Monoid output
      , ToRequest m input
      )
   => input
-  -> m output
+  -> m (Maybe output)
 fromResponseH = Shared.fromResponseH @ResponseException @output handlers
 
-fromValues_
-  :: (FromJSON input, MonadCatch m, HasLogger env m, HasPriority input)
-  => (input -> m ())
-  -> [Value]
-  -> m ()
-fromValues_ = Shared.fromValues_ handlers
-
-fromValues
-  :: ( FromJSON input
-     , MonadCatch m
-     , HasLogger env m
-     , HasPriority input
-     , Monoid output
-     )
-  => (input -> m output)
-  -> [Value]
+traverseHandled
+  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  => (input -> m (Maybe output))
+  -> [input]
   -> m [output]
-fromValues = Shared.fromValues handlers
+traverseHandled = Shared.traverseHandled handlers
 
-handlers :: (Monoid output, HasLogger env m) => [Handler m output]
-handlers = Shared.handlers <>
-  [ Handler $ \(e :: ResponseException) -> logData e >> pure mempty
-  , Handler $ \(e :: UploadException)   -> logData e >> pure mempty
+traverseHandled_
+  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  => (input -> m ())
+  -> [input]
+  -> m ()
+traverseHandled_ = Shared.traverseHandled_ handlers
+
+handlers :: HasLogger env m => output -> [Handler m output]
+handlers x = Shared.handlers x <>
+  [ Handler $ \(e :: ResponseException) -> logData e >> pure x
+  , Handler $ \(e :: UploadException)   -> logData e >> pure x
   ]

@@ -31,7 +31,7 @@ import App.Vk.Responses
 import Infrastructure.Has
 
 import Control.Monad.State ( MonadState )
-import Data.Maybe          ( catMaybes, fromMaybe )
+import Data.Maybe          ( fromMaybe )
 import Data.Text.Extended  ( Text )
 
 import qualified Data.Text.Extended   as Text
@@ -124,7 +124,7 @@ mkGetName = GetName <$> grab
 
 mkSendMessage
   :: Message
-  -> [Maybe Text]
+  -> [Text]
   -> Maybe Keyboard
   -> Int
   -> SendMessage
@@ -138,7 +138,7 @@ mkSendMessage Message {..} attachments keyboard randomId =
       smKeyboard    = keyboard
       smReplyId     = mReplyId
       smForwardsId  = listToText $ Text.showt <$> mForwardsId
-      smAttachments = listToText $ catMaybes attachments
+      smAttachments = listToText attachments
       listToText [] = Nothing
       listToText xs = Just $ Text.intercalate "," xs
    in SendMessage {..}
