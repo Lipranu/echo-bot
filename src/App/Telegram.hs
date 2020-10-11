@@ -11,17 +11,18 @@ import App.Telegram.Config
 import App.Telegram.Routes
 
 import App.Shared
-import App.Shared.Config        hiding ( Config )
-import App.Shared.Routes
+import App.Shared.Config hiding ( Config )
+import App.Shared.Routes        ( Repetitions, start, shutdown )
 
 import Infrastructure.Has
-import Infrastructure.Logger    hiding ( Config )
+import Infrastructure.Logger    ( Logger, Lock, mkLogger )
 import Infrastructure.Requester
 
 import qualified App.Shared.Config as Shared
 
-import Control.Monad.Reader ( ReaderT (..) )
+import Control.Monad.Reader ( runReaderT )
 import Data.IORef           ( IORef )
+import Control.Monad.Catch  ( catches )
 
 -- TYPES AND INSTANCES -----------------------------------------------------
 
@@ -48,7 +49,8 @@ instance Has (IORef Repetitions)   Env where getter = envRepetitions
 -- FUNCTIONS ---------------------------------------------------------------
 
 app :: App Env ()
-app = start >> getUpdates (GetUpdates Nothing)
+app = start >> loop >> shutdown
+  where loop = getUpdates (GetUpdates Nothing) `catches` handlers ()
 
 mkApp Config {..} Shared.Config {..} logger lock ref manager =
   let envLock          = lock

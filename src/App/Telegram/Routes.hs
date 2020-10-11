@@ -5,8 +5,9 @@
 {-# LANGUAGE FlexibleInstances     #-}
 
 module App.Telegram.Routes
-  ( getUpdates
-  , GetUpdates (..)
+  ( GetUpdates (..)
+  , getUpdates
+  , handlers
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
