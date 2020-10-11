@@ -15,18 +15,17 @@ import App.Telegram.Requests
 import App.Telegram.Responses
 import App.Telegram.Config      ( TelegramReader )
 
-import App.Shared.Routes hiding ( fromResponse, fromValues, handlers )
+import App.Shared.Routes hiding ( fromResponse, traverseHandled, handlers )
 
 import Infrastructure.Has
 import Infrastructure.Logger
 import Infrastructure.Requester
 
 import qualified App.Shared.Routes as Shared
-import Data.Aeson          ( FromJSON, Value )
-import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch, catch )
+
+import Data.Aeson          ( FromJSON )
+import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad       ( (>=>) )
-import Data.Text.Extended  ( showt )
-import Data.Semigroup      ( Sum (..) )
 
 -- FUNCTIONS ---------------------------------------------------------------
 
@@ -39,17 +38,18 @@ getUpdates
   => GetUpdates
   -> m ()
 getUpdates = fromResponse
-  >=> fromValues processUpdate . unUpdates
+  >=> fromValues . unUpdates
+  >=> traverseHandled processUpdate
   >=> getUpdates . GetUpdates . check
   where check xs | null xs   = Nothing
-                 | otherwise = getSum <$> maximum xs
+                 | otherwise = Just $ maximum xs
 
 processUpdate :: MonadEffects r m
               => Update
-              -> m (Maybe (Sum Integer))
+              -> m (Maybe Integer)
 processUpdate p@(Update id _) = do
   logDebug p
-  pure $ Just $ Sum id
+  pure $ Just id
 
 fromResponse
   :: forall output input env m
@@ -64,18 +64,13 @@ fromResponse
   -> m output
 fromResponse = Shared.fromResponse @ResponseException @output
 
-fromValues
-  :: ( FromJSON input
-     , MonadCatch m
-     , HasLogger env m
-     , HasPriority input
-     , Monoid output
-     )
-  => (input -> m output)
-  -> [Value]
+traverseHandled
+  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  => (input -> m (Maybe output))
+  -> [input]
   -> m [output]
-fromValues = Shared.fromValues handlers
+traverseHandled = Shared.traverseHandled handlers
 
-handlers :: (Monoid output, HasLogger env m) => [Handler m output]
-handlers = Handler (\(e :: ResponseException) -> logData e >> pure mempty)
-  : Shared.handlers
+handlers :: HasLogger env m => output -> [Handler m output]
+handlers x = Handler (\(e :: ResponseException) -> logData e >> pure x)
+  : Shared.handlers x
