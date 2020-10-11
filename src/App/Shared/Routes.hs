@@ -14,7 +14,6 @@ module App.Shared.Routes
   , fromResponseH
   , fromResponse_
   , fromValues
-  , fromValues_
   , getRepeats
   , handlers
   , inputLog
@@ -22,6 +21,8 @@ module App.Shared.Routes
   , putRepeats
   , shutdown
   , start
+  , traverseHandled
+  , traverseHandled_
   , withLog
   , withLog_
   ) where
@@ -35,14 +36,15 @@ import Infrastructure.Requester
 import App.Shared.Responses
 import App.Shared.Config
 
-import Control.Monad          ( (>=>) )
+import Control.Monad          ( (>=>), foldM )
 import Control.Monad.Catch    ( Exception, Handler (..), MonadCatch
-                              , MonadThrow, catches, throwM
+                              , MonadThrow, catch, catches, throwM
                               )
 import Control.Monad.IO.Class ( MonadIO, liftIO )
 import Control.Monad.Reader   ( MonadReader )
 import Data.Aeson.Extended    ( FromJSON, Value )
 import Data.Foldable          ( traverse_ )
+import Data.Maybe             ( catMaybes )
 import Data.IORef             ( IORef, readIORef, modifyIORef' )
 import Data.Map.Strict        ( Map, lookup, insert )
 import Data.Text              ( Text )
@@ -153,41 +155,46 @@ fromResponseH
      , HasPriority output
      , MonadCatch m
      , MonadEffects env m
-     , Monoid output
      , ToRequest m input
      )
-  => [Handler m output]
+  => (Maybe output -> [Handler m (Maybe output)])
   -> input
-  -> m output
-fromResponseH handlers x = fromResponse @error @output x `catches` handlers
+  -> m (Maybe output)
+fromResponseH handlers x = (fromResponse @error @output x >>= pure . Just)
+  `catches` handlers Nothing
 
-fromValues_
-  :: (FromJSON input, MonadCatch m, HasLogger env m, HasPriority input)
-  => [Handler m ()]
+traverseHandled
+  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  => (Maybe output -> [Handler m (Maybe output)])
+  -> (input -> m (Maybe output))
+  -> [input]
+  -> m [output]
+traverseHandled handlers f xs = catMaybes <$> traverse go xs
+  where go x = inputLog f x `catches` handlers Nothing
+
+traverseHandled_
+  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  => (() -> [Handler m ()])
   -> (input -> m ())
-  -> [Value]
+  -> [input]
   -> m ()
-fromValues_ handlers f = traverse_ go
-  where go x = (parse >=> inputLog f) x `catches` handlers
+traverseHandled_ handlers f = traverse_ go
+  where go x = inputLog f x `catches` handlers ()
 
 fromValues
-  :: ( FromJSON input
-     , HasLogger env m
-     , HasPriority input
-     , MonadCatch m
-     )
-  => [Handler m output]
-  -> (input -> m output)
-  -> [Value]
+  :: (FromJSON output, MonadCatch m, HasLogger env m)
+  => [Value]
   -> m [output]
-fromValues handlers f = traverse go
-  where go x = (parse >=> inputLog f) x `catches` handlers
+fromValues xs = reverse <$> foldM go [] xs
+  where go  xs x = (parse x >>= pure . (:xs)) `catch` err xs
+        err xs e = logData (e :: DecodeException) >> pure xs
 
-handlers :: (Monoid output, HasLogger env m) => [Handler m output]
-handlers =
-  [ Handler $ \(e :: HttpException)   -> logData e >> pure mempty
-  , Handler $ \(e :: DecodeException) -> logData e >> pure mempty
-  ]
+decodeHandler, httpHandler :: HasLogger env m => output -> Handler m output
+decodeHandler x = Handler $ \(e :: DecodeException) -> logData e >> pure x
+httpHandler   x = Handler $ \(e :: HttpException)   -> logData e >> pure x
+
+handlers :: (HasLogger env m) => output -> [Handler m output]
+handlers x = [httpHandler x, decodeHandler x]
 
 start, shutdown :: HasLogger env m => m ()
 start    = logInfo  ("Application getting started" :: Text)
