@@ -16,7 +16,7 @@ import App.Shared.Responses
 import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
-import Data.Aeson.Extended ( Value, (.:) )
+import Data.Aeson.Extended ( FromJSON (..), Value, (.:) )
 import Data.Text.Extended  ( Text, showt )
 import Data.Foldable       ( toList )
 import Control.Monad.Catch ( Exception )
@@ -56,11 +56,10 @@ data ResponseParameters
   | RetryAfter Integer
   deriving (Show)
 
-instance Aeson.FromJSON ResponseParameters where
-  parseJSON = Aeson.withObject
-    (path <> "ResponseException.ResponseParameters") $ \o ->
-          MigrateToChatId <$> o .: "migrate_to_chat_id"
-      <|> RetryAfter      <$> o .: "retry_after"
+instance FromJSON ResponseParameters where
+  parseJSON = Aeson.withObject (path <> "ResponseParameters") $ \o ->
+        MigrateToChatId <$> o .: "migrate_to_chat_id"
+    <|> RetryAfter      <$> o .: "retry_after"
 
 instance Loggable ResponseParameters where
   toLog (MigrateToChatId i) = "Migrate to chat id: " <> Text.showt i
@@ -70,7 +69,7 @@ instance Loggable ResponseParameters where
 
 newtype Updates = Updates { unUpdates :: [Value] }
 
-instance Aeson.FromJSON Updates where
+instance FromJSON Updates where
   parseJSON = Aeson.withArray (path <> "Updates") $ \a ->
     pure . Updates $ toList a
 
@@ -83,10 +82,10 @@ instance HasPriority Updates where logData = logInfo . toLog
 
 data Update = Update Integer MessageType
 
-instance Aeson.FromJSON Update where
-  parseJSON = Aeson.withObject "App.Vk.Update" $ \o -> Update
+instance FromJSON Update where
+  parseJSON = Aeson.withObject (path <> "Update") $ \o -> Update
     <$> o .: "update_id"
-    <*> Aeson.parseJSON (Aeson.Object o)
+    <*> parseJSON (Aeson.Object o)
 
 instance Loggable [Update] where
   toLog v = "Updates resived: " <> Text.showt (length v)
@@ -102,13 +101,13 @@ instance HasPriority Update where
 -- MessageType -------------------------------------------------------------
 
 data MessageType
-  = Message Aeson.Value
-  | UnsupportedType
+  = Message Value
+  | UnsupportedType Value
 
-instance Aeson.FromJSON MessageType where
+instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "MessageType") $ \o ->
         Message <$> o .: "message"
-    <|> pure UnsupportedType
+    <|> pure (UnsupportedType $ Aeson.Object o)
 
 -- FUNCTIONS ---------------------------------------------------------------
 
