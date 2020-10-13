@@ -4,7 +4,6 @@
 {-# LANGUAGE LambdaCase          #-}
 {-# LANGUAGE OverloadedStrings   #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TupleSections       #-}
 {-# LANGUAGE TypeApplications    #-}
 {-# LANGUAGE RecordWildCards     #-}
 
@@ -157,7 +156,9 @@ getName
   => m (Maybe UserName)
 getName = grab >>= \case
   Private -> pure Nothing
-  Chat    -> (listToMaybe =<<) <$> (mkGetName >>= fromResponseH)
+  Chat    -> do
+    response <- mkGetName >>= fromResponseH
+    pure $ response >>= listToMaybe
 
 sendMessage
   :: (MonadEffects r m, MonadIO m, VkReader r m, MonadThrow m)
