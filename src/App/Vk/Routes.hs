@@ -86,25 +86,29 @@ processMessage
 processMessage (NewMessage m) = do
   continue <- evalStateT (processCommand $ getter m) m
   when continue $ do
-    result         <- runStateT stateFunc m
-    (kb, repeats)  <- findUser $ getter m
-    (sm, sendable) <- formAndCheck result kb
-    when sendable $ replicateM_ repeats $ sendMessage sm
+    (attach, msg)  <- runStateT (stateProcess $ getter m) m
+    let sendable = check msg attach
+    report sendable
+    when sendable $ do
+      (kb, repeats)  <- findUser $ getter m
+      let sm = mkSendMessage msg attach kb
+      replicateM_ repeats $ sendMessage sm
   where
-    stateFunc = fromValues >=> traverseHandled processAttachment $ getter m
+    stateProcess = fromValues >=> traverseHandled processAttachment
 
-    findUser  = getRepeats >=> \case
-      Nothing -> (mkKeyboard,) . unDefaultRepeat <$> obtain
+    findUser key = getRepeats key >>= \case
       Just i  -> pure (Nothing, i)
+      Nothing -> do
+        repeat <- unDefaultRepeat <$> obtain
+        putRepeats repeat key
+        pure (mkKeyboard, repeat)
 
-    formAndCheck (attach, msg) kb = (mkSendMessage msg attach kb,) <$>
-      if   checkMessage msg || not (null attach)
-      then logDebug   ("Message can be sended"   :: Text) >> pure True
-      else logWarning ("Cant send empty message" :: Text) >> pure False
-
-    checkMessage Message {..} = isJust mSticker
-      || maybe False (not . Text.null) mMessage
+    check Message {..} attach = maybe False (not . Text.null) mMessage
       || (isJust mLatitude && isJust mLongitude)
+      || not (null attach)
+
+    report True  = logDebug   ("Message can be sended"   :: Text)
+    report False = logWarning ("Cant send empty message" :: Text)
 
 processMessage rest = pure ()
 
@@ -172,7 +176,7 @@ processAttachment
      )
   => Attachment
   -> m (Maybe Text)
-processAttachment Graffiti     = notify "graffiti" >> pure Nothing
+processAttachment Graffiti     = notifyCantSend "graffiti" >> pure Nothing
 processAttachment (Sticker id) = addSticker id     >> pure Nothing
 processAttachment (Attachment   body) = addAttachment body
 processAttachment (AudioMessage body) = uploadAttachment body
@@ -181,11 +185,10 @@ processAttachment (Photo        body) = grab >>= \case
   Chat    -> uploadAttachment body
 processAttachment (Video        body) = grab >>= \case
   Private -> addAttachment body
-  Chat    -> if vbCanResend body
-    then addAttachment body
-    else notify "uploaded video" >> pure Nothing
+  Chat | vbCanResend body -> addAttachment body
+       | otherwise        -> notifyCantSend "uploaded video" >> pure Nothing
 processAttachment (Document     body) = case dbType body of
-  "graffiti" -> notify "graffiti" >> pure Nothing
+  "graffiti" -> notifyCantSend "graffiti" >> pure Nothing
   "photo"    -> uploadAttachment $ docToPhoto body
   _          -> uploadAttachment body
 
@@ -203,7 +206,7 @@ uploadAttachment
   -> m (Maybe Text)
 uploadAttachment = toUploadRequests >=> processDocument
 
-notify
+notifyCantSend
   :: ( Has Context s
      , Has FromId s
      , Has MessageId s
@@ -217,7 +220,7 @@ notify
      )
   => Text
   -> m ()
-notify aType = getName >>= mkNotification aType >>= sendMessage
+notifyCantSend aType = getName >>= mkNotification aType >>= sendMessage
 
 addAttachment
   :: forall input m
