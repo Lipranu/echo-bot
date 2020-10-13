@@ -24,7 +24,7 @@ import Infrastructure.Requester
 
 import qualified App.Shared.Routes as Shared
 
-import Data.Aeson          ( FromJSON )
+import Data.Aeson          ( Value, FromJSON )
 import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad       ( (>=>) )
 
@@ -39,7 +39,7 @@ getUpdates
   => GetUpdates
   -> m ()
 getUpdates = fromResponse
-  >=> fromValues . unUpdates
+--  >=> fromValues . unUpdates
   >=> traverseHandled processUpdate
   >=> getUpdates . GetUpdates . check
   where check xs | null xs   = Nothing
@@ -48,8 +48,9 @@ getUpdates = fromResponse
 processUpdate :: MonadEffects r m
               => Update
               -> m (Maybe Integer)
-processUpdate p@(Update id _) = do
+processUpdate p@(Update id o) = do
   logDebug p
+  logData o
   pure $ Just id
 
 fromResponse

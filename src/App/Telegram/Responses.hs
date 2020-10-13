@@ -2,6 +2,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE ScopedTypeVariables    #-}
+{-# LANGUAGE TypeApplications    #-}
 
 module App.Telegram.Responses
   ( ResponseException (..)
@@ -16,7 +18,8 @@ import App.Shared.Responses
 import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
-import Data.Aeson.Extended ( FromJSON (..), Value, (.:) )
+import Data.Aeson.Extended ( FromJSON (..), Value, (.:), (.:?) )
+import Data.Aeson.Types    ( Parser )
 import Data.Text.Extended  ( Text, showt )
 import Data.Foldable       ( toList )
 import Control.Monad.Catch ( Exception )
@@ -85,7 +88,7 @@ data Update = Update Integer MessageType
 instance FromJSON Update where
   parseJSON = Aeson.withObject (path <> "Update") $ \o -> Update
     <$> o .: "update_id"
-    <*> parseJSON (Aeson.Object o)
+    <*> Aeson.parseJSON (Aeson.Object o)
 
 instance Loggable [Update] where
   toLog v = "Updates resived: " <> Text.showt (length v)
@@ -101,13 +104,35 @@ instance HasPriority Update where
 -- MessageType -------------------------------------------------------------
 
 data MessageType
-  = Message Value
-  | UnsupportedType Value
+  = Message MessageData
+  | UnsupportedType Aeson.Object
 
 instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "MessageType") $ \o ->
-        Message <$> o .: "message"
-    <|> pure (UnsupportedType $ Aeson.Object o)
+        Message <$> (o .: "message" <|> o .: "channel_post")
+    <|> pure (UnsupportedType o)
+
+instance Loggable MessageType where
+  toLog (Message body) = "Recived update of type Message"
+  toLog (UnsupportedType body) = mkToLog "Recived unsupported update"
+    [("Body", showt body)] []
+
+instance HasPriority MessageType where
+  logData m@(Message         _) = logInfo    $ toLog m
+  logData m@(UnsupportedType _) = logWarning $ toLog m
+
+-- MessageData -------------------------------------------------------------
+
+data MessageData = MessageData
+  { mdText      :: Maybe Text
+  , mdMessageId :: Integer
+  }
+
+instance FromJSON MessageData where
+  parseJSON = Aeson.withObject (path <> "MessageData") $ \o -> do
+    mdText      <- o .: "text" <|> o .:? "caption"
+    mdMessageId <- o .: "message_id"
+    pure MessageData {..}
 
 -- FUNCTIONS ---------------------------------------------------------------
 
