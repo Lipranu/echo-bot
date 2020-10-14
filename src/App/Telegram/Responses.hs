@@ -1,17 +1,18 @@
+{-# LANGUAGE DeriveGeneric     #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE ScopedTypeVariables    #-}
-{-# LANGUAGE TypeApplications    #-}
 
 module App.Telegram.Responses
   ( ResponseException (..)
   , Update (..)
   , Updates (..)
+  , UpdateType (..)
+  , MessageType (..)
   ) where
 
--- IMPORTS --------------------------------------------------------------------
+-- IMPORTS -----------------------------------------------------------------
 
 import App.Shared.Responses
 
@@ -19,7 +20,6 @@ import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
 import Data.Aeson.Extended ( FromJSON (..), Value, (.:), (.:?) )
-import Data.Aeson.Types    ( Parser )
 import Data.Text.Extended  ( Text, showt )
 import Data.Foldable       ( toList )
 import Control.Monad.Catch ( Exception )
@@ -68,7 +68,7 @@ instance Loggable ResponseParameters where
   toLog (MigrateToChatId i) = "Migrate to chat id: " <> Text.showt i
   toLog (RetryAfter i)      = "Retry after: "        <> Text.showt i
 
--- Updates ------------------------------------------------------------------
+-- Updates -----------------------------------------------------------------
 
 newtype Updates = Updates { unUpdates :: [Value] }
 
@@ -83,7 +83,7 @@ instance HasPriority Updates where logData = logInfo . toLog
 
 -- Update ------------------------------------------------------------------
 
-data Update = Update Integer MessageType
+data Update = Update Integer UpdateType
 
 instance FromJSON Update where
   parseJSON = Aeson.withObject (path <> "Update") $ \o -> Update
@@ -101,38 +101,72 @@ instance Loggable Update where
 instance HasPriority Update where
   logData = logInfo . toLog
 
+-- UpdateType --------------------------------------------------------------
+
+data UpdateType
+  = Message MessageBody
+  | UnsupportedUpdate Aeson.Object
+
+instance FromJSON UpdateType where
+  parseJSON = Aeson.withObject (path <> "MessageType") $ \o ->
+        Message <$> (o .: "message" <|> o .: "channel_post")
+    <|> pure (UnsupportedUpdate o)
+
+instance Loggable UpdateType where
+  toLog (Message body) = "Recived update of type Message"
+  toLog (UnsupportedUpdate body) = mkToLog "Recived unsupported update"
+    [("Body", showt body)] []
+
+instance HasPriority UpdateType where
+  logData m@(Message           _) = logInfo    $ toLog m
+  logData m@(UnsupportedUpdate _) = logWarning $ toLog m
+
+-- MessageBody -------------------------------------------------------------
+
+data MessageBody = MessageBody
+  { mbMessageId :: Integer
+  , mbUserId    :: Integer
+  , mbChatId    :: Integer
+  , mbText      :: Maybe Text
+  , mbType      :: MessageType
+  }
+
+instance FromJSON MessageBody where
+  parseJSON = Aeson.withObject (path <> "MessageData") $ \o -> do
+    mbType      <- parseJSON $ Aeson.Object o
+    mbMessageId <- o .:  "message_id"
+    mbText      <- o .:  "text" <|> o .:? "caption"
+    mbChatId    <- o .:  "chat" >>= (.: "id")
+    mbUserId    <- o .:? "from" >>= \case
+      Nothing   -> pure mbChatId
+      Just user -> user .: "id"
+    pure MessageBody {..}
+
+instance Loggable MessageBody where
+  toLog MessageBody {..} = mkToLog "Processing MessageBody:"
+    [ ("Message Type", toLog mbType)
+    , ("Message Id"  , showt mbMessageId)
+    , ("User Id"     , showt mbUserId)
+    , ("Chat Id"     , showt mbChatId)
+    ] [("Text", mbText)]
+
+instance HasPriority MessageBody where
+  logData = logDebug . toLog
+
 -- MessageType -------------------------------------------------------------
 
 data MessageType
-  = Message MessageData
-  | UnsupportedType Aeson.Object
+  = TextMessage
 
 instance FromJSON MessageType where
-  parseJSON = Aeson.withObject (path <> "MessageType") $ \o ->
-        Message <$> (o .: "message" <|> o .: "channel_post")
-    <|> pure (UnsupportedType o)
+  parseJSON = Aeson.withObject (path <> "Attachment") $ \o ->
+    pure TextMessage
 
 instance Loggable MessageType where
-  toLog (Message body) = "Recived update of type Message"
-  toLog (UnsupportedType body) = mkToLog "Recived unsupported update"
-    [("Body", showt body)] []
+  toLog TextMessage = "Text Message"
 
 instance HasPriority MessageType where
-  logData m@(Message         _) = logInfo    $ toLog m
-  logData m@(UnsupportedType _) = logWarning $ toLog m
-
--- MessageData -------------------------------------------------------------
-
-data MessageData = MessageData
-  { mdText      :: Maybe Text
-  , mdMessageId :: Integer
-  }
-
-instance FromJSON MessageData where
-  parseJSON = Aeson.withObject (path <> "MessageData") $ \o -> do
-    mdText      <- o .: "text" <|> o .:? "caption"
-    mdMessageId <- o .: "message_id"
-    pure MessageData {..}
+  logData = logDebug . toLog
 
 -- FUNCTIONS ---------------------------------------------------------------
 

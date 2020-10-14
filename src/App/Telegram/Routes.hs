@@ -51,6 +51,9 @@ processUpdate :: MonadEffects r m
 processUpdate p@(Update id o) = do
   logDebug p
   logData o
+  case o of
+    Message b -> logData b
+    _ -> pure ()
   pure $ Just id
 
 fromResponse
