@@ -5,11 +5,11 @@
 {-# LANGUAGE RecordWildCards   #-}
 
 module App.Telegram.Responses
-  ( ResponseException (..)
+  ( MessageType (..)
+  , ResponseException (..)
   , Update (..)
-  , Updates (..)
   , UpdateType (..)
-  , MessageType (..)
+  , Updates (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -19,10 +19,12 @@ import App.Shared.Responses
 import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
-import Data.Aeson.Extended ( FromJSON (..), Value, (.:), (.:?) )
-import Data.Text.Extended  ( Text, showt )
-import Data.Foldable       ( toList )
 import Control.Monad.Catch ( Exception )
+import Data.Aeson.Extended ( FromJSON (..), Value, (.:), (.:?) )
+import Data.Coerce         ( coerce )
+import Data.Foldable       ( toList )
+import Data.Text.Extended  ( Text, showt )
+import Data.Vector         ( (!) )
 import GHC.Generics        ( Generic )
 
 import qualified Data.Aeson.Extended as Aeson
@@ -57,7 +59,7 @@ instance HasPriority ResponseException where logData = logError . toLog
 data ResponseParameters
   = MigrateToChatId Integer
   | RetryAfter Integer
-  deriving (Show)
+  deriving Show
 
 instance FromJSON ResponseParameters where
   parseJSON = Aeson.withObject (path <> "ResponseParameters") $ \o ->
@@ -155,15 +157,50 @@ instance HasPriority MessageBody where
 
 -- MessageType -------------------------------------------------------------
 
+newtype FileId = FileId { unFileId :: Text } deriving Generic
+
+instance FromJSON FileId where
+  parseJSON = Aeson.parseJsonDrop
+
 data MessageType
   = TextMessage
+  | Animation FileId
+  | Audio     FileId
+  | Document  FileId
+  | Photo     FileId
+  | Sticker   FileId
+  | Video     FileId
+  | VideoNote FileId
+  | Voice     FileId
+--TODO: | Location
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
 
 instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o ->
-    pure TextMessage
+        Photo     <$> (o .: "photo" >>= parseJSON . (! 0))
+    <|> Animation <$>  o .: "animation"
+    <|> Audio     <$>  o .: "audio"
+    <|> Document  <$>  o .: "document"
+    <|> Sticker   <$>  o .: "sticker"
+    <|> Video     <$>  o .: "video"
+    <|> VideoNote <$>  o .: "video_note"
+    <|> Voice     <$>  o .: "voice"
+    <|> pure TextMessage
 
 instance Loggable MessageType where
-  toLog TextMessage = "Text Message"
+  toLog TextMessage    = "Text Message"
+  toLog (Animation id) = "Animation (id: " <> coerce id <> ")"
+  toLog (Audio id)     = "Audio (id: "     <> coerce id <> ")"
+  toLog (Document id)  = "Document (id: "  <> coerce id <> ")"
+  toLog (Photo id)     = "Photo (id: "     <> coerce id <> ")"
+  toLog (Sticker id)   = "Sticker (id: "   <> coerce id <> ")"
+  toLog (Video id)     = "Video (id:"      <> coerce id <> ")"
+  toLog (VideoNote id) = "VideoNote (id: " <> coerce id <> ")"
+  toLog (Voice id)     = "Voice (id: "     <> coerce id <> ")"
 
 instance HasPriority MessageType where
   logData = logDebug . toLog
