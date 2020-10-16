@@ -10,6 +10,8 @@ module App.Telegram.Responses
   , Update (..)
   , UpdateType (..)
   , Updates (..)
+  , MessageBody (..)
+  , FileId (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
