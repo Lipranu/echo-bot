@@ -16,6 +16,7 @@ module App.Telegram.Requests
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Telegram.Config      ( TelegramReader, Token (..) )
+import App.Telegram.Responses   ( Longitude (..), Latitude (..) )
 
 import Infrastructure.Has
 import Infrastructure.Logger
@@ -72,37 +73,41 @@ type ChatId  = Integer
 
 data SendRequest
   = SendMessage   SendMessageBody
+  | SendSticker   MediaId ChatId
   | SendAnimation MediaId SendCommonPart
   | SendAudio     MediaId SendCommonPart
   | SendDocument  MediaId SendCommonPart
   | SendPhoto     MediaId SendCommonPart
-  | SendSticker   MediaId ChatId
   | SendVoice     MediaId SendCommonPart
   | SendVideo     MediaId SendCommonPart
   | SendVideoNote MediaId SendCommonPart
+  | SendLocation  ChatId Longitude Latitude
 
 instance ToJSON SendRequest where
   toJSON sr = case sr of
-    SendMessage   body      -> toJSON body
-    SendSticker   id chat   -> encodeSticker id chat
-    SendAnimation id common -> commonEncode  id common "animation"
-    SendAudio     id common -> commonEncode  id common "audio"
-    SendDocument  id common -> commonEncode  id common "document"
-    SendPhoto     id common -> commonEncode  id common "photo"
-    SendVoice     id common -> commonEncode  id common "voice"
-    SendVideo     id common -> commonEncode  id common "video"
-    SendVideoNote id common -> commonEncode  id common "video_note"
+    SendMessage   body          -> toJSON body
+    SendLocation  chat long lat -> encodeLocation chat long lat
+    SendSticker   id chat       -> encodeSticker id chat
+    SendAnimation id common     -> commonEncode  id common "animation"
+    SendAudio     id common     -> commonEncode  id common "audio"
+    SendDocument  id common     -> commonEncode  id common "document"
+    SendPhoto     id common     -> commonEncode  id common "photo"
+    SendVoice     id common     -> commonEncode  id common "voice"
+    SendVideo     id common     -> commonEncode  id common "video"
+    SendVideoNote id common     -> commonEncode  id common "video_note"
     where
-      encodeSticker id chat = Aeson.object
-        ["sticker" .= id, "chat_id" .= chat]
+      addChat chat vs = "chat_id" .= chat : vs
+
+      encodeSticker id chat = Aeson.object $ addChat chat ["sticker" .= id]
+
+      encodeLocation chat (Longitude long) (Latitude lat) = Aeson.object
+        $ addChat chat ["longitude" .= long, "latitude" .= lat]
 
       commonEncode id common srtype = Aeson.object
         $ srtype .= id : commonPart common
 
-      commonPart SendCommonPart {..} =
-        [ "chat_id"    .= chatId
-        , "parse_mode" .= parseMode
-        ] <> case caption of
+      commonPart SendCommonPart {..} = addChat chatId $
+        "parse_mode" .= parseMode : case caption of
           Nothing -> []
           Just x  -> ["caption" .= x]
 
@@ -117,18 +122,20 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
     SendVoice     {} -> "/sendVoice"
     SendVideo     {} -> "/sendVideo"
     SendVideoNote {} -> "/sendVideoNote"
+    SendLocation  {} -> "/sendLocation"
 
 instance Loggable SendRequest where
   toLog sr = case sr of
-    SendMessage   body      -> toLog body
-    SendSticker   id chat   -> mkStickerLog id chat
-    SendAnimation id common -> mkMediaLog   id common "Animation"
-    SendAudio     id common -> mkMediaLog   id common "Audio"
-    SendDocument  id common -> mkMediaLog   id common "Document"
-    SendPhoto     id common -> mkMediaLog   id common "Photo"
-    SendVoice     id common -> mkMediaLog   id common "Voice"
-    SendVideo     id common -> mkMediaLog   id common "Video"
-    SendVideoNote id common -> mkMediaLog   id common "VideoNote"
+    SendMessage   body          -> toLog body
+    SendLocation  chat long lat -> mkLocationLog chat long lat
+    SendSticker   id chat       -> mkStickerLog id chat
+    SendAnimation id common     -> mkMediaLog   id common "Animation"
+    SendAudio     id common     -> mkMediaLog   id common "Audio"
+    SendDocument  id common     -> mkMediaLog   id common "Document"
+    SendPhoto     id common     -> mkMediaLog   id common "Photo"
+    SendVoice     id common     -> mkMediaLog   id common "Voice"
+    SendVideo     id common     -> mkMediaLog   id common "Video"
+    SendVideoNote id common     -> mkMediaLog   id common "VideoNote"
     where
       mkMediaLog id common srtype =
         (mkToLog ("Send" <> srtype) [(srtype <> " Id", id)] [])
@@ -136,6 +143,9 @@ instance Loggable SendRequest where
 
       mkStickerLog id chat = mkToLog "SendSticker"
         [("Sticker Id", id), ("Chat Id", showt chat)] []
+
+      mkLocationLog chat long lat = (mkToLog "SendLocation"
+        [("Chat Id", showt chat)] []) <> toLog long <> toLog lat
 
 instance HasPriority SendRequest where
   logData sr = logInfo sendInfo >> logDebug (toLog sr)
@@ -151,6 +161,7 @@ instance HasPriority SendRequest where
         SendVoice     {} -> "voice"
         SendVideo     {} -> "video"
         SendVideoNote {} -> "video note"
+        SendLocation  {} -> "location"
 
 -- SendCommonPart ----------------------------------------------------------
 

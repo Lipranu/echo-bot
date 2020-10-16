@@ -3,6 +3,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving   #-}
 
 module App.Telegram.Responses
   ( MessageType (..)
@@ -12,6 +13,8 @@ module App.Telegram.Responses
   , Updates (..)
   , MessageBody (..)
   , FileId (..)
+  , Longitude (..)
+  , Latitude (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -174,7 +177,7 @@ data MessageType
   | Video     FileId
   | VideoNote FileId
   | Voice     FileId
---TODO: | Location
+  | Location  Longitude Latitude
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -191,6 +194,7 @@ instance FromJSON MessageType where
     <|> Video     <$>  o .: "video"
     <|> VideoNote <$>  o .: "video_note"
     <|> Voice     <$>  o .: "voice"
+    <|> Location  <$>  o .: "location" <*> o .: "location"
     <|> pure TextMessage
 
 instance Loggable MessageType where
@@ -203,9 +207,28 @@ instance Loggable MessageType where
   toLog (Video id)     = "Video (id:"      <> coerce id <> ")"
   toLog (VideoNote id) = "VideoNote (id: " <> coerce id <> ")"
   toLog (Voice id)     = "Voice (id: "     <> coerce id <> ")"
+  toLog (Location long lat) = "Location" <> toLog long <> toLog lat
 
 instance HasPriority MessageType where
   logData = logDebug . toLog
+
+-- Position ----------------------------------------------------------------
+
+newtype Longitude = Longitude { longitude :: Double }
+  deriving Generic
+
+instance FromJSON Longitude
+
+instance Loggable Longitude where
+  toLog (Longitude v) = mkLogLine ("Longitude", showt v)
+
+newtype Latitude = Latitude { latitude :: Double }
+  deriving Generic
+
+instance FromJSON Latitude
+
+instance Loggable Latitude where
+  toLog (Latitude v) = mkLogLine ("Latitude", showt v)
 
 -- FUNCTIONS ---------------------------------------------------------------
 

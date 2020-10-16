@@ -18,15 +18,16 @@ import Data.Maybe  ( fromMaybe )
 
 mkSendRequest :: MessageBody -> Maybe Text -> SendRequest
 mkSendRequest MessageBody {..} text = case mbType of
-  TextMessage  -> SendMessage   mkSendMessageBody
-  Sticker   id -> SendSticker   (coerce id) mbChatId
-  Animation id -> SendAnimation (coerce id) $ mkCommonPart text
-  Audio     id -> SendAudio     (coerce id) $ mkCommonPart text
-  Document  id -> SendDocument  (coerce id) $ mkCommonPart text
-  Photo     id -> SendPhoto     (coerce id) $ mkCommonPart text
-  Video     id -> SendVideo     (coerce id) $ mkCommonPart text
-  VideoNote id -> SendVideoNote (coerce id) $ mkCommonPart text
-  Voice     id -> SendVoice     (coerce id) $ mkCommonPart text
+  TextMessage        -> SendMessage   mkSendMessageBody
+  Sticker   id       -> SendSticker   (coerce id) mbChatId
+  Animation id       -> SendAnimation (coerce id) $ mkCommonPart text
+  Audio     id       -> SendAudio     (coerce id) $ mkCommonPart text
+  Document  id       -> SendDocument  (coerce id) $ mkCommonPart text
+  Photo     id       -> SendPhoto     (coerce id) $ mkCommonPart text
+  Video     id       -> SendVideo     (coerce id) $ mkCommonPart text
+  VideoNote id       -> SendVideoNote (coerce id) $ mkCommonPart text
+  Voice     id       -> SendVoice     (coerce id) $ mkCommonPart text
+  Location  long lat -> SendLocation mbChatId long lat
   where
     mkSendMessageBody = SendMessageBody
       { smText             = fromMaybe "" text
