@@ -21,14 +21,13 @@ import App.Telegram.Config      ( TelegramReader )
 
 import App.Shared.Routes hiding ( fromResponse, fromResponse_, traverseHandled, handlers )
 
-import Infrastructure.Has
+--import Infrastructure.Has
 import Infrastructure.Logger
 import Infrastructure.Requester
 
 import qualified App.Shared.Routes as Shared
 
-import Data.Aeson          ( Value, FromJSON )
-import Data.Text           ( Text )
+import Data.Aeson          ( FromJSON )
 import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch )
 import Control.Monad       ( (>=>) )
 

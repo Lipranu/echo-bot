@@ -8,9 +8,6 @@ module App.Telegram.Converters ( mkSendRequest ) where
 import App.Telegram.Responses
 import App.Telegram.Requests
 
-import Infrastructure.Requester
-
-import Data.Coerce ( coerce )
 import Data.Text   ( Text )
 import Data.Maybe  ( fromMaybe )
 
@@ -19,15 +16,20 @@ import Data.Maybe  ( fromMaybe )
 mkSendRequest :: MessageBody -> Maybe Text -> SendRequest
 mkSendRequest MessageBody {..} text = case mbType of
   TextMessage        -> SendMessage   mkSendMessageBody
-  Sticker   id       -> SendSticker   (coerce id) mbChatId
-  Animation id       -> SendAnimation (coerce id) $ mkCommonPart text
-  Audio     id       -> SendAudio     (coerce id) $ mkCommonPart text
-  Document  id       -> SendDocument  (coerce id) $ mkCommonPart text
-  Photo     id       -> SendPhoto     (coerce id) $ mkCommonPart text
-  Video     id       -> SendVideo     (coerce id) $ mkCommonPart text
-  VideoNote id       -> SendVideoNote (coerce id) $ mkCommonPart text
-  Voice     id       -> SendVoice     (coerce id) $ mkCommonPart text
+  Sticker   id       -> SendSticker   id mbChatId
+  Animation id       -> SendAnimation id $ mkCommonPart text
+  Audio     id       -> SendAudio     id $ mkCommonPart text
+  Document  id       -> SendDocument  id $ mkCommonPart text
+  Photo     id       -> SendPhoto     id $ mkCommonPart text
+  Video     id       -> SendVideo     id $ mkCommonPart text
+  VideoNote id       -> SendVideoNote id $ mkCommonPart text
+  Voice     id       -> SendVoice     id $ mkCommonPart text
   Location  long lat -> SendLocation mbChatId long lat
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
   where
     mkSendMessageBody = SendMessageBody
       { smText             = fromMaybe "" text

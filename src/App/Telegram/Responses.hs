@@ -195,6 +195,11 @@ instance FromJSON MessageType where
     <|> VideoNote <$>  o .: "video_note"
     <|> Voice     <$>  o .: "voice"
     <|> Location  <$>  o .: "location" <*> o .: "location"
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
     <|> pure TextMessage
 
 instance Loggable MessageType where
@@ -209,6 +214,11 @@ instance Loggable MessageType where
     VideoNote id       -> addId id "VideoNote"
     Voice     id       -> addId id "Voice"
     Location  long lat -> "Location" <> toLog long <> toLog lat
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
     where addId id t = t <> mkLogLine (t <> " Id", coerce id)
 
 instance HasPriority MessageType where

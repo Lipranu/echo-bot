@@ -16,7 +16,7 @@ module App.Telegram.Requests
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Telegram.Config      ( TelegramReader, Token (..) )
-import App.Telegram.Responses   ( Longitude (..), Latitude (..) )
+import App.Telegram.Responses   ( FileId (..), Longitude (..), Latitude (..) )
 
 import Infrastructure.Has
 import Infrastructure.Logger
@@ -68,20 +68,24 @@ instance HasPriority GetUpdates where logData = logInfo . toLog
 
 -- SendRequest -------------------------------------------------------------
 
-type MediaId = Text
 type ChatId  = Integer
 
 data SendRequest
   = SendMessage   SendMessageBody
-  | SendSticker   MediaId ChatId
-  | SendAnimation MediaId SendCommonPart
-  | SendAudio     MediaId SendCommonPart
-  | SendDocument  MediaId SendCommonPart
-  | SendPhoto     MediaId SendCommonPart
-  | SendVoice     MediaId SendCommonPart
-  | SendVideo     MediaId SendCommonPart
-  | SendVideoNote MediaId SendCommonPart
+  | SendSticker   FileId ChatId
+  | SendAnimation FileId SendCommonPart
+  | SendAudio     FileId SendCommonPart
+  | SendDocument  FileId SendCommonPart
+  | SendPhoto     FileId SendCommonPart
+  | SendVoice     FileId SendCommonPart
+  | SendVideo     FileId SendCommonPart
+  | SendVideoNote FileId SendCommonPart
   | SendLocation  ChatId Longitude Latitude
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
 
 instance ToJSON SendRequest where
   toJSON sr = case sr of
@@ -95,15 +99,21 @@ instance ToJSON SendRequest where
     SendVoice     id common     -> commonEncode  id common "voice"
     SendVideo     id common     -> commonEncode  id common "video"
     SendVideoNote id common     -> commonEncode  id common "video_note"
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
     where
       addChat chat vs = "chat_id" .= chat : vs
 
-      encodeSticker id chat = Aeson.object $ addChat chat ["sticker" .= id]
+      encodeSticker (FileId id) chat = Aeson.object
+        $ addChat chat ["sticker" .= id]
 
       encodeLocation chat (Longitude long) (Latitude lat) = Aeson.object
         $ addChat chat ["longitude" .= long, "latitude" .= lat]
 
-      commonEncode id common srtype = Aeson.object
+      commonEncode (FileId id) common srtype = Aeson.object
         $ srtype .= id : commonPart common
 
       commonPart SendCommonPart {..} = addChat chatId $
@@ -123,6 +133,11 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
     SendVideo     {} -> "/sendVideo"
     SendVideoNote {} -> "/sendVideoNote"
     SendLocation  {} -> "/sendLocation"
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
 
 instance Loggable SendRequest where
   toLog sr = case sr of
@@ -136,12 +151,17 @@ instance Loggable SendRequest where
     SendVoice     id common     -> mkMediaLog   id common "Voice"
     SendVideo     id common     -> mkMediaLog   id common "Video"
     SendVideoNote id common     -> mkMediaLog   id common "VideoNote"
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
     where
-      mkMediaLog id common srtype =
-        (mkToLog ("Send" <> srtype) [(srtype <> " Id", id)] [])
+      mkMediaLog (FileId id) common srtype = (mkToLog ("Send" <> srtype)
+        [(srtype <> " Id", id)] [])
         <> toLog common
 
-      mkStickerLog id chat = mkToLog "SendSticker"
+      mkStickerLog (FileId id) chat = mkToLog "SendSticker"
         [("Sticker Id", id), ("Chat Id", showt chat)] []
 
       mkLocationLog chat long lat = (mkToLog "SendLocation"
@@ -162,6 +182,11 @@ instance HasPriority SendRequest where
         SendVideo     {} -> "video"
         SendVideoNote {} -> "video note"
         SendLocation  {} -> "location"
+--TODO: | MediaGroup
+--TODO: | Contact
+--TODO: | Dice
+--TODO: | Poll
+--TODO: | Venue
 
 -- SendCommonPart ----------------------------------------------------------
 
