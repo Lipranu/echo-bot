@@ -68,6 +68,7 @@ instance HasPriority GetUpdates where logData = logInfo . toLog
 -- SendRequest -------------------------------------------------------------
 
 type MediaId = Text
+type ChatId  = Integer
 
 data SendRequest
   = SendMessage   SendMessageBody
@@ -75,7 +76,7 @@ data SendRequest
   | SendAudio     MediaId SendCommonPart
   | SendDocument  MediaId SendCommonPart
   | SendPhoto     MediaId SendCommonPart
-  | SendSticker   MediaId SendCommonPart
+  | SendSticker   MediaId ChatId
   | SendVoice     MediaId SendCommonPart
   | SendVideo     MediaId SendCommonPart
   | SendVideoNote MediaId SendCommonPart
@@ -83,15 +84,18 @@ data SendRequest
 instance ToJSON SendRequest where
   toJSON sr = case sr of
     SendMessage   body      -> toJSON body
-    SendAnimation id common -> commonEncode id common "animation"
-    SendAudio     id common -> commonEncode id common "audio"
-    SendDocument  id common -> commonEncode id common "document"
-    SendPhoto     id common -> commonEncode id common "photo"
-    SendSticker   id common -> commonEncode id common "sticker"
-    SendVoice     id common -> commonEncode id common "voice"
-    SendVideo     id common -> commonEncode id common "video"
-    SendVideoNote id common -> commonEncode id common "video_note"
+    SendSticker   id chat   -> encodeSticker id chat
+    SendAnimation id common -> commonEncode  id common "animation"
+    SendAudio     id common -> commonEncode  id common "audio"
+    SendDocument  id common -> commonEncode  id common "document"
+    SendPhoto     id common -> commonEncode  id common "photo"
+    SendVoice     id common -> commonEncode  id common "voice"
+    SendVideo     id common -> commonEncode  id common "video"
+    SendVideoNote id common -> commonEncode  id common "video_note"
     where
+      encodeSticker id chat = Aeson.object
+        ["sticker" .= id, "chat_id" .= chat]
+
       commonEncode id common srtype = Aeson.object
         $ srtype .= id : commonPart common
 
@@ -117,17 +121,21 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
 instance Loggable SendRequest where
   toLog sr = case sr of
     SendMessage   body      -> toLog body
-    SendAnimation id common -> mkMediaLog id common "Animation"
-    SendAudio     id common -> mkMediaLog id common "Audio"
-    SendDocument  id common -> mkMediaLog id common "Document"
-    SendPhoto     id common -> mkMediaLog id common "Photo"
-    SendSticker   id common -> mkMediaLog id common "Sticker"
-    SendVoice     id common -> mkMediaLog id common "Voice"
-    SendVideo     id common -> mkMediaLog id common "Video"
-    SendVideoNote id common -> mkMediaLog id common "VideoNote"
-    where mkMediaLog id common srtype
-            =  (mkToLog ("Send" <> srtype) [(srtype <> " Id", id)] [])
-            <> toLog common
+    SendSticker   id chat   -> mkStickerLog id chat
+    SendAnimation id common -> mkMediaLog   id common "Animation"
+    SendAudio     id common -> mkMediaLog   id common "Audio"
+    SendDocument  id common -> mkMediaLog   id common "Document"
+    SendPhoto     id common -> mkMediaLog   id common "Photo"
+    SendVoice     id common -> mkMediaLog   id common "Voice"
+    SendVideo     id common -> mkMediaLog   id common "Video"
+    SendVideoNote id common -> mkMediaLog   id common "VideoNote"
+    where
+      mkMediaLog id common srtype =
+        (mkToLog ("Send" <> srtype) [(srtype <> " Id", id)] [])
+        <> toLog common
+
+      mkStickerLog id chat = mkToLog "SendSticker"
+        [("Sticker Id", id), ("Chat Id", showt chat)] []
 
 instance HasPriority SendRequest where
   logData sr = logInfo sendInfo >> logDebug (toLog sr)

@@ -19,7 +19,7 @@ import Data.Maybe  ( fromMaybe )
 mkSendRequest :: MessageBody -> Maybe Text -> SendRequest
 mkSendRequest MessageBody {..} text = case mbType of
   TextMessage  -> SendMessage   mkSendMessageBody
-  Sticker   id -> SendSticker   (coerce id) $ mkCommonPart Nothing
+  Sticker   id -> SendSticker   (coerce id) mbChatId
   Animation id -> SendAnimation (coerce id) $ mkCommonPart text
   Audio     id -> SendAudio     (coerce id) $ mkCommonPart text
   Document  id -> SendDocument  (coerce id) $ mkCommonPart text
