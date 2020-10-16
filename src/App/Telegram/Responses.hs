@@ -1,9 +1,9 @@
 {-# LANGUAGE DeriveGeneric     #-}
+{-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving   #-}
 
 module App.Telegram.Responses
   ( MessageType (..)
@@ -198,16 +198,18 @@ instance FromJSON MessageType where
     <|> pure TextMessage
 
 instance Loggable MessageType where
-  toLog TextMessage    = "Text Message"
-  toLog (Animation id) = "Animation (id: " <> coerce id <> ")"
-  toLog (Audio id)     = "Audio (id: "     <> coerce id <> ")"
-  toLog (Document id)  = "Document (id: "  <> coerce id <> ")"
-  toLog (Photo id)     = "Photo (id: "     <> coerce id <> ")"
-  toLog (Sticker id)   = "Sticker (id: "   <> coerce id <> ")"
-  toLog (Video id)     = "Video (id:"      <> coerce id <> ")"
-  toLog (VideoNote id) = "VideoNote (id: " <> coerce id <> ")"
-  toLog (Voice id)     = "Voice (id: "     <> coerce id <> ")"
-  toLog (Location long lat) = "Location" <> toLog long <> toLog lat
+  toLog m = case m of
+    TextMessage        -> "Text Message"
+    Animation id       -> addId id "Animation"
+    Audio     id       -> addId id "Audio"
+    Document  id       -> addId id "Document"
+    Photo     id       -> addId id "Photo"
+    Sticker   id       -> addId id "Sticker"
+    Video     id       -> addId id "Video"
+    VideoNote id       -> addId id "VideoNote"
+    Voice     id       -> addId id "Voice"
+    Location  long lat -> "Location" <> toLog long <> toLog lat
+    where addId id t = t <> mkLogLine (t <> " Id", coerce id)
 
 instance HasPriority MessageType where
   logData = logDebug . toLog
