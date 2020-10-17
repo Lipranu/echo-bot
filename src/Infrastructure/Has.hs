@@ -1,3 +1,4 @@
+{-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables   #-}
 {-# LANGUAGE TypeApplications      #-}
@@ -9,6 +10,9 @@ import Control.Monad.State     ( MonadState, gets )
 
 class Has a r where
   getter :: r -> a
+
+instance {-# INCOHERENT #-} Has a a where
+  getter = id
 
 obtain :: forall field env m . (Has field env, MonadReader env m) => m field
 obtain = asks $ getter @field
