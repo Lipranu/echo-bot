@@ -9,15 +9,16 @@
 module App.Telegram.Requests
   ( GetUpdates (..)
   , SendCommonPart (..)
-  , SendVenueBody (..)
+  , SendLocationBody (..)
   , SendMessageBody (..)
   , SendRequest (..)
+  , SendVenueBody (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Telegram.Config      ( TelegramReader, Token (..) )
-import App.Telegram.Responses   ( FileId (..), Longitude (..), Latitude (..) )
+import App.Telegram.Responses   ( FileId (..) )
 
 import Infrastructure.Has
 import Infrastructure.Logger
@@ -73,6 +74,7 @@ type ChatId  = Integer
 
 data SendRequest
   = SendMessage   SendMessageBody
+  | SendLocation  SendLocationBody
   | SendVenue     SendVenueBody
   | SendSticker   FileId ChatId
   | SendAnimation FileId SendCommonPart
@@ -82,7 +84,6 @@ data SendRequest
   | SendVoice     FileId SendCommonPart
   | SendVideo     FileId SendCommonPart
   | SendVideoNote FileId SendCommonPart
-  | SendLocation  ChatId Longitude Latitude
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -90,17 +91,17 @@ data SendRequest
 
 instance ToJSON SendRequest where
   toJSON sr = case sr of
-    SendMessage   body          -> toJSON body
-    SendVenue     body          -> toJSON body
-    SendLocation  chat long lat -> encodeLocation chat long lat
-    SendSticker   id chat       -> encodeSticker id chat
-    SendAnimation id common     -> commonEncode  id common "animation"
-    SendAudio     id common     -> commonEncode  id common "audio"
-    SendDocument  id common     -> commonEncode  id common "document"
-    SendPhoto     id common     -> commonEncode  id common "photo"
-    SendVoice     id common     -> commonEncode  id common "voice"
-    SendVideo     id common     -> commonEncode  id common "video"
-    SendVideoNote id common     -> commonEncode  id common "video_note"
+    SendMessage   body      -> toJSON body
+    SendVenue     body      -> toJSON body
+    SendLocation  body      -> toJSON body
+    SendSticker   id chat   -> encodeSticker id chat
+    SendAnimation id common -> commonEncode  id common "animation"
+    SendAudio     id common -> commonEncode  id common "audio"
+    SendDocument  id common -> commonEncode  id common "document"
+    SendPhoto     id common -> commonEncode  id common "photo"
+    SendVoice     id common -> commonEncode  id common "voice"
+    SendVideo     id common -> commonEncode  id common "video"
+    SendVideoNote id common -> commonEncode  id common "video_note"
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -110,9 +111,6 @@ instance ToJSON SendRequest where
 
       encodeSticker (FileId id) chat = Aeson.object
         $ addChat chat ["sticker" .= id]
-
-      encodeLocation chat (Longitude long) (Latitude lat) = Aeson.object
-        $ addChat chat ["longitude" .= long, "latitude" .= lat]
 
       commonEncode (FileId id) common srtype = Aeson.object
         $ srtype .= id : commonPart common
@@ -142,17 +140,17 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
 
 instance Loggable SendRequest where
   toLog sr = case sr of
-    SendMessage   body          -> toLog body
-    SendVenue     body          -> toLog body
-    SendLocation  chat long lat -> mkLocationLog chat long lat
-    SendSticker   id chat       -> mkStickerLog id chat
-    SendAnimation id common     -> mkMediaLog   id common "Animation"
-    SendAudio     id common     -> mkMediaLog   id common "Audio"
-    SendDocument  id common     -> mkMediaLog   id common "Document"
-    SendPhoto     id common     -> mkMediaLog   id common "Photo"
-    SendVoice     id common     -> mkMediaLog   id common "Voice"
-    SendVideo     id common     -> mkMediaLog   id common "Video"
-    SendVideoNote id common     -> mkMediaLog   id common "VideoNote"
+    SendMessage   body      -> toLog body
+    SendVenue     body      -> toLog body
+    SendLocation  body      -> toLog body
+    SendSticker   id chat   -> mkStickerLog id chat
+    SendAnimation id common -> mkMediaLog   id common "Animation"
+    SendAudio     id common -> mkMediaLog   id common "Audio"
+    SendDocument  id common -> mkMediaLog   id common "Document"
+    SendPhoto     id common -> mkMediaLog   id common "Photo"
+    SendVoice     id common -> mkMediaLog   id common "Voice"
+    SendVideo     id common -> mkMediaLog   id common "Video"
+    SendVideoNote id common -> mkMediaLog   id common "VideoNote"
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -164,9 +162,6 @@ instance Loggable SendRequest where
 
       mkStickerLog (FileId id) chat = mkToLog "SendSticker"
         [("Sticker Id", id), ("Chat Id", showt chat)] []
-
-      mkLocationLog chat long lat = (mkToLog "SendLocation"
-        [("Chat Id", showt chat)] []) <> toLog long <> toLog lat
 
 instance HasPriority SendRequest where
   logData sr = logInfo sendInfo >> logDebug (toLog sr)
@@ -220,6 +215,24 @@ instance Loggable SendMessageBody where
     , ("Parse Mode", smParseMode)
     ] [("Reply Id" , showt <$> smReplyToMessageId)]
 
+-- SendLocationBody --------------------------------------------------------
+
+data SendLocationBody = SendLocationBody
+  { slbLongitude      :: Double
+  , slbLatitude       :: Double
+  , slbChatId         :: Integer
+  } deriving Generic
+
+instance ToJSON SendLocationBody where
+  toJSON = Aeson.toJsonDrop
+
+instance Loggable SendLocationBody where
+  toLog SendLocationBody {..} = mkToLog "SendLocation:"
+    [ ("Chat Id"  , showt slbChatId)
+    , ("Longitude", showt slbLongitude)
+    , ("Latitude" , showt slbLatitude)
+    ] []
+
 -- SendVenueBody -----------------------------------------------------------
 
 data SendVenueBody = SendVenueBody
@@ -227,7 +240,7 @@ data SendVenueBody = SendVenueBody
   , svbLatitude       :: Double
   , svbChatId         :: Integer
   , svbTitle          :: Text
-  , svbAddress         :: Text
+  , svbAddress        :: Text
   , svbFoursquareId   :: Maybe Text
   , svbFoursquareType :: Maybe Text
   } deriving Generic

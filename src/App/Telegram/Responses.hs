@@ -13,8 +13,6 @@ module App.Telegram.Responses
   , Updates (..)
   , MessageBody (..)
   , FileId (..)
-  , Longitude (..)
-  , Latitude (..)
   , VenueBody (..)
   , LocationBody (..)
   ) where
@@ -179,7 +177,7 @@ data MessageType
   | Video     FileId
   | VideoNote FileId
   | Voice     FileId
-  | Location  Longitude Latitude
+  | Location  LocationBody
   | Venue     VenueBody
 --TODO: | MediaGroup
 --TODO: | Contact
@@ -198,7 +196,7 @@ instance FromJSON MessageType where
     <|> VideoNote <$>  o .: "video_note"
     <|> Voice     <$>  o .: "voice"
     <|> Venue     <$>  o .: "venue"
-    <|> Location  <$>  o .: "location" <*> o .: "location"
+    <|> Location  <$>  o .: "location"
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -207,17 +205,17 @@ instance FromJSON MessageType where
 
 instance Loggable MessageType where
   toLog m = case m of
-    TextMessage        -> "Text Message"
-    Animation id       -> addId id "Animation"
-    Audio     id       -> addId id "Audio"
-    Document  id       -> addId id "Document"
-    Photo     id       -> addId id "Photo"
-    Sticker   id       -> addId id "Sticker"
-    Video     id       -> addId id "Video"
-    VideoNote id       -> addId id "VideoNote"
-    Voice     id       -> addId id "Voice"
-    Location  long lat -> "Location" <> toLog long <> toLog lat
-    Venue     body     -> "Venue"    <> toLog body
+    TextMessage      -> "Text Message"
+    Animation   id   -> addId id "Animation"
+    Audio       id   -> addId id "Audio"
+    Document    id   -> addId id "Document"
+    Photo       id   -> addId id "Photo"
+    Sticker     id   -> addId id "Sticker"
+    Video       id   -> addId id "Video"
+    VideoNote   id   -> addId id "VideoNote"
+    Voice       id   -> addId id "Voice"
+    Location    body -> toLog body
+    Venue       body -> toLog body
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -242,22 +240,6 @@ instance Loggable LocationBody where
     [ (" |\tLongitude", showt longitude)
     , (" |\tLatitude", showt latitude)
     ] []
-
-newtype Longitude = Longitude { longitude' :: Double }
-  deriving Generic
-
-instance FromJSON Longitude
-
-instance Loggable Longitude where
-  toLog (Longitude v) = mkLogLine ("Longitude", showt v)
-
-newtype Latitude = Latitude { latitude' :: Double }
-  deriving Generic
-
-instance FromJSON Latitude
-
-instance Loggable Latitude where
-  toLog (Latitude v) = mkLogLine ("Latitude", showt v)
 
 -- Venue -------------------------------------------------------------------
 
