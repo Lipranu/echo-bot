@@ -9,6 +9,7 @@
 module App.Telegram.Requests
   ( GetUpdates (..)
   , SendCommonPart (..)
+  , SendVenueBody (..)
   , SendMessageBody (..)
   , SendRequest (..)
   ) where
@@ -72,6 +73,7 @@ type ChatId  = Integer
 
 data SendRequest
   = SendMessage   SendMessageBody
+  | SendVenue     SendVenueBody
   | SendSticker   FileId ChatId
   | SendAnimation FileId SendCommonPart
   | SendAudio     FileId SendCommonPart
@@ -85,11 +87,11 @@ data SendRequest
 --TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
 
 instance ToJSON SendRequest where
   toJSON sr = case sr of
     SendMessage   body          -> toJSON body
+    SendVenue     body          -> toJSON body
     SendLocation  chat long lat -> encodeLocation chat long lat
     SendSticker   id chat       -> encodeSticker id chat
     SendAnimation id common     -> commonEncode  id common "animation"
@@ -103,7 +105,6 @@ instance ToJSON SendRequest where
 --TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
     where
       addChat chat vs = "chat_id" .= chat : vs
 
@@ -133,15 +134,16 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
     SendVideo     {} -> "/sendVideo"
     SendVideoNote {} -> "/sendVideoNote"
     SendLocation  {} -> "/sendLocation"
+    SendVenue     {} -> "/sendVenue"
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
 
 instance Loggable SendRequest where
   toLog sr = case sr of
     SendMessage   body          -> toLog body
+    SendVenue     body          -> toLog body
     SendLocation  chat long lat -> mkLocationLog chat long lat
     SendSticker   id chat       -> mkStickerLog id chat
     SendAnimation id common     -> mkMediaLog   id common "Animation"
@@ -155,7 +157,6 @@ instance Loggable SendRequest where
 --TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
     where
       mkMediaLog (FileId id) common srtype = (mkToLog ("Send" <> srtype)
         [(srtype <> " Id", id)] [])
@@ -182,11 +183,11 @@ instance HasPriority SendRequest where
         SendVideo     {} -> "video"
         SendVideoNote {} -> "video note"
         SendLocation  {} -> "location"
+        SendVenue     {} -> "venue"
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
 
 -- SendCommonPart ----------------------------------------------------------
 
@@ -218,6 +219,33 @@ instance Loggable SendMessageBody where
     , ("Chat Id"   , showt smChatId)
     , ("Parse Mode", smParseMode)
     ] [("Reply Id" , showt <$> smReplyToMessageId)]
+
+-- SendVenueBody -----------------------------------------------------------
+
+data SendVenueBody = SendVenueBody
+  { svbLongitude      :: Double
+  , svbLatitude       :: Double
+  , svbChatId         :: Integer
+  , svbTitle          :: Text
+  , svbAddress         :: Text
+  , svbFoursquareId   :: Maybe Text
+  , svbFoursquareType :: Maybe Text
+  } deriving Generic
+
+instance ToJSON SendVenueBody where
+  toJSON = Aeson.toJsonDrop
+
+instance Loggable SendVenueBody where
+  toLog SendVenueBody {..} = mkToLog "SendVenue:"
+    [ ("Chat Id"  , showt svbChatId)
+    , ("Longitude", showt svbLongitude)
+    , ("Latitude" , showt svbLatitude)
+    , ("Title"    , svbTitle)
+    , ("Address"   , svbAddress)
+    ]
+    [ ("Foursquare Id"  , svbFoursquareId)
+    , ("Foursquare Type", svbFoursquareType)
+    ]
 
 -- FUNCTIONS ---------------------------------------------------------------
 

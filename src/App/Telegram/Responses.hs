@@ -15,6 +15,8 @@ module App.Telegram.Responses
   , FileId (..)
   , Longitude (..)
   , Latitude (..)
+  , VenueBody (..)
+  , LocationBody (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -178,6 +180,7 @@ data MessageType
   | VideoNote FileId
   | Voice     FileId
   | Location  Longitude Latitude
+  | Venue     VenueBody
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -194,12 +197,12 @@ instance FromJSON MessageType where
     <|> Video     <$>  o .: "video"
     <|> VideoNote <$>  o .: "video_note"
     <|> Voice     <$>  o .: "voice"
+    <|> Venue     <$>  o .: "venue"
     <|> Location  <$>  o .: "location" <*> o .: "location"
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
     <|> pure TextMessage
 
 instance Loggable MessageType where
@@ -214,6 +217,7 @@ instance Loggable MessageType where
     VideoNote id       -> addId id "VideoNote"
     Voice     id       -> addId id "Voice"
     Location  long lat -> "Location" <> toLog long <> toLog lat
+    Venue     body     -> "Venue"    <> toLog body
 --TODO: | MediaGroup
 --TODO: | Contact
 --TODO: | Dice
@@ -224,9 +228,22 @@ instance Loggable MessageType where
 instance HasPriority MessageType where
   logData = logDebug . toLog
 
--- Position ----------------------------------------------------------------
+-- LocationBody ------------------------------------------------------------
 
-newtype Longitude = Longitude { longitude :: Double }
+data LocationBody = LocationBody
+  { longitude :: Double
+  , latitude  :: Double
+  } deriving Generic
+
+instance FromJSON LocationBody
+
+instance Loggable LocationBody where
+  toLog LocationBody {..} = mkToLog "Location:"
+    [ (" |\tLongitude", showt longitude)
+    , (" |\tLatitude", showt latitude)
+    ] []
+
+newtype Longitude = Longitude { longitude' :: Double }
   deriving Generic
 
 instance FromJSON Longitude
@@ -234,13 +251,35 @@ instance FromJSON Longitude
 instance Loggable Longitude where
   toLog (Longitude v) = mkLogLine ("Longitude", showt v)
 
-newtype Latitude = Latitude { latitude :: Double }
+newtype Latitude = Latitude { latitude' :: Double }
   deriving Generic
 
 instance FromJSON Latitude
 
 instance Loggable Latitude where
   toLog (Latitude v) = mkLogLine ("Latitude", showt v)
+
+-- Venue -------------------------------------------------------------------
+
+data VenueBody = VenueBody
+  { vbLocation       :: LocationBody
+  , vbTitle          :: Text
+  , vbAddress         :: Text
+  , vbFoursquareId   :: Maybe Text
+  , vbFoursquareType :: Maybe Text
+  } deriving Generic
+
+instance FromJSON VenueBody where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable VenueBody where
+  toLog VenueBody {..} = (mkToLog "Venue:"
+    [ ("Title" , vbTitle)
+    , ("Address", vbAddress)
+    ]
+    [ ("Forursquare Id" , vbFoursquareId)
+    , ("Foursquare Type", vbFoursquareType)
+    ]) <> toLog vbLocation
 
 -- FUNCTIONS ---------------------------------------------------------------
 

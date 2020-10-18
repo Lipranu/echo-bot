@@ -16,6 +16,7 @@ import Data.Maybe  ( fromMaybe )
 mkSendRequest :: MessageBody -> Maybe Text -> SendRequest
 mkSendRequest MessageBody {..} text = case mbType of
   TextMessage        -> SendMessage   mkSendMessageBody
+  Venue     body     -> SendVenue     $ mkSendVenueBody body
   Sticker   id       -> SendSticker   id mbChatId
   Animation id       -> SendAnimation id $ mkCommonPart text
   Audio     id       -> SendAudio     id $ mkCommonPart text
@@ -36,6 +37,16 @@ mkSendRequest MessageBody {..} text = case mbType of
       , smChatId           = mbChatId
       , smParseMode        = "HTML"
       , smReplyToMessageId = Nothing
+      }
+
+    mkSendVenueBody VenueBody {..} = SendVenueBody
+      { svbChatId         = mbChatId
+      , svbLongitude      = longitude vbLocation
+      , svbLatitude       = latitude  vbLocation
+      , svbAddress         = vbAddress
+      , svbTitle          = vbTitle
+      , svbFoursquareId   = vbFoursquareId
+      , svbFoursquareType = vbFoursquareType
       }
 
     mkCommonPart mText = SendCommonPart
