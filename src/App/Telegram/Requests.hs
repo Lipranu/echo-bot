@@ -14,6 +14,7 @@ module App.Telegram.Requests
   , SendContactBody (..)
   , SendRequest (..)
   , SendVenueBody (..)
+  , SendDiceBody (..)
   ) where
 
 -- IMPORTS -----------------------------------------------------------------
@@ -77,6 +78,7 @@ data SendRequest
   = SendMessage   SendMessageBody
   | SendLocation  SendLocationBody
   | SendVenue     SendVenueBody
+  | SendDice      SendDiceBody
   | SendContact   SendContactBody
   | SendSticker   FileId ChatId
   | SendAnimation FileId SendCommonPart
@@ -87,7 +89,6 @@ data SendRequest
   | SendVideo     FileId SendCommonPart
   | SendVideoNote FileId SendCommonPart
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
 
 instance ToJSON SendRequest where
@@ -96,6 +97,7 @@ instance ToJSON SendRequest where
     SendVenue     body      -> toJSON body
     SendLocation  body      -> toJSON body
     SendContact   body      -> toJSON body
+    SendDice      body      -> toJSON body
     SendSticker   id chat   -> encodeSticker id chat
     SendAnimation id common -> commonEncode  id common "animation"
     SendAudio     id common -> commonEncode  id common "audio"
@@ -105,7 +107,6 @@ instance ToJSON SendRequest where
     SendVideo     id common -> commonEncode  id common "video"
     SendVideoNote id common -> commonEncode  id common "video_note"
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
     where
       addChat chat vs = "chat_id" .= chat : vs
@@ -134,15 +135,16 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
     SendVideoNote {} -> "/sendVideoNote"
     SendLocation  {} -> "/sendLocation"
     SendVenue     {} -> "/sendVenue"
+    SendDice      {} -> "/sendDice"
     SendContact   {} -> "/sendContact"
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
 
 instance Loggable SendRequest where
   toLog sr = case sr of
     SendMessage   body      -> toLog body
     SendVenue     body      -> toLog body
+    SendDice      body      -> toLog body
     SendLocation  body      -> toLog body
     SendContact   body      -> toLog body
     SendSticker   id chat   -> mkStickerLog id chat
@@ -154,8 +156,6 @@ instance Loggable SendRequest where
     SendVideo     id common -> mkMediaLog   id common "Video"
     SendVideoNote id common -> mkMediaLog   id common "VideoNote"
 --TODO: | MediaGroup
---TODO: | Contact
---TODO: | Dice
 --TODO: | Poll
     where
       mkMediaLog (FileId id) common srtype = (mkToLog ("Send" <> srtype)
@@ -181,9 +181,9 @@ instance HasPriority SendRequest where
         SendVideoNote {} -> "video note"
         SendLocation  {} -> "location"
         SendVenue     {} -> "venue"
+        SendDice      {} -> "dice"
         SendContact   {} -> "contact"
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
 
 -- SendCommonPart ----------------------------------------------------------
@@ -284,6 +284,24 @@ instance Loggable SendContactBody where
     [ ("Last Name"   , scbLastName)
     , ("Vcard"       , scbVcard)
     ]
+
+-- SendDiceBody ------------------------------------------------------------
+
+data SendDiceBody = SendDiceBody
+  { sdbEmoji  :: Text
+  , sdbValue  :: Integer
+  , sdbChatId :: Integer
+  } deriving Generic
+
+instance ToJSON SendDiceBody where
+  toJSON = Aeson.toJsonDrop
+
+instance Loggable SendDiceBody where
+  toLog SendDiceBody {..} = mkToLog "Dice:"
+    [ ("Chat Id", showt sdbChatId)
+    , ("Emoji"  , sdbEmoji)
+    , ("Value"  , showt sdbValue)
+    ] []
 
 -- FUNCTIONS ---------------------------------------------------------------
 

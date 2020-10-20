@@ -19,6 +19,7 @@ mkSendRequest MessageBody {..} text = case mbType of
   Venue     body -> SendVenue     $ mkSendVenueBody    body
   Location  body -> SendLocation  $ mkSendLocationBody body
   Contact   body -> SendContact   $ mkSendContactBody  body
+  Dice      body -> SendDice      $ mkSendDiceBody     body
   Sticker   id   -> SendSticker   id mbChatId
   Animation id   -> SendAnimation id $ mkCommonPart text
   Audio     id   -> SendAudio     id $ mkCommonPart text
@@ -28,7 +29,6 @@ mkSendRequest MessageBody {..} text = case mbType of
   VideoNote id   -> SendVideoNote id $ mkCommonPart text
   Voice     id   -> SendVoice     id $ mkCommonPart text
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
   where
     mkSendMessageBody = SendMessageBody
@@ -39,9 +39,9 @@ mkSendRequest MessageBody {..} text = case mbType of
       }
 
     mkSendLocationBody LocationBody {..} = SendLocationBody
-      { slbChatId         = mbChatId
-      , slbLongitude      = longitude
-      , slbLatitude       = latitude
+      { slbChatId    = mbChatId
+      , slbLongitude = longitude
+      , slbLatitude  = latitude
       }
 
     mkSendVenueBody VenueBody {..} = SendVenueBody
@@ -61,6 +61,13 @@ mkSendRequest MessageBody {..} text = case mbType of
       , scbVcard       = cbVcard
       , scbChatId      = mbChatId
       }
+
+    mkSendDiceBody DiceBody {..} = SendDiceBody
+      { sdbChatId = mbChatId
+      , sdbEmoji  = dbEmoji
+      , sdbValue  = dbValue
+      }
+
     mkCommonPart mText = SendCommonPart
       { caption   = mText
       , chatId    = mbChatId

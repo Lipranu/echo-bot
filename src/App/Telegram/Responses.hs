@@ -12,6 +12,7 @@ module App.Telegram.Responses
   , UpdateType (..)
   , Updates (..)
   , MessageBody (..)
+  , DiceBody (..)
   , ContactBody (..)
   , FileId (..)
   , VenueBody (..)
@@ -181,10 +182,9 @@ data MessageType
   | Location  LocationBody
   | Venue     VenueBody
   | Contact   ContactBody
+  | Dice      DiceBody
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
 
 instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o ->
@@ -199,8 +199,8 @@ instance FromJSON MessageType where
     <|> Venue     <$>  o .: "venue"
     <|> Location  <$>  o .: "location"
     <|> Contact   <$>  o .: "contact"
+    <|> Dice      <$>  o .: "dice"
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
     <|> pure TextMessage
 
@@ -217,11 +217,10 @@ instance Loggable MessageType where
     Voice       id   -> addId id "Voice"
     Location    body -> toLog body
     Venue       body -> toLog body
+    Dice        body -> toLog body
     Contact     body -> toLog body
 --TODO: | MediaGroup
---TODO: | Dice
 --TODO: | Poll
---TODO: | Venue
     where addId id t = t <> mkLogLine (t <> " Id", coerce id)
 
 instance HasPriority MessageType where
@@ -242,7 +241,7 @@ instance Loggable LocationBody where
     , (" |\tLatitude", showt latitude)
     ] []
 
--- Venue -------------------------------------------------------------------
+-- VenueBody ---------------------------------------------------------------
 
 data VenueBody = VenueBody
   { vbLocation       :: LocationBody
@@ -287,6 +286,22 @@ instance Loggable ContactBody where
     [ ("Last Name"   , cbLastName)
     , ("Vcard"       , cbVcard)
     ]
+
+-- DiceBody ----------------------------------------------------------------
+
+data DiceBody = DiceBody
+  { dbEmoji :: Text
+  , dbValue :: Integer
+  } deriving Generic
+
+instance FromJSON DiceBody where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable DiceBody where
+  toLog DiceBody {..} = mkToLog "Dice:"
+    [ (" |\tEmoji", dbEmoji)
+    , (" |\tValue", showt dbValue)
+    ] []
 
 -- FUNCTIONS ---------------------------------------------------------------
 
