@@ -11,6 +11,7 @@ module App.Telegram.Requests
   , SendCommonPart (..)
   , SendLocationBody (..)
   , SendMessageBody (..)
+  , SendContactBody (..)
   , SendRequest (..)
   , SendVenueBody (..)
   ) where
@@ -76,6 +77,7 @@ data SendRequest
   = SendMessage   SendMessageBody
   | SendLocation  SendLocationBody
   | SendVenue     SendVenueBody
+  | SendContact   SendContactBody
   | SendSticker   FileId ChatId
   | SendAnimation FileId SendCommonPart
   | SendAudio     FileId SendCommonPart
@@ -85,7 +87,6 @@ data SendRequest
   | SendVideo     FileId SendCommonPart
   | SendVideoNote FileId SendCommonPart
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
 
@@ -94,6 +95,7 @@ instance ToJSON SendRequest where
     SendMessage   body      -> toJSON body
     SendVenue     body      -> toJSON body
     SendLocation  body      -> toJSON body
+    SendContact   body      -> toJSON body
     SendSticker   id chat   -> encodeSticker id chat
     SendAnimation id common -> commonEncode  id common "animation"
     SendAudio     id common -> commonEncode  id common "audio"
@@ -103,7 +105,6 @@ instance ToJSON SendRequest where
     SendVideo     id common -> commonEncode  id common "video"
     SendVideoNote id common -> commonEncode  id common "video_note"
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
     where
@@ -133,8 +134,8 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
     SendVideoNote {} -> "/sendVideoNote"
     SendLocation  {} -> "/sendLocation"
     SendVenue     {} -> "/sendVenue"
+    SendContact   {} -> "/sendContact"
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
 
@@ -143,6 +144,7 @@ instance Loggable SendRequest where
     SendMessage   body      -> toLog body
     SendVenue     body      -> toLog body
     SendLocation  body      -> toLog body
+    SendContact   body      -> toLog body
     SendSticker   id chat   -> mkStickerLog id chat
     SendAnimation id common -> mkMediaLog   id common "Animation"
     SendAudio     id common -> mkMediaLog   id common "Audio"
@@ -179,8 +181,8 @@ instance HasPriority SendRequest where
         SendVideoNote {} -> "video note"
         SendLocation  {} -> "location"
         SendVenue     {} -> "venue"
+        SendContact   {} -> "contact"
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
 
@@ -258,6 +260,29 @@ instance Loggable SendVenueBody where
     ]
     [ ("Foursquare Id"  , svbFoursquareId)
     , ("Foursquare Type", svbFoursquareType)
+    ]
+
+-- SendContactBody ---------------------------------------------------------
+
+data SendContactBody = SendContactBody
+  { scbPhoneNumber :: Text
+  , scbFirstName   :: Text
+  , scbLastName    :: Maybe Text
+  , scbVcard       :: Maybe Text
+  , scbChatId      :: Integer
+  } deriving Generic
+
+instance ToJSON SendContactBody where
+  toJSON = Aeson.toJsonDrop
+
+instance Loggable SendContactBody where
+  toLog SendContactBody {..} = mkToLog "SendContact:"
+    [ ("Chat Id"     , showt scbChatId)
+    , ("Phone Number", scbPhoneNumber)
+    , ("First Name"  , scbFirstName)
+    ]
+    [ ("Last Name"   , scbLastName)
+    , ("Vcard"       , scbVcard)
     ]
 
 -- FUNCTIONS ---------------------------------------------------------------

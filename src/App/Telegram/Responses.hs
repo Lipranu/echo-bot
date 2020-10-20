@@ -12,6 +12,7 @@ module App.Telegram.Responses
   , UpdateType (..)
   , Updates (..)
   , MessageBody (..)
+  , ContactBody (..)
   , FileId (..)
   , VenueBody (..)
   , LocationBody (..)
@@ -179,8 +180,8 @@ data MessageType
   | Voice     FileId
   | Location  LocationBody
   | Venue     VenueBody
+  | Contact   ContactBody
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
 --TODO: | Venue
@@ -197,8 +198,8 @@ instance FromJSON MessageType where
     <|> Voice     <$>  o .: "voice"
     <|> Venue     <$>  o .: "venue"
     <|> Location  <$>  o .: "location"
+    <|> Contact   <$>  o .: "contact"
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
     <|> pure TextMessage
@@ -216,8 +217,8 @@ instance Loggable MessageType where
     Voice       id   -> addId id "Voice"
     Location    body -> toLog body
     Venue       body -> toLog body
+    Contact     body -> toLog body
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
 --TODO: | Venue
@@ -246,7 +247,7 @@ instance Loggable LocationBody where
 data VenueBody = VenueBody
   { vbLocation       :: LocationBody
   , vbTitle          :: Text
-  , vbAddress         :: Text
+  , vbAddress        :: Text
   , vbFoursquareId   :: Maybe Text
   , vbFoursquareType :: Maybe Text
   } deriving Generic
@@ -255,13 +256,37 @@ instance FromJSON VenueBody where
   parseJSON = Aeson.parseJsonDrop
 
 instance Loggable VenueBody where
-  toLog VenueBody {..} = (mkToLog "Venue:"
-    [ ("Title" , vbTitle)
-    , ("Address", vbAddress)
+  toLog VenueBody {..} = mkToLog "Venue:"
+    [ ("Title"   , vbTitle)
+    , ("Address" , vbAddress)
+    , ("Location", "")
+    , (" |\tLongitude", showt $ longitude vbLocation)
+    , (" |\tLatitude" , showt $ latitude  vbLocation)
     ]
     [ ("Forursquare Id" , vbFoursquareId)
     , ("Foursquare Type", vbFoursquareType)
-    ]) <> toLog vbLocation
+    ]
+
+-- ContactBody -------------------------------------------------------------
+
+data ContactBody = ContactBody
+  { cbPhoneNumber :: Text
+  , cbFirstName   :: Text
+  , cbLastName    :: Maybe Text
+  , cbVcard       :: Maybe Text
+  } deriving Generic
+
+instance FromJSON ContactBody where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable ContactBody where
+  toLog ContactBody {..} = mkToLog "Contact:"
+    [ ("Phone Number", cbPhoneNumber)
+    , ("First Name"  , cbFirstName)
+    ]
+    [ ("Last Name"   , cbLastName)
+    , ("Vcard"       , cbVcard)
+    ]
 
 -- FUNCTIONS ---------------------------------------------------------------
 

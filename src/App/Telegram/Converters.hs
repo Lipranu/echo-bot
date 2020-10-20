@@ -16,8 +16,9 @@ import Data.Maybe  ( fromMaybe )
 mkSendRequest :: MessageBody -> Maybe Text -> SendRequest
 mkSendRequest MessageBody {..} text = case mbType of
   TextMessage    -> SendMessage   mkSendMessageBody
-  Venue     body -> SendVenue     $ mkSendVenueBody body
+  Venue     body -> SendVenue     $ mkSendVenueBody    body
   Location  body -> SendLocation  $ mkSendLocationBody body
+  Contact   body -> SendContact   $ mkSendContactBody  body
   Sticker   id   -> SendSticker   id mbChatId
   Animation id   -> SendAnimation id $ mkCommonPart text
   Audio     id   -> SendAudio     id $ mkCommonPart text
@@ -27,7 +28,6 @@ mkSendRequest MessageBody {..} text = case mbType of
   VideoNote id   -> SendVideoNote id $ mkCommonPart text
   Voice     id   -> SendVoice     id $ mkCommonPart text
 --TODO: | MediaGroup
---TODO: | Contact
 --TODO: | Dice
 --TODO: | Poll
   where
@@ -48,12 +48,19 @@ mkSendRequest MessageBody {..} text = case mbType of
       { svbChatId         = mbChatId
       , svbLongitude      = longitude vbLocation
       , svbLatitude       = latitude  vbLocation
-      , svbAddress         = vbAddress
+      , svbAddress        = vbAddress
       , svbTitle          = vbTitle
       , svbFoursquareId   = vbFoursquareId
       , svbFoursquareType = vbFoursquareType
       }
 
+    mkSendContactBody ContactBody {..} = SendContactBody
+      { scbPhoneNumber = cbPhoneNumber
+      , scbFirstName   = cbFirstName
+      , scbLastName    = cbLastName
+      , scbVcard       = cbVcard
+      , scbChatId      = mbChatId
+      }
     mkCommonPart mText = SendCommonPart
       { caption   = mText
       , chatId    = mbChatId
