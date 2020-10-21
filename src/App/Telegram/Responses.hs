@@ -7,12 +7,16 @@
 
 module App.Telegram.Responses
   ( MessageType (..)
+  , MessageEntity (..)
   , ResponseException (..)
   , Update (..)
+  , UserId (..)
   , UpdateType (..)
   , Updates (..)
   , MessageBody (..)
   , DiceBody (..)
+  , PollBody (..)
+  , PollOption (..)
   , ContactBody (..)
   , FileId (..)
   , VenueBody (..)
@@ -183,8 +187,8 @@ data MessageType
   | Venue     VenueBody
   | Contact   ContactBody
   | Dice      DiceBody
+  | Poll      PollBody
 --TODO: | MediaGroup
---TODO: | Poll
 
 instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o ->
@@ -200,8 +204,8 @@ instance FromJSON MessageType where
     <|> Location  <$>  o .: "location"
     <|> Contact   <$>  o .: "contact"
     <|> Dice      <$>  o .: "dice"
+    <|> Poll      <$>  o .: "poll"
 --TODO: | MediaGroup
---TODO: | Poll
     <|> pure TextMessage
 
 instance Loggable MessageType where
@@ -218,9 +222,9 @@ instance Loggable MessageType where
     Location    body -> toLog body
     Venue       body -> toLog body
     Dice        body -> toLog body
+    Poll        body -> toLog body
     Contact     body -> toLog body
 --TODO: | MediaGroup
---TODO: | Poll
     where addId id t = t <> mkLogLine (t <> " Id", coerce id)
 
 instance HasPriority MessageType where
@@ -237,8 +241,8 @@ instance FromJSON LocationBody
 
 instance Loggable LocationBody where
   toLog LocationBody {..} = mkToLog "Location:"
-    [ (" |\tLongitude", showt longitude)
-    , (" |\tLatitude", showt latitude)
+    [ ("\tLongitude", showt longitude)
+    , ("\tLatitude", showt latitude)
     ] []
 
 -- VenueBody ---------------------------------------------------------------
@@ -259,8 +263,8 @@ instance Loggable VenueBody where
     [ ("Title"   , vbTitle)
     , ("Address" , vbAddress)
     , ("Location", "")
-    , (" |\tLongitude", showt $ longitude vbLocation)
-    , (" |\tLatitude" , showt $ latitude  vbLocation)
+    , ("\tLongitude", showt $ longitude vbLocation)
+    , ("\tLatitude" , showt $ latitude  vbLocation)
     ]
     [ ("Forursquare Id" , vbFoursquareId)
     , ("Foursquare Type", vbFoursquareType)
@@ -302,6 +306,92 @@ instance Loggable DiceBody where
     [ (" |\tEmoji", dbEmoji)
     , (" |\tValue", showt dbValue)
     ] []
+
+-- PollBody ----------------------------------------------------------------
+
+data PollBody = PollBody
+  { pbId                    :: Text
+  , pbQuestion              :: Text
+  , pbOptions               :: [PollOption]
+  , pbTotalVoterCount       :: Integer
+  , pbIsClosed              :: Bool
+  , pbIsAnonymous           :: Bool
+  , pbType                  :: Text
+  , pbAllowsMultipleAnswers :: Bool
+  , pbCorrectOptionId       :: Maybe Integer
+  , pbExplanation           :: Maybe Text
+  , pbExplanationEntities   :: Maybe [MessageEntity]
+  , pbOpenPeriod            :: Maybe Integer
+  , pbCloseDate             :: Maybe Integer
+  } deriving Generic
+
+instance FromJSON PollBody where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable PollBody where
+  toLog PollBody {..} = mkToLog "Poll:" [] []
+    --[ ("Poll Id"                , showt pbId)
+    --, ("Question"               , pbQuestion)
+    --, ("Options"                , toLog pbOptions)
+    --, ("Voter Count"            , showt pbTotalVoterCount)
+    --, ("Is Closed"              , showt pbIsClosed)
+    --, ("Is Anonymous"           , showt pbIsAnonymous)
+    --, ("Type"                   , pbType)
+    --, ("Allows Multiple Answers", showt pbAllowsMultipleAnswers)
+    --, ("Explanation Entities", showt $ length <$> pbExplanationEntities)
+    --]
+    --[ ("Correct Option Id"   , showt <$> pbCorrectOptionId)
+    --, ("Explanation"         , pbExplanation)
+    ----, ("Explanation Entities", showt $ length <$> pbExplanationEntities)
+    --, ("Open Period"         , showt  <$> pbOpenPeriod)
+    --, ("Close Date"          , showt  <$> pbCloseDate)
+    --]
+
+-- PollOption --------------------------------------------------------------
+
+data PollOption = PollOption
+  { poText       :: Text
+  , poVoterCount :: Integer
+  } deriving Generic
+
+instance FromJSON PollOption where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable PollOption where
+  toLog PollOption {..} = mkToLog "PollOption:"
+    [ ("Text"       , poText)
+    , ("Voter Count", showt poVoterCount)
+    ] []
+
+-- MessageEntity -----------------------------------------------------------
+
+newtype UserId = UserId { getUserId :: Integer } deriving Generic
+
+instance FromJSON UserId where
+  parseJSON = Aeson.parseJsonDrop
+
+data MessageEntity = MessageEntity
+  { meType     :: Text
+  , meOffset   :: Integer
+  , meLength   :: Integer
+  , meUrl      :: Maybe Text
+  , meUser     :: Maybe UserId
+  , meLanguage :: Maybe Text
+  } deriving Generic
+
+instance FromJSON MessageEntity where
+  parseJSON = Aeson.parseJsonDrop
+
+instance Loggable MessageEntity where
+  toLog MessageEntity {..} = mkToLog "MessageEntity:" [] []
+    --[ ("", meType)
+    --, ("", showt meOffset)
+    --, ("", showt meLength)
+    --]
+    --[ ("", meUrl)
+    --, ("", meUser)
+    --, ("", meLanguage)
+    --]
 
 -- FUNCTIONS ---------------------------------------------------------------
 
