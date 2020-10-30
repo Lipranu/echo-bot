@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase                 #-}
@@ -43,7 +44,7 @@ import Infrastructure.Logger
 import Control.Applicative ( (<|>) )
 import Control.Monad       ( join )
 import Control.Monad.Catch ( Exception )
-import Data.Aeson          ( Value, (.:), (.:?) )
+import Data.Aeson.Extended ( DropPrefix (..), FromJSON (..), (.:), (.:?) )
 import Data.List           ( sort )
 import Data.Text.Extended  ( Text )
 import Data.Vector         ( (!?) )
@@ -60,12 +61,10 @@ data ResponseException = ResponseException
   { eErrorCode     :: Integer
   , eErrorMsg      :: Text
   , eRequestParams :: [RequestParams]
-  } deriving (Show, Generic)
+  } deriving ( Show, Generic )
+    deriving FromJSON via DropPrefix ResponseException
 
 instance Exception ResponseException
-
-instance Aeson.FromJSON ResponseException where
-  parseJSON = Aeson.parseJsonDrop
 
 instance Loggable ResponseException where
   toLog ResponseException {..}
@@ -85,12 +84,10 @@ data UploadException = UploadException
   , uebBwact  :: Text
   , uebServer :: Integer
   , ueb_sig   :: Text
-  } deriving (Show, Generic)
+  } deriving ( Show, Generic )
+    deriving FromJSON via DropPrefix UploadException
 
 instance Exception UploadException
-
-instance Aeson.FromJSON UploadException where
-  parseJSON = Aeson.parseJsonDrop
 
 instance Loggable UploadException where
   toLog UploadException {..} = mkToLog "Error occurred during upload file:"
@@ -107,10 +104,8 @@ instance HasPriority UploadException where logData = logWarning . toLog
 data RequestParams = RequestParams
   { rpKey   :: Text
   , rpValue :: Text
-  } deriving (Show, Generic)
-
-instance Aeson.FromJSON RequestParams where
-  parseJSON = Aeson.parseJsonDrop
+  } deriving ( Show, Generic )
+    deriving FromJSON via DropPrefix RequestParams
 
 instance Loggable RequestParams where
   toLog RequestParams {..} = mkLogLine ("\t" <> rpKey, rpValue)
@@ -118,13 +113,11 @@ instance Loggable RequestParams where
 -- LongPollServer ----------------------------------------------------------
 
 data LongPollServer = LongPollServer
- { lpsKey    :: Text
- , lpsServer :: Text
- , lpsTs     :: Text
- } deriving Generic
-
-instance Aeson.FromJSON LongPollServer where
-  parseJSON = Aeson.parseJsonDrop
+  { lpsKey    :: Text
+  , lpsServer :: Text
+  , lpsTs     :: Text
+  } deriving Generic
+    deriving FromJSON via DropPrefix LongPollServer
 
 instance Loggable LongPollServer where
   toLog LongPollServer {..} = mkToLog "Recived Long Poll Server:"
@@ -200,9 +193,9 @@ instance HasPriority Update where
 
 -- Message -----------------------------------------------------------------
 
-newtype MessageId = MessageId { unMessageId :: Integer }
-newtype FromId    = FromId    { unFromId    :: Integer }
-newtype PeerId    = PeerId    { unPeerId    :: Integer }
+newtype MessageId = MessageId { getMessageId :: Integer }
+newtype FromId    = FromId    { getFromId    :: Integer }
+newtype PeerId    = PeerId    { getPeerId    :: Integer }
 
 data Message = Message
   { mId          :: MessageId
@@ -236,9 +229,9 @@ instance Aeson.FromJSON Message where
 
 instance Loggable Message where
   toLog Message {..} = mkToLog "Message data:"
-    [ ("Message id"      , Text.showt $ unMessageId mId)
-    , ("From id"         , Text.showt $ unFromId mFromId)
-    , ("Peer id"         , Text.showt $ unPeerId mPeerId)
+    [ ("Message id"      , Text.showt $ getMessageId mId)
+    , ("From id"         , Text.showt $ getFromId mFromId)
+    , ("Peer id"         , Text.showt $ getPeerId mPeerId)
     , ("Attachments"     , Text.showt $ length mAttachments)
     , ("Forward Messages", Text.showt $ length mForwardsId)
     ]
@@ -251,17 +244,17 @@ instance Loggable Message where
 
 instance HasPriority Message where logData = logDebug . toLog
 
-instance Has MessageId Message where getter = mId
-instance Has PeerId    Message where getter = mPeerId
-instance Has FromId    Message where getter = mFromId
-instance Has [Value]   Message where getter = mAttachments
+instance Has MessageId     Message where getter = mId
+instance Has PeerId        Message where getter = mPeerId
+instance Has FromId        Message where getter = mFromId
+instance Has [Aeson.Value] Message where getter = mAttachments
 
 instance Has Context Message where
-  getter Message {..} | unFromId mFromId == unPeerId mPeerId = Private
-                      | otherwise                            = Chat
+  getter Message {..} | getFromId mFromId == getPeerId mPeerId = Private
+                      | otherwise                              = Chat
 
 instance Has Key Message where
-  getter Message {..} = (unFromId mFromId, unPeerId mPeerId)
+  getter Message {..} = (getFromId mFromId, getPeerId mPeerId)
 
 instance Has (Maybe Command) Message where
   getter Message {..} = case mPayload of
@@ -313,10 +306,9 @@ instance HasPriority Command where
 
 -- UserName ----------------------------------------------------------------
 
-newtype UserName = UserName { unFirstName :: Text } deriving Generic
-
-instance Aeson.FromJSON UserName where
-  parseJSON = Aeson.parseJsonDrop
+newtype UserName = UserName { getFirstName :: Text }
+  deriving Generic
+  deriving FromJSON via DropPrefix UserName
 
 instance Loggable [UserName] where
   toLog [] = "User not found"
@@ -374,7 +366,7 @@ data AttachmentBody = AttachmentBody
   , aOwnerId   :: Integer
   , aAccessKey :: Maybe Text
   , aType      :: Text
-  } deriving Generic
+  }
 
 instance Aeson.FromJSON (Text -> AttachmentBody) where
   parseJSON = Aeson.withObject (path <> "AttachmentBody") $ \o -> do
@@ -643,7 +635,7 @@ instance HasPriority PhotoSaved where logData = logDebug . toLog
 -- MessageSended -----------------------------------------------------------
 
 newtype MessageSended = MessageSended Integer
-  deriving (Generic, Aeson.FromJSON)
+  deriving (Generic, FromJSON)
 
 instance Loggable MessageSended where
   toLog (MessageSended id) = "Successfully sent message with id: "

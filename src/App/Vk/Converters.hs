@@ -182,7 +182,7 @@ mkNotification aType user = do
   let text = "Can't send message of type: " <> aType
   replyId <- grab >>= \case
     Chat    -> pure Nothing
-    Private -> Just . unMessageId <$> grab
+    Private -> Just . getMessageId <$> grab
   mkReply replyId text user
 
 mkAppeal
@@ -193,10 +193,10 @@ mkAppeal
 mkAppeal text user = grab >>= \case
   Private -> pure text
   Chat    -> do
-    fromId <- Text.showt . unFromId <$> grab
+    fromId <- Text.showt . getFromId <$> grab
     pure $ "@id" <> fromId <> case user of
       Nothing   -> ", " <> text
-      Just name -> " (" <> unFirstName name <> "), " <> text
+      Just name -> " (" <> getFirstName name <> "), " <> text
 
 mkKeyboard :: Maybe Keyboard
 mkKeyboard =

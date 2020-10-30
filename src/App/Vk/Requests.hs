@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -32,13 +33,13 @@ import Infrastructure.Requester
 
 import Control.Monad.Catch    ( MonadThrow )
 import Control.Monad.IO.Class ( MonadIO (..) )
+import Data.Aeson.Extended    ( DropPrefix (..), ToJSON (..), encode )
 import Data.ByteString.Lazy   ( toStrict )
 import Data.Maybe             ( catMaybes )
 import Data.Text.Encoding     ( encodeUtf8 )
 import Data.Text.Extended     ( Text, showt, unpack )
 import GHC.Generics           ( Generic )
 
-import qualified Data.Aeson.Extended                   as Aeson
 import qualified Data.ByteString                       as BS
 import qualified Network.HTTP.Client                   as HTTP
 import qualified Network.HTTP.Client.MultipartFormData as MP
@@ -69,13 +70,13 @@ instance ToRequestValue Double where
   toValue = encodeUtf8 . showt
 
 instance ToRequestValue PeerId where
-  toValue = encodeUtf8 . showt . unPeerId
+  toValue = encodeUtf8 . showt . getPeerId
 
 instance ToRequestValue FromId where
-  toValue = encodeUtf8 . showt . unFromId
+  toValue = encodeUtf8 . showt . getFromId
 
 instance ToRequestValue MessageId where
-  toValue = encodeUtf8 . showt . unMessageId
+  toValue = encodeUtf8 . showt . getMessageId
 
 -- GetLongPollServer -------------------------------------------------------
 
@@ -169,7 +170,7 @@ instance (Monad m, VkReader r m) => ToRequest m SendMessage where
 
 instance Loggable SendMessage where
   toLog SendMessage {..} = "Sending message with peer id: "
-    <> showt (unPeerId smPeerId)
+    <> showt (getPeerId smPeerId)
 
 instance HasPriority SendMessage where logData = logInfo . toLog
 
@@ -180,12 +181,10 @@ data Keyboard = Keyboard
   , kInline  :: Bool
   , kButtons :: [[Button]]
   } deriving Generic
-
-instance Aeson.ToJSON Keyboard where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix Keyboard
 
 instance ToRequestValue Keyboard where
-  toValue = toStrict . Aeson.encode
+  toValue = toStrict . encode
 
 -- Button ------------------------------------------------------------------
 
@@ -193,9 +192,7 @@ data Button = Button
   { bAction :: Action
   , bColor  :: Text
   } deriving Generic
-
-instance Aeson.ToJSON Button where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix Button
 
 -- Action ------------------------------------------------------------------
 
@@ -204,9 +201,7 @@ data Action = Action
   , abLabel   :: Text
   , abPayload :: Text
   } deriving Generic
-
-instance Aeson.ToJSON Action where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix Action
 
 -- GetName -----------------------------------------------------------------
 
@@ -226,7 +221,7 @@ instance (Monad m, VkReader r m) => ToRequest m GetName where
 
 instance Loggable GetName where
   toLog (GetName id) = "Performing a request for a username with an id: "
-    <> showt (unFromId id)
+    <> showt (getFromId id)
 
 instance HasPriority GetName where logData = logInfo . toLog
 

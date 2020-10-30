@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -26,7 +27,7 @@ import Infrastructure.Has
 import Infrastructure.Logger
 import Infrastructure.Requester
 
-import Data.Aeson.Extended         ( ToJSON (..), (.=), toJsonDrop, encode )
+import Data.Aeson.Extended         ( DropPrefix (..), ToJSON (..), (.=) )
 import Data.Text.Encoding.Extended ( encodeUtf8, encodeShowUtf8 )
 import Data.Text.Extended          ( Text, showt )
 import GHC.Generics                ( Generic )
@@ -207,8 +208,7 @@ data SendMessageBody = SendMessageBody
   , smParseMode        :: Text
   , smReplyToMessageId :: Maybe Integer
   } deriving Generic
-
-instance ToJSON SendMessageBody where toJSON = toJsonDrop
+    deriving ToJSON via DropPrefix SendMessageBody
 
 instance Loggable SendMessageBody where
   toLog SendMessageBody {..} = mkToLog "SendMessage:"
@@ -224,9 +224,7 @@ data SendLocationBody = SendLocationBody
   , slbLatitude       :: Double
   , slbChatId         :: Integer
   } deriving Generic
-
-instance ToJSON SendLocationBody where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix SendLocationBody
 
 instance Loggable SendLocationBody where
   toLog SendLocationBody {..} = mkToLog "SendLocation:"
@@ -246,9 +244,7 @@ data SendVenueBody = SendVenueBody
   , svbFoursquareId   :: Maybe Text
   , svbFoursquareType :: Maybe Text
   } deriving Generic
-
-instance ToJSON SendVenueBody where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix SendVenueBody
 
 instance Loggable SendVenueBody where
   toLog SendVenueBody {..} = mkToLog "SendVenue:"
@@ -271,9 +267,7 @@ data SendContactBody = SendContactBody
   , scbVcard       :: Maybe Text
   , scbChatId      :: Integer
   } deriving Generic
-
-instance ToJSON SendContactBody where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix SendContactBody
 
 instance Loggable SendContactBody where
   toLog SendContactBody {..} = mkToLog "SendContact:"
@@ -292,9 +286,7 @@ data SendDiceBody = SendDiceBody
   , sdbValue  :: Integer
   , sdbChatId :: Integer
   } deriving Generic
-
-instance ToJSON SendDiceBody where
-  toJSON = Aeson.toJsonDrop
+    deriving ToJSON via DropPrefix SendDiceBody
 
 instance Loggable SendDiceBody where
   toLog SendDiceBody {..} = mkToLog "Dice:"
@@ -310,7 +302,7 @@ mkRequest x path = do
   token <- unToken <$> obtain
   pure defaultRequest
     { HTTP.path = "/bot" <> encodeUtf8 token <> encodeUtf8 path
-    , HTTP.requestBody = HTTP.RequestBodyBS $ LBS.toStrict $ encode x
+    , HTTP.requestBody = HTTP.RequestBodyBS $ LBS.toStrict $ Aeson.encode x
     , HTTP.requestHeaders = [("content-type","application/json")]
     }
 
@@ -330,5 +322,5 @@ defaultGetUpdatesBody =
   let list :: [Text]
       list = ["message", "channel_post", "callback_query"]
    in [ ("timeout", "25")
-      , ("allowed_updates", LBS.toStrict $ encode list)
+      , ("allowed_updates", LBS.toStrict $ Aeson.encode list)
       ]

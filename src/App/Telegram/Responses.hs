@@ -4,6 +4,7 @@
 {-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE DerivingVia   #-}
 
 module App.Telegram.Responses
   ( MessageType (..)
@@ -31,7 +32,7 @@ import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
 import Control.Monad.Catch ( Exception )
-import Data.Aeson.Extended ( FromJSON (..), Value, (.:), (.:?) )
+import Data.Aeson.Extended ( DropPrefix (..), FromJSON (..), Value, (.:), (.:?) )
 import Data.Coerce         ( coerce )
 import Data.Foldable       ( toList )
 import Data.Text.Extended  ( Text, showt )
@@ -49,12 +50,10 @@ data ResponseException = ResponseException
   { eErrorCode          :: Integer
   , eDescription        :: Text
   , eResponseParameters :: Maybe ResponseParameters
-  } deriving (Show, Generic)
+  } deriving ( Show, Generic )
+    deriving FromJSON via DropPrefix ResponseException
 
 instance Exception ResponseException
-
-instance Aeson.FromJSON ResponseException where
-  parseJSON = Aeson.parseJsonDrop
 
 instance Loggable ResponseException where
   toLog ResponseException {..}
@@ -168,10 +167,9 @@ instance HasPriority MessageBody where
 
 -- MessageType -------------------------------------------------------------
 
-newtype FileId = FileId { unFileId :: Text } deriving Generic
-
-instance FromJSON FileId where
-  parseJSON = Aeson.parseJsonDrop
+newtype FileId = FileId { getFileId :: Text }
+  deriving Generic
+  deriving FromJSON via DropPrefix FileId
 
 data MessageType
   = TextMessage
@@ -254,9 +252,7 @@ data VenueBody = VenueBody
   , vbFoursquareId   :: Maybe Text
   , vbFoursquareType :: Maybe Text
   } deriving Generic
-
-instance FromJSON VenueBody where
-  parseJSON = Aeson.parseJsonDrop
+    deriving FromJSON via DropPrefix VenueBody
 
 instance Loggable VenueBody where
   toLog VenueBody {..} = mkToLog "Venue:"
@@ -278,9 +274,7 @@ data ContactBody = ContactBody
   , cbLastName    :: Maybe Text
   , cbVcard       :: Maybe Text
   } deriving Generic
-
-instance FromJSON ContactBody where
-  parseJSON = Aeson.parseJsonDrop
+    deriving FromJSON via DropPrefix ContactBody
 
 instance Loggable ContactBody where
   toLog ContactBody {..} = mkToLog "Contact:"
@@ -297,9 +291,7 @@ data DiceBody = DiceBody
   { dbEmoji :: Text
   , dbValue :: Integer
   } deriving Generic
-
-instance FromJSON DiceBody where
-  parseJSON = Aeson.parseJsonDrop
+    deriving FromJSON via DropPrefix DiceBody
 
 instance Loggable DiceBody where
   toLog DiceBody {..} = mkToLog "Dice:"
@@ -324,9 +316,7 @@ data PollBody = PollBody
   , pbOpenPeriod            :: Maybe Integer
   , pbCloseDate             :: Maybe Integer
   } deriving Generic
-
-instance FromJSON PollBody where
-  parseJSON = Aeson.parseJsonDrop
+    deriving FromJSON via DropPrefix PollBody
 
 instance Loggable PollBody where
   toLog PollBody {..} = mkToLog "Poll:" [] []
@@ -353,9 +343,7 @@ data PollOption = PollOption
   { poText       :: Text
   , poVoterCount :: Integer
   } deriving Generic
-
-instance FromJSON PollOption where
-  parseJSON = Aeson.parseJsonDrop
+    deriving FromJSON via DropPrefix PollOption
 
 instance Loggable PollOption where
   toLog PollOption {..} = mkToLog "PollOption:"
@@ -365,10 +353,9 @@ instance Loggable PollOption where
 
 -- MessageEntity -----------------------------------------------------------
 
-newtype UserId = UserId { getUserId :: Integer } deriving Generic
-
-instance FromJSON UserId where
-  parseJSON = Aeson.parseJsonDrop
+newtype UserId = UserId { getUserId :: Integer }
+  deriving Generic
+  deriving FromJSON via DropPrefix UserId
 
 data MessageEntity = MessageEntity
   { meType     :: Text
@@ -378,9 +365,7 @@ data MessageEntity = MessageEntity
   , meUser     :: Maybe UserId
   , meLanguage :: Maybe Text
   } deriving Generic
-
-instance FromJSON MessageEntity where
-  parseJSON = Aeson.parseJsonDrop
+    deriving FromJSON via DropPrefix MessageEntity
 
 instance Loggable MessageEntity where
   toLog MessageEntity {..} = mkToLog "MessageEntity:" [] []
