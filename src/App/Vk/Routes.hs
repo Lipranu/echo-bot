@@ -104,6 +104,7 @@ processMessage (NewMessage m) = do
 
     check Message {..} attach = maybe False (not . Text.null) mMessage
       || (isJust mLatitude && isJust mLongitude)
+      || isJust mSticker
       || not (null attach)
 
     report True  = logDebug   ("Message can be sended"   :: Text)
