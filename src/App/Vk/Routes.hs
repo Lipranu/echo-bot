@@ -16,14 +16,7 @@ module App.Vk.Routes
 -- IMPORTS -----------------------------------------------------------------
 
 import App.Shared.Config
-import App.Shared.Routes hiding ( fromResponse
-                                , fromResponseH
-                                , fromResponse_
-                                , handlers
-                                , traverseHandled
-                                , traverseHandled_
-                                )
-
+import App.Shared.Routes ( MonadEffects, MonadRepetitions )
 import App.Vk.Config     ( VkReader )
 import App.Vk.Converters
 import App.Vk.Requests
@@ -33,7 +26,7 @@ import Infrastructure.Has
 import Infrastructure.Logger    hiding ( Priority (..) )
 import Infrastructure.Requester
 
-import qualified App.Shared.Routes as Shared
+import qualified App.Shared.Routes as S
 
 import Control.Monad          ( (>=>), replicateM_, when )
 import Control.Monad.Catch    ( Handler (..), MonadThrow, MonadCatch )
@@ -66,9 +59,9 @@ getUpdates
      )
   => GetUpdates
   -> m ()
-getUpdates gu = withLog requestAndDecode gu >>= \case
+getUpdates gu = S.withLog requestAndDecode gu >>= \case
   Updates xs ts -> do
-    result <- fromValues xs
+    result <- S.fromValues xs
     traverseHandled_ processMessage result
     getUpdates gu { guTs = ts }
   OutOfDate ts  -> getUpdates gu { guTs = showt ts }
@@ -93,13 +86,13 @@ processMessage (NewMessage m) = do
       let sm = mkSendMessage msg attach kb
       replicateM_ repeats $ sendMessage sm
   where
-    stateProcess = fromValues >=> traverseHandled processAttachment
+    stateProcess = S.fromValues >=> traverseHandled processAttachment
 
-    findUser key = getRepeats key >>= \case
+    findUser key = S.getRepeats key >>= \case
       Just i  -> pure (Nothing, i)
       Nothing -> do
         repeat <- unDefaultRepeat <$> obtain
-        putRepeats repeat key
+        S.putRepeats repeat key
         pure (mkKeyboard, repeat)
 
     check Message {..} attach = maybe False (not . Text.null) mMessage
@@ -115,12 +108,8 @@ processMessage rest = pure ()
 processCommand
   :: ( MonadEffects env m
      , MonadRepetitions env m
-     , MonadState s m
+     , MonadState Message m
      , AppReader env m
-     , Has Key s
-     , Has PeerId s
-     , Has FromId s
-     , Has Context s
      , MonadCatch m
      )
   => Maybe Command
@@ -133,24 +122,22 @@ processCommand (Just cmd) = logData cmd >> case cmd of
     reply text
     pure False
   NewCount i       -> do
-    putRepeats i =<< grab
+    S.putRepeats i =<< grab
     reply $ "Repeat count set to: " <> showt i
     pure False
   Repeat           -> do
     text    <- unRepeatText    <$> obtain
     def     <- unDefaultRepeat <$> obtain
-    current <- getRepeats      =<< grab
+    current <- S.getRepeats    =<< grab
     let repeats = fromMaybe def current
     reply $ text <> "\nCurrent repeat count: " <> showt repeats
     pure False
   where reply text = getName >>= mkCommandReply text >>= sendMessage
 
 getName
-  :: ( Has FromId s
-     , Has Context s
-     , MonadEffects r m
+  :: ( MonadEffects r m
      , VkReader r m
-     , MonadState s m
+     , MonadState Message m
      , MonadThrow m
      , MonadCatch m
      )
@@ -196,7 +183,7 @@ processAttachment (Document     body) = case dbType body of
 
 uploadAttachment
   :: ( FromJSON output
-     , HasPriority output
+     , Loggable output
      , MonadEffects env m
      , MonadIO m
      , MonadThrow m
@@ -209,14 +196,10 @@ uploadAttachment
 uploadAttachment = toUploadRequests >=> processDocument
 
 notifyCantSend
-  :: ( Has Context s
-     , Has FromId s
-     , Has MessageId s
-     , Has PeerId s
-     , MonadCatch m
+  :: ( MonadCatch m
      , MonadEffects env m
      , MonadIO m
-     , MonadState s m
+     , MonadState Message m
      , MonadThrow m
      , VkReader env m
      )
@@ -237,7 +220,7 @@ addSticker id = modify $ \m -> m { mSticker = Just id }
 processDocument
   :: forall result s env m
    . ( FromJSON result
-     , HasPriority result
+     , Loggable result
      , MonadEffects env m
      , MonadIO m
      , MonadThrow m
@@ -248,7 +231,7 @@ processDocument
   -> m (Maybe Text)
 processDocument UploadRequests {..} = do
   server   <- fromResponseR getUploadServer
-  file     <- inputLog request getFile
+  file     <- S.inputLog request getFile
   uploaded <- fromResponseU $ uploadFile server file
   saved    <- fromResponseR $ saveFile uploaded
   addAttachment @result saved
@@ -256,35 +239,35 @@ processDocument UploadRequests {..} = do
 fromResponseR, fromResponseU
   :: forall output input env m
    . ( FromJSON output
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadEffects env m
      , MonadThrow m
      , ToRequest m input
      )
   => input
   -> m output
-fromResponseR = Shared.fromResponse @ResponseException @output
-fromResponseU = Shared.fromResponse @UploadException   @output
+fromResponseR = S.fromResponse @ResponseException @output
+fromResponseU = S.fromResponse @UploadException   @output
 
 fromResponse_
   :: forall output input env m
    . ( FromJSON output
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadEffects env m
      , MonadThrow m
      , ToRequest m input
      )
   => input
   -> m ()
-fromResponse_ = Shared.fromResponse_ @ResponseException @output
+fromResponse_ = S.fromResponse_ @ResponseException @output
 
 fromResponseH
   :: forall output input env m
    . ( FromJSON output
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadCatch m
      , MonadEffects env m
      , MonadThrow m
@@ -292,24 +275,24 @@ fromResponseH
      )
   => input
   -> m (Maybe output)
-fromResponseH = Shared.fromResponseH @ResponseException @output handlers
+fromResponseH = S.fromResponseH @ResponseException @output handlers
 
 traverseHandled
-  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  :: (MonadCatch m, HasLogger env m, Loggable input)
   => (input -> m (Maybe output))
   -> [input]
   -> m [output]
-traverseHandled = Shared.traverseHandled handlers
+traverseHandled = S.traverseHandled handlers
 
 traverseHandled_
-  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  :: (MonadCatch m, HasLogger env m, Loggable input)
   => (input -> m ())
   -> [input]
   -> m ()
-traverseHandled_ = Shared.traverseHandled_ handlers
+traverseHandled_ = S.traverseHandled_ handlers
 
 handlers :: HasLogger env m => output -> [Handler m output]
-handlers x = Shared.handlers x <>
+handlers x = S.handlers x <>
   [ Handler $ \(e :: ResponseException) -> logData e >> pure x
   , Handler $ \(e :: UploadException)   -> logData e >> pure x
   ]
