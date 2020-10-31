@@ -1,14 +1,21 @@
-{-# LANGUAGE ConstraintKinds            #-}
-{-# LANGUAGE FlexibleContexts           #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE FlexibleContexts      #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE ScopedTypeVariables   #-}
+{-# LANGUAGE TupleSections         #-}
+{-# LANGUAGE TypeApplications      #-}
+{-# LANGUAGE TypeFamilies          #-}
+{-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module Infrastructure.Logger
   ( Config (..)
+  , GConst (..)
   , HasLogger
   , HasPriority (..)
   , Lock
@@ -18,7 +25,7 @@ module Infrastructure.Logger
   , MonadTime (..)
   , Options (..)
   , Priority (..)
-
+  , gMkLogEntry
   , log
   , logDebug
   , logError
@@ -39,9 +46,12 @@ import Control.Monad.IO.Class    ( MonadIO, liftIO )
 import Control.Monad.Reader      ( MonadReader, lift )
 import Control.Monad.State       ( StateT (..) )
 import Data.Aeson                ( (.:?), (.!=) )
-import Data.Text.Extended        ( Text )
+import Data.Bool                 ( bool )
+import Data.Char                 ( isLower, isUpper, toUpper )
 import Data.Text.Encoding        ( decodeUtf8 )
+import Data.Text.Extended        ( Text )
 import Data.Time                 ( UTCTime )
+import GHC.Generics              ( Generic, (:*:) (..), (:+:) (..), )
 import Network.HTTP.Client       ( HttpException (..)
                                  , HttpExceptionContent (..)
                                  , responseStatus
@@ -50,6 +60,7 @@ import Network.HTTP.Types.Status ( Status (..) )
 
 import qualified Data.Aeson         as Aeson
 import qualified Data.Text.Extended as Text
+import qualified GHC.Generics       as G
 
 import Prelude hiding ( log )
 
@@ -68,6 +79,12 @@ class Loggable a where
 class Loggable a => HasPriority a where
   logData :: HasLogger r m => a -> m ()
 
+  default logData :: (Generic a, GLog (G.Rep a), HasLogger r m) => a -> m ()
+  logData = logDebug . gMkLogEntry
+
+class GLog f where
+  glog :: Int -> f x -> Text
+
 -- TYPES AND INSTANCES -----------------------------------------------------
 
 type Lock = MVar ()
@@ -78,6 +95,57 @@ type HasLogger r m =
   , MonadTime m
   , MonadLogger m
   )
+
+instance GLog f => GLog (G.D1 c f) where
+  glog i (G.M1 x) = glog i x
+
+instance (GLog a, GLog b) => GLog (a :+: b) where
+  glog i (G.L1 x) = glog i x
+  glog i (G.R1 x) = glog i x
+
+instance (GLog f, G.Constructor c) => GLog (G.C1 c f) where
+  glog i c@(G.M1 x) = Text.pack (G.conName c)
+    <> (bool "" ":" $ G.conIsRecord c)
+    <> glog i x
+
+instance (GLog a, GLog b) => GLog (a :*: b) where
+  glog i (x :*: y) = glog i x <> glog i y
+
+instance (GLog f, G.Selector c) => GLog (G.S1 c f) where
+  glog i c@(G.M1 x)
+    | Text.null field = ""
+    | otherwise       = "\n | "
+                     <> (Text.replicate i "\t")
+                     <> Text.pack (mkSelector $ G.selName c)
+                     <> field
+    where field = glog i x
+
+instance {-# OVERLAPPABLE #-}
+  (Generic f, GLog (G.Rep f)) => GLog (G.Rec0 f) where
+  glog i (G.K1 x) = gMkLogEntry' (i + 1) x
+
+instance GLog (G.Rec0 a) => GLog (G.Rec0 (Maybe a)) where
+  glog i (G.K1 x) = maybe "" (glog @(G.Rec0 a) i . G.K1) x
+
+instance GLog (G.Rec0 [a]) where
+  glog i (G.K1 xs) = Text.showt (length xs) <> " objects"
+
+instance GLog (G.Rec0 Integer) where
+  glog _ (G.K1 x) = Text.showt x
+
+instance GLog (G.Rec0 Int) where
+  glog _ (G.K1 x) = Text.showt x
+
+instance GLog (G.Rec0 Double) where
+  glog _ (G.K1 x) = Text.showt x
+
+instance GLog (G.Rec0 Text) where
+  glog _ (G.K1 x) = x
+
+instance GLog (G.Rec0 String) where
+  glog _ (G.K1 x) = Text.pack x
+
+instance GLog G.U1 where glog _ _ = ""
 
 instance Loggable Text   where toLog = id
 instance Loggable String where toLog = Text.pack
@@ -132,7 +200,8 @@ instance Loggable HttpExceptionContent where
     [ ("Description", descr)
     , ("Content"    , decodeUtf8 bs)
     ] []
-    where descr = "The status line returned by the server could not be parsed"
+    where descr = "The status line returned by the server\
+                  \ could not be parsed"
 
   toLog (InvalidHeader bs) = mkToLog "InvalidHeader:"
     [ ("Description", "The given response header line could not be parsed")
@@ -225,6 +294,14 @@ instance Loggable HttpExceptionContent where
     ] []
 
 instance HasPriority HttpExceptionContent where logData = logError . toLog
+
+newtype GConst a = GConst a
+
+instance Generic (GConst a) where
+  type Rep (GConst a) = G.Rec0 a
+
+  from (GConst x) = G.K1 x
+  to (G.K1 x) = GConst x
 
 data Priority
   = Debug
@@ -399,3 +476,18 @@ maybeLine (_, Nothing) = ""
 maybeLine (key, Just value)
   | Text.null value = ""
   | otherwise       = mkLogLine (key, value)
+
+gMkLogEntry' :: (Generic a, GLog (G.Rep a)) => Int -> a -> Text
+gMkLogEntry' i = glog i . G.from
+
+gMkLogEntry :: (Generic a, GLog (G.Rep a)) => a -> Text
+gMkLogEntry = gMkLogEntry' 0
+
+mkSelector :: String -> String
+mkSelector [] = "Field: "
+mkSelector s@(x:xs)
+  | all isLower s = toUpper x : xs <> ": "
+  | otherwise     = (toUpper l :) $ foldr go ": " ls
+  where (l:ls) = dropWhile isLower s
+        go x xs | isUpper x = ' ' : x : xs
+                | otherwise = x : xs
