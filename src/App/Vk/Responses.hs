@@ -1,11 +1,12 @@
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE DerivingVia                #-}
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE LambdaCase                 #-}
-{-# LANGUAGE MultiParamTypeClasses      #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingVia           #-}
+{-# LANGUAGE FlexibleInstances     #-}
+{-# LANGUAGE LambdaCase            #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE RecordWildCards       #-}
+{-# LANGUAGE UndecidableInstances  #-}
 
 module App.Vk.Responses
   ( Attachment (..)
@@ -188,14 +189,19 @@ instance Loggable Update where
   toLog (NotSupported t) = "Not supprted update of type: " <> t
 
 instance HasPriority Update where
-  logData u@(NewMessage   m) = logInfo (toLog u) >> logDebug (toLog m)
+  logData u@(NewMessage   m) = logInfo (toLog u) >> logData m--ebug (toLog m)
   logData u@(NotSupported _) = logWarning $ toLog u
 
 -- Message -----------------------------------------------------------------
 
 newtype MessageId = MessageId { getMessageId :: Integer }
-newtype FromId    = FromId    { getFromId    :: Integer }
-newtype PeerId    = PeerId    { getPeerId    :: Integer }
+  deriving Generic via GConst Integer
+
+newtype FromId = FromId { getFromId :: Integer }
+  deriving Generic via GConst Integer
+
+newtype PeerId = PeerId { getPeerId :: Integer }
+  deriving Generic via GConst Integer
 
 data Message = Message
   { mId          :: MessageId
@@ -209,7 +215,7 @@ data Message = Message
   , mForwardsId  :: [Integer]
   , mAttachments :: [Aeson.Value]
   , mPayload     :: Maybe Payload
-  }
+  } deriving (Generic, HasPriority)
 
 instance Aeson.FromJSON Message where
   parseJSON = Aeson.withObject (path <> "Message") $ \o -> do
@@ -242,7 +248,7 @@ instance Loggable Message where
     , ("Payload"    , toLog      <$> mPayload)
     ]
 
-instance HasPriority Message where logData = logDebug . toLog
+--instance HasPriority Message where logData = logDebug . mkLog
 
 instance Has MessageId     Message where getter = mId
 instance Has PeerId        Message where getter = mPeerId
@@ -267,7 +273,7 @@ data Context = Private | Chat deriving Eq
 
 -- Payload -----------------------------------------------------------------
 
-data Payload = Payload Text Command
+data Payload = Payload Text Command deriving Generic
 
 instance Aeson.FromJSON Payload where
   parseJSON = Aeson.withText (path <> "Payload") $ \t -> Payload t
@@ -282,6 +288,7 @@ data Command
   | Repeat
   | NewCount Int
   | UnknownCommand Text
+  deriving Generic
 
 instance Aeson.FromJSON Command where
   parseJSON = Aeson.withText (path <> "Command") $ \case
@@ -613,7 +620,7 @@ data PhotoSaved = PhotoSaved
   { psMediaId   :: Integer
   , psOwnerId   :: Integer
   , psAccessKey :: Maybe Text
-  }
+  } deriving Generic
 
 instance Aeson.FromJSON PhotoSaved where
   parseJSON = Aeson.withArray (path <> "PhotoSaved") $ \a -> case a !? 0 of
@@ -630,7 +637,8 @@ instance Loggable PhotoSaved where
     , ("Owner id", Text.showt psOwnerId)
     ] [("Access Key", psAccessKey)]
 
-instance HasPriority PhotoSaved where logData = logDebug . toLog
+instance HasPriority PhotoSaved where
+  logData x = logDebug $ gMkLogEntry x
 
 -- MessageSended -----------------------------------------------------------
 
