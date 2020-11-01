@@ -1,10 +1,12 @@
-{-# LANGUAGE DeriveGeneric     #-}
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE LambdaCase        #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE DerivingVia   #-}
+{-# LANGUAGE DeriveAnyClass       #-}
+{-# LANGUAGE DeriveGeneric        #-}
+{-# LANGUAGE DerivingVia          #-}
+{-# LANGUAGE FlexibleContexts     #-}
+{-# LANGUAGE FlexibleInstances    #-}
+{-# LANGUAGE LambdaCase           #-}
+{-# LANGUAGE OverloadedStrings    #-}
+{-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module App.Telegram.Responses
   ( MessageType (..)
@@ -26,13 +28,11 @@ module App.Telegram.Responses
 
 -- IMPORTS -----------------------------------------------------------------
 
-import App.Shared.Responses
-
 import Infrastructure.Logger hiding ( Priority (..) )
 
 import Control.Applicative ( (<|>) )
 import Control.Monad.Catch ( Exception )
-import Data.Aeson.Extended ( DropPrefix (..), FromJSON (..), Value, (.:), (.:?) )
+import Data.Aeson.Extended ( DropPrefix (..), FromJSON (..), (.:), (.:?) )
 import Data.Coerce         ( coerce )
 import Data.Foldable       ( toList )
 import Data.Text.Extended  ( Text, showt )
@@ -50,48 +50,33 @@ data ResponseException = ResponseException
   { eErrorCode          :: Integer
   , eDescription        :: Text
   , eResponseParameters :: Maybe ResponseParameters
-  } deriving ( Show, Generic )
+  } deriving stock (Show, Generic)
+    deriving anyclass Exception
     deriving FromJSON via DropPrefix ResponseException
-
-instance Exception ResponseException
-
-instance Loggable ResponseException where
-  toLog ResponseException {..}
-    = mkToLog "An error occurred as a result of the request:"
-    [ ("Error Code"        , Text.showt eErrorCode)
-    , ("Error Message"     , eDescription)
-    ] [ ("ResponseParameters", toLog <$> eResponseParameters) ]
-
-instance HasPriority ResponseException where logData = logError . toLog
+    deriving Loggable via LogError   ResponseException
 
 -- ResponseParameters ------------------------------------------------------
 
 data ResponseParameters
   = MigrateToChatId Integer
   | RetryAfter Integer
-  deriving Show
+  deriving stock (Generic, Show)
 
 instance FromJSON ResponseParameters where
   parseJSON = Aeson.withObject (path <> "ResponseParameters") $ \o ->
         MigrateToChatId <$> o .: "migrate_to_chat_id"
     <|> RetryAfter      <$> o .: "retry_after"
 
-instance Loggable ResponseParameters where
-  toLog (MigrateToChatId i) = "Migrate to chat id: " <> Text.showt i
-  toLog (RetryAfter i)      = "Retry after: "        <> Text.showt i
-
 -- Updates -----------------------------------------------------------------
 
-newtype Updates = Updates { unUpdates :: [Value] }
+newtype Updates = Updates { unUpdates :: [Aeson.Value] }
 
 instance FromJSON Updates where
   parseJSON = Aeson.withArray (path <> "Updates") $ \a ->
     pure . Updates $ toList a
 
 instance Loggable Updates where
-  toLog (Updates xs) = "Get updates: " <> showt (length xs)
-
-instance HasPriority Updates where logData = logInfo . toLog
+  logData (Updates xs) = logInfo $ "Get updates: " <> showt (length xs)
 
 -- Update ------------------------------------------------------------------
 
@@ -103,15 +88,10 @@ instance FromJSON Update where
     <*> Aeson.parseJSON (Aeson.Object o)
 
 instance Loggable [Update] where
-  toLog v = "Updates resived: " <> Text.showt (length v)
-
-instance HasPriority [Update] where logData = logInfo . toLog
+  logData v = logInfo $ "Updates resived: " <> Text.showt (length v)
 
 instance Loggable Update where
-  toLog (Update i _) = "Proccess post with id: " <> Text.showt i
-
-instance HasPriority Update where
-  logData = logInfo . toLog
+  logData (Update i _) = logInfo $ "Proccess post with id: " <> Text.showt i
 
 -- UpdateType --------------------------------------------------------------
 
@@ -125,13 +105,10 @@ instance FromJSON UpdateType where
     <|> pure (UnsupportedUpdate o)
 
 instance Loggable UpdateType where
-  toLog (Message body) = "Recived update of type Message"
-  toLog (UnsupportedUpdate body) = mkToLog "Recived unsupported update"
-    [("Body", showt body)] []
-
-instance HasPriority UpdateType where
-  logData m@(Message           _) = logInfo    $ toLog m
-  logData m@(UnsupportedUpdate _) = logWarning $ toLog m
+  logData (Message body) = logInfo "Recived update of type Message"
+  logData (UnsupportedUpdate body) = logWarning $ mkLogEntry
+    "Recived unsupported update"
+    [("Body", showt body)]
 
 -- MessageBody -------------------------------------------------------------
 
@@ -141,7 +118,8 @@ data MessageBody = MessageBody
   , mbChatId    :: Integer
   , mbText      :: Maybe Text
   , mbType      :: MessageType
-  }
+  } deriving stock Generic
+    deriving Loggable via LogDebug MessageBody
 
 instance FromJSON MessageBody where
   parseJSON = Aeson.withObject (path <> "MessageData") $ \o -> do
@@ -154,21 +132,10 @@ instance FromJSON MessageBody where
       Just user -> user .: "id"
     pure MessageBody {..}
 
-instance Loggable MessageBody where
-  toLog MessageBody {..} = mkToLog "Processing MessageBody:"
-    [ ("Message Type", toLog mbType)
-    , ("Message Id"  , showt mbMessageId)
-    , ("User Id"     , showt mbUserId)
-    , ("Chat Id"     , showt mbChatId)
-    ] [("Text", mbText)]
-
-instance HasPriority MessageBody where
-  logData = logDebug . toLog
-
 -- MessageType -------------------------------------------------------------
 
 newtype FileId = FileId { getFileId :: Text }
-  deriving Generic
+  deriving stock Generic
   deriving FromJSON via DropPrefix FileId
 
 data MessageType
@@ -187,6 +154,7 @@ data MessageType
   | Dice      DiceBody
   | Poll      PollBody
 --TODO: | MediaGroup
+  deriving stock Generic
 
 instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o ->
@@ -207,8 +175,8 @@ instance FromJSON MessageType where
     <|> pure TextMessage
 
 instance Loggable MessageType where
-  toLog m = case m of
-    TextMessage      -> "Text Message"
+  logData m = case m of
+    TextMessage      -> logDebug "Text Message"
     Animation   id   -> addId id "Animation"
     Audio       id   -> addId id "Audio"
     Document    id   -> addId id "Document"
@@ -217,31 +185,23 @@ instance Loggable MessageType where
     Video       id   -> addId id "Video"
     VideoNote   id   -> addId id "VideoNote"
     Voice       id   -> addId id "Voice"
-    Location    body -> toLog body
-    Venue       body -> toLog body
-    Dice        body -> toLog body
-    Poll        body -> toLog body
-    Contact     body -> toLog body
+    Location    body -> logData body
+    Venue       body -> logData body
+    Dice        body -> logData body
+    Poll        body -> logData body
+    Contact     body -> logData body
 --TODO: | MediaGroup
-    where addId id t = t <> mkLogLine (t <> " Id", coerce id)
-
-instance HasPriority MessageType where
-  logData = logDebug . toLog
+    where addId id t = logDebug $ t <> mkLogEntryLine (t <> " Id", coerce id)
 
 -- LocationBody ------------------------------------------------------------
 
 data LocationBody = LocationBody
   { longitude :: Double
   , latitude  :: Double
-  } deriving Generic
+  } deriving stock Generic
+    deriving Loggable via LogDebug LocationBody
 
 instance FromJSON LocationBody
-
-instance Loggable LocationBody where
-  toLog LocationBody {..} = mkToLog "Location:"
-    [ ("\tLongitude", showt longitude)
-    , ("\tLatitude", showt latitude)
-    ] []
 
 -- VenueBody ---------------------------------------------------------------
 
@@ -251,20 +211,9 @@ data VenueBody = VenueBody
   , vbAddress        :: Text
   , vbFoursquareId   :: Maybe Text
   , vbFoursquareType :: Maybe Text
-  } deriving Generic
+  } deriving stock Generic
     deriving FromJSON via DropPrefix VenueBody
-
-instance Loggable VenueBody where
-  toLog VenueBody {..} = mkToLog "Venue:"
-    [ ("Title"   , vbTitle)
-    , ("Address" , vbAddress)
-    , ("Location", "")
-    , ("\tLongitude", showt $ longitude vbLocation)
-    , ("\tLatitude" , showt $ latitude  vbLocation)
-    ]
-    [ ("Forursquare Id" , vbFoursquareId)
-    , ("Foursquare Type", vbFoursquareType)
-    ]
+    deriving Loggable via LogDebug   VenueBody
 
 -- ContactBody -------------------------------------------------------------
 
@@ -273,31 +222,18 @@ data ContactBody = ContactBody
   , cbFirstName   :: Text
   , cbLastName    :: Maybe Text
   , cbVcard       :: Maybe Text
-  } deriving Generic
+  } deriving stock Generic
     deriving FromJSON via DropPrefix ContactBody
-
-instance Loggable ContactBody where
-  toLog ContactBody {..} = mkToLog "Contact:"
-    [ ("Phone Number", cbPhoneNumber)
-    , ("First Name"  , cbFirstName)
-    ]
-    [ ("Last Name"   , cbLastName)
-    , ("Vcard"       , cbVcard)
-    ]
+    deriving Loggable via LogDebug   ContactBody
 
 -- DiceBody ----------------------------------------------------------------
 
 data DiceBody = DiceBody
   { dbEmoji :: Text
   , dbValue :: Integer
-  } deriving Generic
+  } deriving stock Generic
     deriving FromJSON via DropPrefix DiceBody
-
-instance Loggable DiceBody where
-  toLog DiceBody {..} = mkToLog "Dice:"
-    [ (" |\tEmoji", dbEmoji)
-    , (" |\tValue", showt dbValue)
-    ] []
+    deriving Loggable via LogDebug   DiceBody
 
 -- PollBody ----------------------------------------------------------------
 
@@ -315,11 +251,12 @@ data PollBody = PollBody
   , pbExplanationEntities   :: Maybe [MessageEntity]
   , pbOpenPeriod            :: Maybe Integer
   , pbCloseDate             :: Maybe Integer
-  } deriving Generic
+  } deriving stock Generic
     deriving FromJSON via DropPrefix PollBody
+    deriving Loggable via LogDebug   PollBody
 
-instance Loggable PollBody where
-  toLog PollBody {..} = mkToLog "Poll:" [] []
+--instance Loggable PollBody where
+--  logData PollBody {..} = logDebug $ mkToLog "Poll:"
     --[ ("Poll Id"                , showt pbId)
     --, ("Question"               , pbQuestion)
     --, ("Options"                , toLog pbOptions)
@@ -342,19 +279,13 @@ instance Loggable PollBody where
 data PollOption = PollOption
   { poText       :: Text
   , poVoterCount :: Integer
-  } deriving Generic
+  } deriving stock Generic
     deriving FromJSON via DropPrefix PollOption
-
-instance Loggable PollOption where
-  toLog PollOption {..} = mkToLog "PollOption:"
-    [ ("Text"       , poText)
-    , ("Voter Count", showt poVoterCount)
-    ] []
 
 -- MessageEntity -----------------------------------------------------------
 
 newtype UserId = UserId { getUserId :: Integer }
-  deriving Generic
+  deriving stock Generic
   deriving FromJSON via DropPrefix UserId
 
 data MessageEntity = MessageEntity
@@ -364,19 +295,8 @@ data MessageEntity = MessageEntity
   , meUrl      :: Maybe Text
   , meUser     :: Maybe UserId
   , meLanguage :: Maybe Text
-  } deriving Generic
+  } deriving stock Generic
     deriving FromJSON via DropPrefix MessageEntity
-
-instance Loggable MessageEntity where
-  toLog MessageEntity {..} = mkToLog "MessageEntity:" [] []
-    --[ ("", meType)
-    --, ("", showt meOffset)
-    --, ("", showt meLength)
-    --]
-    --[ ("", meUrl)
-    --, ("", meUser)
-    --, ("", meLanguage)
-    --]
 
 -- FUNCTIONS ---------------------------------------------------------------
 

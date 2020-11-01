@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies         #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module App.Shared ( App (..) ) where
@@ -18,14 +19,14 @@ import qualified Data.Text.IO as TextIO
 -- TYPES AND INSTANCES -----------------------------------------------------
 
 newtype App r a = App { unApp :: ReaderT r IO a }
-  deriving ( Applicative
-           , Functor
-           , Monad
-           , MonadCatch
-           , MonadIO
-           , MonadReader r
-           , MonadThrow
-           )
+  deriving newtype ( Applicative
+                   , Functor
+                   , Monad
+                   , MonadCatch
+                   , MonadIO
+                   , MonadReader r
+                   , MonadThrow
+                   )
 
 instance MonadLogger (App r) where
   logConsole   = liftIO . TextIO.putStr

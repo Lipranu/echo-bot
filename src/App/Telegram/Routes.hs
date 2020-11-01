@@ -17,15 +17,14 @@ module App.Telegram.Routes
 import App.Telegram.Requests
 import App.Telegram.Responses
 import App.Telegram.Converters
-import App.Telegram.Config      ( TelegramReader )
+import App.Telegram.Config     ( TelegramReader )
 
-import App.Shared.Routes hiding ( fromResponse, fromResponse_, traverseHandled, handlers )
+import App.Shared.Routes       ( MonadEffects )
 
---import Infrastructure.Has
 import Infrastructure.Logger
 import Infrastructure.Requester
 
-import qualified App.Shared.Routes as Shared
+import qualified App.Shared.Routes as S
 
 import Data.Aeson          ( FromJSON )
 import Control.Monad.Catch ( Handler (..), MonadThrow, MonadCatch )
@@ -42,7 +41,6 @@ getUpdates
   => GetUpdates
   -> m ()
 getUpdates = fromResponse
---  >=> fromValues . unUpdates
   >=> traverseHandled processUpdate
   >=> getUpdates . GetUpdates . check
   where check xs | null xs   = Nothing
@@ -52,7 +50,6 @@ processUpdate :: (MonadThrow m, MonadEffects env m, TelegramReader env m)
               => Update
               -> m (Maybe Integer)
 processUpdate p@(Update id o) = do
-  logDebug p
   logData o
   case o of
     Message b -> do
@@ -73,34 +70,34 @@ fromResponse
    . ( ToRequest m input
      , FromJSON output
      , MonadThrow m
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadEffects env m
      )
   => input
   -> m output
-fromResponse = Shared.fromResponse @ResponseException @output
+fromResponse = S.fromResponse @ResponseException @output
 
 fromResponse_
   :: forall output input env m
    . ( ToRequest m input
      , FromJSON output
      , MonadThrow m
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadEffects env m
      )
   => input
   -> m ()
-fromResponse_ = Shared.fromResponse_ @ResponseException @output
+fromResponse_ = S.fromResponse_ @ResponseException @output
 
 traverseHandled
-  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  :: (MonadCatch m, HasLogger env m, Loggable input)
   => (input -> m (Maybe output))
   -> [input]
   -> m [output]
-traverseHandled = Shared.traverseHandled handlers
+traverseHandled = S.traverseHandled handlers
 
 handlers :: HasLogger env m => output -> [Handler m output]
 handlers x = Handler (\(e :: ResponseException) -> logData e >> pure x)
-  : Shared.handlers x
+  : S.handlers x

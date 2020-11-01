@@ -1,4 +1,7 @@
 {-# LANGUAGE ConstraintKinds       #-}
+{-# LANGUAGE DeriveAnyClass        #-}
+{-# LANGUAGE DeriveGeneric         #-}
+{-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -29,6 +32,7 @@ import Control.Monad.Reader  ( MonadReader, lift )
 import Control.Monad.State   ( StateT (..) )
 import Data.Text.Encoding    ( decodeUtf8 )
 import Data.Text.Extended    ( Text )
+import GHC.Generics          ( Generic )
 
 import qualified Data.Aeson           as Aeson
 import qualified Data.ByteString.Lazy as LBS
@@ -61,21 +65,15 @@ instance MonadRequester m => MonadRequester (StateT s m) where
 
 instance (Has (Requester m) r, MonadReader r m)
   => Has (Requester (StateT s m)) r where
-  getter env = Requester $ \req ->  StateT $ \s ->
+  getter env = Requester $ \req -> StateT $ \s ->
     (,s) <$> runRequester (getter env) req
 
-data DecodeException = DecodeException Text Text deriving Show
-
-instance Exception DecodeException
-
-instance Loggable DecodeException where
-  toLog (DecodeException err bs)
-    = mkToLog "An error occurred during decoding:"
-    [ ("Error Message", err)
-    , ("Source"       , bs)
-    ] []
-
-instance HasPriority DecodeException where logData = logError . toLog
+data DecodeException = DecodeException
+  { errorMessage :: Text
+  , source       :: Text
+  } deriving stock (Generic, Show)
+    deriving anyclass Exception
+    deriving Loggable via LogError DecodeException
 
 -- FUNCTIONS ---------------------------------------------------------------
 

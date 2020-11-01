@@ -94,9 +94,7 @@ instance (Monad m, VkReader r m) => ToRequest m GetLongPollServer where
   toRequest = requestBuilder
 
 instance Loggable GetLongPollServer where
-  toLog _ = "Requesting long poll server"
-
-instance HasPriority GetLongPollServer where logData = logInfo . toLog
+  logData _ = logInfo "Requesting long poll server"
 
 -- GetUpdates --------------------------------------------------------------
 
@@ -127,9 +125,7 @@ instance Monad m => ToRequest m GetUpdates where
   toRequest gu = pure $ HTTP.urlEncodedBody (toBody gu) $ mkRequest gu
 
 instance Loggable GetUpdates where
-  toLog GetUpdates {..} = "Requesting updates with ts: " <> guTs
-
-instance HasPriority GetUpdates where logData = logInfo . toLog
+  logData GetUpdates {..} = logInfo $ "Requesting updates with ts: " <> guTs
 
 -- SendMessage -------------------------------------------------------------
 
@@ -169,10 +165,8 @@ instance (Monad m, VkReader r m) => ToRequest m SendMessage where
   toRequest = requestBuilder
 
 instance Loggable SendMessage where
-  toLog SendMessage {..} = "Sending message with peer id: "
+  logData SendMessage {..} = logInfo $ "Sending message with peer id: "
     <> showt (getPeerId smPeerId)
-
-instance HasPriority SendMessage where logData = logInfo . toLog
 
 -- Keyboard ----------------------------------------------------------------
 
@@ -180,7 +174,7 @@ data Keyboard = Keyboard
   { kOneTime :: Bool
   , kInline  :: Bool
   , kButtons :: [[Button]]
-  } deriving Generic
+  } deriving stock Generic
     deriving ToJSON via DropPrefix Keyboard
 
 instance ToRequestValue Keyboard where
@@ -191,7 +185,7 @@ instance ToRequestValue Keyboard where
 data Button = Button
   { bAction :: Action
   , bColor  :: Text
-  } deriving Generic
+  } deriving stock Generic
     deriving ToJSON via DropPrefix Button
 
 -- Action ------------------------------------------------------------------
@@ -200,7 +194,7 @@ data Action = Action
   { abType    :: Text
   , abLabel   :: Text
   , abPayload :: Text
-  } deriving Generic
+  } deriving stock Generic
     deriving ToJSON via DropPrefix Action
 
 -- GetName -----------------------------------------------------------------
@@ -220,10 +214,9 @@ instance (Monad m, VkReader r m) => ToRequest m GetName where
   toRequest = requestBuilder
 
 instance Loggable GetName where
-  toLog (GetName id) = "Performing a request for a username with an id: "
+  logData (GetName id) = logInfo $
+    "Performing a request for a username with an id: "
     <> showt (getFromId id)
-
-instance HasPriority GetName where logData = logInfo . toLog
 
 -- GetFile -----------------------------------------------------------------
 
@@ -233,9 +226,7 @@ instance MonadThrow m => ToRequest m GetFile where
   toRequest (GetFile url) = HTTP.parseRequest $ unpack url
 
 instance Loggable GetFile where
-  toLog _ = "Downloading file from attachment url"
-
-instance HasPriority GetFile where logData = logInfo . toLog
+  logData _ = logInfo "Downloading file from attachment url"
 
 -- GetUploadServer ---------------------------------------------------------
 
@@ -263,11 +254,9 @@ instance (Monad m, VkReader r m) => ToRequest m GetUploadServer where
   toRequest = requestBuilder
 
 instance Loggable GetUploadServer where
-  toLog PhotoUploadServer      = "Requesting photo upload server"
-  toLog (FileUploadServer t _) = "Requesting docs upload server, file type: "
-    <> t
-
-instance HasPriority GetUploadServer where logData = logInfo . toLog
+  logData PhotoUploadServer      = logInfo "Requesting photo upload server"
+  logData (FileUploadServer t _) = logInfo $
+    "Requesting docs upload server, file type: " <> t
 
 -- UploadFile --------------------------------------------------------------
 
@@ -289,9 +278,7 @@ instance (MonadThrow m, MonadIO m) => ToRequest m UploadFile where
             _       -> "file"
 
 instance Loggable UploadFile where
-  toLog UploadFile {..} = "Uploading file: " <> ufTitle
-
-instance HasPriority UploadFile where logData = logInfo . toLog
+  logData UploadFile {..} = logInfo $ "Uploading file: " <> ufTitle
 
 -- SaveFile ----------------------------------------------------------------
 
@@ -320,10 +307,8 @@ instance (Monad m, VkReader r m) => ToRequest m SaveFile where
   toRequest = requestBuilder
 
 instance Loggable SaveFile where
-  toLog (SaveDocument title _)  = "Saving document: " <> title
-  toLog (SavePhoto title _ _ _) = "Saving photo: "    <> title
-
-instance HasPriority SaveFile where logData = logInfo . toLog
+  logData (SaveDocument title _)  = logInfo $ "Saving document: " <> title
+  logData (SavePhoto title _ _ _) = logInfo $ "Saving photo: "    <> title
 
 -- FUNCTIONS ---------------------------------------------------------------
 

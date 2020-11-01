@@ -64,12 +64,9 @@ instance (TelegramReader r m, Monad m) => ToRequest m GetUpdates where
                  : defaultGetUpdatesBody
 
 instance Loggable GetUpdates where
-  toLog (GetUpdates Nothing)
-    = "GetUpdates request without offset"
-  toLog (GetUpdates (Just n))
-    = "GetUpdates request with offset: " <> Text.showt (n + 1)
-
-instance HasPriority GetUpdates where logData = logInfo . toLog
+  logData (GetUpdates body) = logInfo $ case body of
+    Just v  -> "GetUpdates request with offset: " <> Text.showt (v + 1)
+    Nothing -> "GetUpdates request without offset"
 
 -- SendRequest -------------------------------------------------------------
 
@@ -142,12 +139,12 @@ instance (TelegramReader env m, Monad m) => ToRequest m SendRequest where
 --TODO: | Poll
 
 instance Loggable SendRequest where
-  toLog sr = case sr of
-    SendMessage   body      -> toLog body
-    SendVenue     body      -> toLog body
-    SendDice      body      -> toLog body
-    SendLocation  body      -> toLog body
-    SendContact   body      -> toLog body
+  logData sr = case sr of
+    SendMessage   body      -> logData body
+    SendVenue     body      -> logData body
+    SendDice      body      -> logData body
+    SendLocation  body      -> logData body
+    SendContact   body      -> logData body
     SendSticker   id chat   -> mkStickerLog id chat
     SendAnimation id common -> mkMediaLog   id common "Animation"
     SendAudio     id common -> mkMediaLog   id common "Audio"
@@ -159,33 +156,17 @@ instance Loggable SendRequest where
 --TODO: | MediaGroup
 --TODO: | Poll
     where
-      mkMediaLog (FileId id) common srtype = (mkToLog ("Send" <> srtype)
-        [(srtype <> " Id", id)] [])
-        <> toLog common
+      mkMediaLog (FileId id) SendCommonPart {..} srtype = logDebug $
+        (mkLogEntry ("Send" <> srtype) [(srtype <> " Id", id)])
+        <> (mkLogEntry "\n" $
+            [("Chat Id", showt chatId), ("Parse Mode", parseMode)]
+            <> case caption of
+               Just v  -> [("Caption", v)]
+               Nothing -> []
+           )
 
-      mkStickerLog (FileId id) chat = mkToLog "SendSticker"
-        [("Sticker Id", id), ("Chat Id", showt chat)] []
-
-instance HasPriority SendRequest where
-  logData sr = logInfo sendInfo >> logDebug (toLog sr)
-    where
-      sendInfo :: Text
-      sendInfo = "Sending message with " <> case sr of
-        SendMessage   {} -> "text"
-        SendAnimation {} -> "animation"
-        SendAudio     {} -> "audio"
-        SendDocument  {} -> "document"
-        SendPhoto     {} -> "photo"
-        SendSticker   {} -> "sticker"
-        SendVoice     {} -> "voice"
-        SendVideo     {} -> "video"
-        SendVideoNote {} -> "video note"
-        SendLocation  {} -> "location"
-        SendVenue     {} -> "venue"
-        SendDice      {} -> "dice"
-        SendContact   {} -> "contact"
---TODO: | MediaGroup
---TODO: | Poll
+      mkStickerLog (FileId id) chat = logDebug $ mkLogEntry "SendSticker"
+        [("Sticker Id", id), ("Chat Id", showt chat)]
 
 -- SendCommonPart ----------------------------------------------------------
 
@@ -193,12 +174,7 @@ data SendCommonPart = SendCommonPart
   { caption   :: Maybe Text
   , chatId    :: Integer
   , parseMode :: Text
-  }
-
-instance Loggable SendCommonPart where
-  toLog SendCommonPart {..} = mkToLog ""
-    [("Chat Id", showt chatId), ("Parse Mode", parseMode)]
-    [("Caption", caption)]
+  } deriving stock Generic
 
 -- SendMessageBody ---------------------------------------------------------
 
@@ -207,15 +183,9 @@ data SendMessageBody = SendMessageBody
   , smChatId           :: Integer
   , smParseMode        :: Text
   , smReplyToMessageId :: Maybe Integer
-  } deriving Generic
-    deriving ToJSON via DropPrefix SendMessageBody
-
-instance Loggable SendMessageBody where
-  toLog SendMessageBody {..} = mkToLog "SendMessage:"
-    [ ("Text"      , smText)
-    , ("Chat Id"   , showt smChatId)
-    , ("Parse Mode", smParseMode)
-    ] [("Reply Id" , showt <$> smReplyToMessageId)]
+  } deriving stock Generic
+    deriving ToJSON   via DropPrefix SendMessageBody
+    deriving Loggable via LogDebug   SendMessageBody
 
 -- SendLocationBody --------------------------------------------------------
 
@@ -223,15 +193,9 @@ data SendLocationBody = SendLocationBody
   { slbLongitude      :: Double
   , slbLatitude       :: Double
   , slbChatId         :: Integer
-  } deriving Generic
-    deriving ToJSON via DropPrefix SendLocationBody
-
-instance Loggable SendLocationBody where
-  toLog SendLocationBody {..} = mkToLog "SendLocation:"
-    [ ("Chat Id"  , showt slbChatId)
-    , ("Longitude", showt slbLongitude)
-    , ("Latitude" , showt slbLatitude)
-    ] []
+  } deriving stock Generic
+    deriving ToJSON   via DropPrefix SendLocationBody
+    deriving Loggable via LogDebug   SendLocationBody
 
 -- SendVenueBody -----------------------------------------------------------
 
@@ -243,20 +207,9 @@ data SendVenueBody = SendVenueBody
   , svbAddress        :: Text
   , svbFoursquareId   :: Maybe Text
   , svbFoursquareType :: Maybe Text
-  } deriving Generic
-    deriving ToJSON via DropPrefix SendVenueBody
-
-instance Loggable SendVenueBody where
-  toLog SendVenueBody {..} = mkToLog "SendVenue:"
-    [ ("Chat Id"  , showt svbChatId)
-    , ("Longitude", showt svbLongitude)
-    , ("Latitude" , showt svbLatitude)
-    , ("Title"    , svbTitle)
-    , ("Address"   , svbAddress)
-    ]
-    [ ("Foursquare Id"  , svbFoursquareId)
-    , ("Foursquare Type", svbFoursquareType)
-    ]
+  } deriving stock Generic
+    deriving ToJSON   via DropPrefix SendVenueBody
+    deriving Loggable via LogDebug   SendVenueBody
 
 -- SendContactBody ---------------------------------------------------------
 
@@ -266,18 +219,9 @@ data SendContactBody = SendContactBody
   , scbLastName    :: Maybe Text
   , scbVcard       :: Maybe Text
   , scbChatId      :: Integer
-  } deriving Generic
-    deriving ToJSON via DropPrefix SendContactBody
-
-instance Loggable SendContactBody where
-  toLog SendContactBody {..} = mkToLog "SendContact:"
-    [ ("Chat Id"     , showt scbChatId)
-    , ("Phone Number", scbPhoneNumber)
-    , ("First Name"  , scbFirstName)
-    ]
-    [ ("Last Name"   , scbLastName)
-    , ("Vcard"       , scbVcard)
-    ]
+  } deriving stock Generic
+    deriving ToJSON   via DropPrefix SendContactBody
+    deriving Loggable via LogDebug   SendContactBody
 
 -- SendDiceBody ------------------------------------------------------------
 
@@ -285,15 +229,9 @@ data SendDiceBody = SendDiceBody
   { sdbEmoji  :: Text
   , sdbValue  :: Integer
   , sdbChatId :: Integer
-  } deriving Generic
-    deriving ToJSON via DropPrefix SendDiceBody
-
-instance Loggable SendDiceBody where
-  toLog SendDiceBody {..} = mkToLog "Dice:"
-    [ ("Chat Id", showt sdbChatId)
-    , ("Emoji"  , sdbEmoji)
-    , ("Value"  , showt sdbValue)
-    ] []
+  } deriving stock Generic
+    deriving ToJSON   via DropPrefix SendDiceBody
+    deriving Loggable via LogDebug   SendDiceBody
 
 -- FUNCTIONS ---------------------------------------------------------------
 

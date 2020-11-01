@@ -1,5 +1,6 @@
 {-# LANGUAGE ConstraintKinds       #-}
 {-# LANGUAGE DefaultSignatures     #-}
+{-# LANGUAGE DerivingStrategies    #-}
 {-# LANGUAGE FlexibleContexts      #-}
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE LambdaCase            #-}
@@ -165,7 +166,7 @@ data Priority
   | Info
   | Warning
   | Error
-  deriving (Eq, Ord)
+  deriving stock (Eq, Ord)
 
 instance Aeson.FromJSON Priority where
   parseJSON = Aeson.withText path $ \case

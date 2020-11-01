@@ -83,27 +83,27 @@ putRepeats value key = do
   liftIO $ modifyIORef' map f
 
 inputLog
-  :: (HasPriority input, HasLogger env m)
+  :: (Loggable input, HasLogger env m)
   => (input -> m output)
   -> input
   -> m output
 inputLog f x = logData x >> f x
 
 outputLog
-  :: (HasPriority output, HasLogger env m)
+  :: (Loggable output, HasLogger env m)
   => output
   -> m output
 outputLog x = logData x >> pure x
 
 withLog
-  :: (HasPriority input, HasPriority output, HasLogger env m)
+  :: (Loggable input, Loggable output, HasLogger env m)
   => (input -> m output)
   -> input
   -> m output
 withLog f = inputLog f >=> outputLog
 
 withLog_
-  :: (HasPriority input, HasPriority output, HasLogger env m)
+  :: (Loggable input, Loggable output, HasLogger env m)
   => (input -> m output)
   -> input
   -> m ()
@@ -121,8 +121,8 @@ fromResponse
    . ( Exception error
      , FromJSON error
      , FromJSON output
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadEffects env m
      , MonadThrow m
      , ToRequest m input
@@ -136,8 +136,8 @@ fromResponse_
    . ( Exception error
      , FromJSON error
      , FromJSON output
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadEffects env m
      , MonadThrow m
      , ToRequest m input
@@ -151,8 +151,8 @@ fromResponseH
    . ( Exception error
      , FromJSON error
      , FromJSON output
-     , HasPriority input
-     , HasPriority output
+     , Loggable input
+     , Loggable output
      , MonadCatch m
      , MonadEffects env m
      , ToRequest m input
@@ -164,7 +164,7 @@ fromResponseH handlers x = (Just <$> fromResponse @error @output x)
   `catches` handlers Nothing
 
 traverseHandled
-  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  :: (MonadCatch m, HasLogger env m, Loggable input)
   => (Maybe output -> [Handler m (Maybe output)])
   -> (input -> m (Maybe output))
   -> [input]
@@ -173,7 +173,7 @@ traverseHandled handlers f xs = catMaybes <$> traverse go xs
   where go x = inputLog f x `catches` handlers Nothing
 
 traverseHandled_
-  :: (MonadCatch m, HasLogger env m, HasPriority input)
+  :: (MonadCatch m, HasLogger env m, Loggable input)
   => (() -> [Handler m ()])
   -> (input -> m ())
   -> [input]

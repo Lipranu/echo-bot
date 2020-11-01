@@ -1,10 +1,10 @@
 {-# LANGUAGE FlexibleContexts       #-}
+{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE LambdaCase             #-}
 {-# LANGUAGE OverloadedStrings      #-}
 {-# LANGUAGE RecordWildCards        #-}
-{-# LANGUAGE FlexibleInstances      #-}
 {-# LANGUAGE UndecidableInstances   #-}
-{-# LANGUAGE LambdaCase             #-}
 
 module App.Vk.Converters
   ( Command (..)
@@ -66,6 +66,7 @@ instance ToAttachment PhotoBody where
 instance ToAttachment VideoBody where
   toAttachment VideoBody {..}
     = mkAttachment "video" vbOwnerId vbId vbAccessKey
+
 data UploadRequests a = UploadRequests
   { getUploadServer :: GetUploadServer
   , getFile         :: GetFile
