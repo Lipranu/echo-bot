@@ -18,6 +18,8 @@ module Infrastructure.Logger
   , GConst (..)
   , HasLogger
   , Lock
+  , LogDebug (..)
+  , LogError (..)
   , Loggable (..)
   , Logger (..)
   , MonadLogger (..)
@@ -70,9 +72,6 @@ class Monad m => MonadLogger m where
 class Loggable a where
   logData :: HasLogger r m => a -> m ()
 
-  default logData :: (Generic a, GLog (G.Rep a), HasLogger r m) => a -> m ()
-  logData = logDebug . gMkLogEntry
-
 class GLog f where
   glog :: Int -> f x -> Text
 
@@ -106,7 +105,7 @@ instance (GLog f, G.Selector c) => GLog (G.S1 c f) where
   glog i c@(G.M1 x)
     | Text.null field = ""
     | otherwise       = "\n | "
-                     <> (Text.replicate i "\t")
+                     <> (Text.replicate i "  ")
                      <> Text.pack (mkSelector $ G.selName c)
                      <> field
     where field = glog i x
@@ -139,8 +138,19 @@ instance GLog (G.Rec0 String) where
 instance GLog G.U1 where glog _ _ = ""
 
 instance Loggable HttpException where
-  logData e = logError $ mkLogEntry "HttpException:"
+  logData e = logError $ mkLogEntry
+    "HttpException:"
     [("Content", Text.showt e)]
+
+newtype LogError a = LogError a
+
+instance (Generic a, GLog (G.Rep a)) => Loggable (LogError a) where
+  logData (LogError x) = logError $ gMkLogEntry x
+
+newtype LogDebug a = LogDebug a
+
+instance (Generic a, GLog (G.Rep a)) => Loggable (LogDebug a) where
+  logData (LogDebug x) = logDebug $ gMkLogEntry x
 
 newtype GConst a = GConst a
 
