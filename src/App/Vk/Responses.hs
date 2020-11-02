@@ -47,7 +47,6 @@ import Control.Applicative ( (<|>) )
 import Control.Monad       ( join )
 import Control.Monad.Catch ( Exception )
 import Data.Aeson.Extended ( DropPrefix (..), FromJSON (..), (.:), (.:?) )
-import Data.Char           ( toLower )
 import Data.List           ( sort )
 import Data.Text.Extended  ( Text )
 import Data.Vector         ( (!?) )
@@ -358,10 +357,7 @@ instance Aeson.FromJSON UrlAndSize where
 
 data Size = W | Z | Y | R | Q | P | O | X | M | S
   deriving stock (Generic, Eq, Ord)
-
-instance FromJSON Size where
-  parseJSON = Aeson.genericParseJSON Aeson.defaultOptions
-    { Aeson.constructorTagModifier = fmap toLower }
+  deriving FromJSON via DropPrefix Size
 
 -- VideoBody ---------------------------------------------------------------
 
