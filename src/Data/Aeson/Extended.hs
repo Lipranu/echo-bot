@@ -7,8 +7,9 @@ module Data.Aeson.Extended
   ) where
 
 import Data.Aeson
-import Data.Char        ( isLower )
-import GHC.Generics     ( Generic, Rep )
+import Data.Bool    ( bool )
+import Data.Char    ( isLower )
+import GHC.Generics ( Generic, Rep )
 
 newtype DropPrefix a = DropPrefix a
 
@@ -27,6 +28,5 @@ instance (Generic a, GToJSON Zero (Rep a)) => ToJSON (DropPrefix a) where
             }
 
 dropPrefix :: String -> String
-dropPrefix str
-  | all isLower str = str
-  | otherwise       = camelTo2 ' ' $ dropWhile isLower str
+dropPrefix str = camelTo2 '_' . bool prefix str $ null prefix
+  where prefix = dropWhile isLower str
