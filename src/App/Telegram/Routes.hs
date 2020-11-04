@@ -53,6 +53,7 @@ processUpdate p@(Update id o) = do
   logData o
   case o of
     Message b -> do
+      logData b
       let sr = mkSendRequest b (Just "test")
       fromResponse_ @MessageBody sr
     _ -> pure ()

@@ -15,7 +15,7 @@ import App.Shared.Config hiding ( Config )
 import App.Shared.Routes        ( Repetitions, start, shutdown )
 
 import Infrastructure.Has
-import Infrastructure.Logger    ( Logger, Lock, mkLogger )
+import Infrastructure.Logger hiding ( Config)   --( Logger, Lock, mkLogger )
 import Infrastructure.Requester
 
 import qualified App.Shared.Config as Shared
@@ -64,4 +64,70 @@ mkApp Config {..} Shared.Config {..} logger lock ref manager =
    in Env {..}
 
 runApp :: Env -> IO ()
-runApp = runReaderT (unApp app)
+runApp = runReaderT (unApp test)--app)
+
+test :: App Env ()
+test = do
+  logData testNewtypeCommonData
+  logData testNewtypeRecordData
+--  logData testSum1
+--  logData testSum2
+--  logData testSum3
+--  logData testSum4
+--  logData testSum5
+--  logData testSum6
+--  logData testEnterRecordData
+
+testNewtypeCommonData = TestNewtypeCommonCons 1
+testNewtypeRecordData = TestNewtypeRecordCons 1
+
+--testListOfNewtypeCommon =
+--  [ testNewtypeCommonData
+--  , testNewtypeCommonData
+--  , testNewtypeCommonData
+--  ]
+--
+--testListOfNewtypeRecord =
+--  [ testNewtypeRecordData
+--  , testNewtypeRecordData
+--  , testNewtypeRecordData
+--  ]
+--
+--testListOfRecord =
+--  [ testRecordData
+--  , testRecordData
+--  , testRecordData
+--  ]
+--
+--testRecordData = TestRecordCons
+--  testNewtypeCommonData
+--  testNewtypeRecordData
+--  testListOfNewtypeCommon
+--  testListOfNewtypeRecord
+--
+--testEnterRecordData = TestEnterRecordCons
+--  testNewtypeCommonData
+--  testNewtypeRecordData
+--  testListOfNewtypeCommon
+--  testListOfNewtypeRecord
+--  testRecordData
+--  testListOfRecord
+--  testSum3
+--  testSum6
+--  testListOfSum
+--
+--testSum1 = TestSumSingleNewtypeCommonCons testNewtypeCommonData
+--testSum2 = TestSumSingleNewtypeRecordCons testNewtypeRecordData
+--testSum3 = TestSumSingleRecordCons testRecordData
+--testSum4 = TestSumSingleListOfNewtypeCommonCons testListOfNewtypeCommon
+--testSum5 = TestSumSingleListOfNewtypeRecordCons testListOfNewtypeRecord
+--testSum6 = TestSumSingleListOfRecordCons testListOfRecord
+--
+--testListOfSum =
+--  [ testSum1
+--  , testSum2
+--  , testSum3
+--  , testSum4
+--  , testSum5
+--  , testSum6
+--  ]

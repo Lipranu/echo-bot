@@ -28,8 +28,8 @@ mkSendRequest MessageBody {..} text = case mbType of
   Video     id   -> SendVideo     id $ mkCommonPart text
   VideoNote id   -> SendVideoNote id $ mkCommonPart text
   Voice     id   -> SendVoice     id $ mkCommonPart text
+  Poll _         -> SendMessage mkSendMessageBody
 --TODO: | MediaGroup
---TODO: | Poll
   where
     mkSendMessageBody = SendMessageBody
       { smText             = fromMaybe "" text
