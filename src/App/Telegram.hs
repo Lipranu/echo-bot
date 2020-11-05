@@ -68,9 +68,16 @@ runApp = runReaderT (unApp test)--app)
 
 test :: App Env ()
 test = do
+  logDebug "!!TEST!!"
+  logData TestUnitCons
   logData testNewtypeCommonData
   logData testNewtypeRecordData
---  logData testSum1
+  logData testNewtypeCommonOverNewtypeCommonData
+  logData testNewtypeRecordOverNewtypeCommonData
+  logData testNewtypeCommonOverNewtypeRecordData
+  logData testNewtypeRecordOverNewtypeRecordData
+  logData testNewtypeRecordNestedData
+  logData testSum1
 --  logData testSum2
 --  logData testSum3
 --  logData testSum4
@@ -80,7 +87,16 @@ test = do
 
 testNewtypeCommonData = TestNewtypeCommonCons 1
 testNewtypeRecordData = TestNewtypeRecordCons 1
-
+testNewtypeCommonOverNewtypeCommonData =
+  TestNewtypeCommonOverNewtypeCommonCons testNewtypeCommonData
+testNewtypeRecordOverNewtypeCommonData =
+  TestNewtypeRecordOverNewtypeCommonCons testNewtypeCommonData
+testNewtypeCommonOverNewtypeRecordData =
+  TestNewtypeCommonOverNewtypeRecordCons testNewtypeRecordData
+testNewtypeRecordOverNewtypeRecordData =
+  TestNewtypeRecordOverNewtypeRecordCons testNewtypeRecordData
+testNewtypeRecordNestedData =
+  TestNewtypeRecordNestedCons testNewtypeRecordOverNewtypeRecordData
 --testListOfNewtypeCommon =
 --  [ testNewtypeCommonData
 --  , testNewtypeCommonData
@@ -116,8 +132,11 @@ testNewtypeRecordData = TestNewtypeRecordCons 1
 --  testSum6
 --  testListOfSum
 --
---testSum1 = TestSumSingleNewtypeCommonCons testNewtypeCommonData
+testSum1 = TestSumSingleNewtypeCommonCons testNewtypeCommonData
 --testSum2 = TestSumSingleNewtypeRecordCons testNewtypeRecordData
+--testSum3 = TestSumNewtypeRecordAndNewtypeCommonCons
+--  testNewtypeRecordData
+--  testNewtypeCommonData
 --testSum3 = TestSumSingleRecordCons testRecordData
 --testSum4 = TestSumSingleListOfNewtypeCommonCons testListOfNewtypeCommon
 --testSum5 = TestSumSingleListOfNewtypeRecordCons testListOfNewtypeRecord
