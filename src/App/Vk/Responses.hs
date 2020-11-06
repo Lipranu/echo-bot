@@ -156,13 +156,13 @@ instance Loggable Update where
 -- Message -----------------------------------------------------------------
 
 newtype MessageId = MessageId { getMessageId :: Integer }
-  deriving Generic via GConst Integer
+  deriving stock Generic
 
 newtype FromId = FromId { getFromId :: Integer }
-  deriving Generic via GConst Integer
+  deriving stock Generic
 
 newtype PeerId = PeerId { getPeerId :: Integer }
-  deriving Generic via GConst Integer
+  deriving stock Generic
 
 data Message = Message
   { mId          :: MessageId
