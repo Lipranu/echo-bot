@@ -255,25 +255,6 @@ data PollBody = PollBody
     deriving FromJSON via DropPrefix PollBody
     deriving Loggable via LogDebug   PollBody
 
---instance Loggable PollBody where
---  logData PollBody {..} = logDebug $ mkToLog "Poll:"
-    --[ ("Poll Id"                , showt pbId)
-    --, ("Question"               , pbQuestion)
-    --, ("Options"                , toLog pbOptions)
-    --, ("Voter Count"            , showt pbTotalVoterCount)
-    --, ("Is Closed"              , showt pbIsClosed)
-    --, ("Is Anonymous"           , showt pbIsAnonymous)
-    --, ("Type"                   , pbType)
-    --, ("Allows Multiple Answers", showt pbAllowsMultipleAnswers)
-    --, ("Explanation Entities", showt $ length <$> pbExplanationEntities)
-    --]
-    --[ ("Correct Option Id"   , showt <$> pbCorrectOptionId)
-    --, ("Explanation"         , pbExplanation)
-    ----, ("Explanation Entities", showt $ length <$> pbExplanationEntities)
-    --, ("Open Period"         , showt  <$> pbOpenPeriod)
-    --, ("Close Date"          , showt  <$> pbCloseDate)
-    --]
-
 -- PollOption --------------------------------------------------------------
 
 data PollOption = PollOption

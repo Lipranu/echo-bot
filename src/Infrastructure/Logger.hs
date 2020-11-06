@@ -41,8 +41,8 @@ module Infrastructure.Logger
   , mkLogEntryLine
   , mkLogger
 
---  , TestEnterRecordData (..)
---  , TestRecordData (..)
+  , TestEnterRecordData (..)
+  , TestRecordData (..)
   , TestUnitData (..)
   , TestNewtypeRecordData (..)
   , TestNewtypeCommonData (..)
@@ -282,23 +282,21 @@ class GLogF (k :: Context Nat) (r :: Selector) (i :: Nat) f where
 -- Entry
 ---------------------------------------------------------------
 
-instance (G.Constructor c)
-  => GLogF Entry r i (G.C1 c G.U1) where
-    gLogF f@(G.M1 x) = Text.pack (G.conName f)-- <> gLogF @Entry @r @i x
+instance (GLogF Entry r i f, G.Constructor c)
+  => GLogF Entry r i (G.C1 c f) where
+    gLogF f@(G.M1 x) = mkSelector' (G.conName f) <> gLogF @Entry @r @i x
 
---instance GLogF Entry r i G.U1 where
---    gLogF _ = ""
+instance GLogF Entry r i G.U1 where
+    gLogF _ = ""
 
-instance (GLogF Single Record (i - 1) f, G.Constructor c)
-  => GLogF Entry r i (G.C1 s (G.S1 s f)) where
-    gLogF f@(G.M1 (G.M1 x)) = Text.pack (G.conName f) <> ": "
-      <> bool result "Nothing" (Text.null result)
-      where result = gLogF @Single @Record @(i - 1) x
+instance GLogF Single Record i f => GLogF Entry r i (G.S1 s f) where
+    gLogF (G.M1 x) = ": " <> nothingIfEmpty (gLogF @Single @Record @i x)
 
-instance (GLogF Product r i f, GLogF Product r i g, G.Constructor c) =>
-  GLogF Entry r i (G.C1 c (f :*: g)) where
-    gLogF f@(G.M1 (x :*: y)) = Text.pack (G.conName f) <> ": "
-      <> gLogF @Product @r @i x <> gLogF @Product @r @i y
+instance (GLogF Product r (i + 1) f, GLogF Product r (i + 1) g) =>
+  GLogF Entry r i (f :*: g) where
+    gLogF (x :*: y) = ": " <> nothingIfEmpty result
+      where result = gLogF @Product @r @(i + 1) x
+                  <> gLogF @Product @r @(i + 1) y
 
 ---------------------------------------------------
 -- Single
@@ -306,36 +304,183 @@ instance (GLogF Product r i f, GLogF Product r i g, G.Constructor c) =>
 
 instance (G.Constructor c) =>
   GLogF Single r i (G.C1 c G.U1) where
-  gLogF f@(G.M1 x) = Text.pack $ G.conName f
+  gLogF f@(G.M1 x) = mkSelector' $ G.conName f
 
 instance GLogF Single Record i f =>
   GLogF Single r i (G.C1 c (G.S1 s f)) where
   gLogF (G.M1 (G.M1 x)) = gLogF @Single @Record @i x
 
+instance (GLogF Product Record (i + 1) f, GLogF Product Record (i + 1) g) =>
+  GLogF Single r i (G.C1 c (f :*: g)) where
+  gLogF (G.M1 (x :*: y)) = gLogF @Product @Record @(i + 1) x
+    <> gLogF @Product @Record @(i + 1) y
+
+---------------------------------------------------
+-- Product
+---------------------------------------------------
+
+instance ( GLogF Product r (i + 1) f
+         , GLogF Product r (i + 1) g
+         , G.Constructor c
+         ) => GLogF Product r i (G.C1 c (f :*: g)) where
+  gLogF con@(G.M1 (x :*: y)) = Text.concat
+    [ mkSelector' $ G.conName con
+    , ": "
+    , nothingIfEmpty $ resultF <> resultG
+    ]
+    where resultF = gLogF @Product @r @(i + 1) x
+          resultG = gLogF @Product @r @(i + 1) y
+
+instance ( GLogF Product r i f
+         , GLogF Product r i g
+         ) => GLogF Product r i (f :*: g) where
+  gLogF (x :*: y) = Text.concat
+    [ gLogF @Product @r @i x
+    , gLogF @Product @r @i y
+    ]
+
+instance (GLogF Single r i f, G.Constructor c) =>
+  GLogF Product r i (G.C1 c (G.S1 s f)) where
+  gLogF con@(G.M1 (G.M1 x)) = Text.concat
+    [ mkSelector' $ G.conName con
+    , ": "
+    , nothingIfEmpty $ gLogF @Single @r @i x
+    ]
+
+instance G.Constructor c => GLogF Product r i (G.C1 c G.U1) where
+  gLogF = Text.pack . G.conName
+
+instance (GLogF Product Record i f, KnownSymbol n, KnownNat i) =>
+  GLogF Product r i (G.S1 (G.MetaSel (Just n) a b c) f) where
+  gLogF (G.M1 x) = bool line "" $ Text.null result
+    where result = gLogF @Product @Record @i x
+          line   = Text.concat
+            [ "\n  |"
+            , Text.replicate (fromInteger $ natVal $ Proxy @i) "  "
+            , mkSelector' $ symbolVal $ Proxy @n
+            , ": "
+            , result
+            ]
+
+instance GLogF Product DataName i f =>
+  GLogF Product r i (G.S1 (G.MetaSel Nothing a b c) f) where
+  gLogF (G.M1 x) = gLogF @Product @DataName @i x
+
 ---------------------------------------------------
 -- Common
 ---------------------------------------------------
 
-instance {-# OVERLAPPABLE #-}
+instance --{-# OVERLAPPABLE #-}
   GLogF k r i f => GLogF k r i (G.D1 d f) where
   gLogF (G.M1 x) = gLogF @k @r @i x
 
 instance {-# OVERLAPPABLE #-}
   (GLogF k r i f, GLogF k r i g) =>
-  GLogF Entry r i (f :+: g) where
+  GLogF k r i (f :+: g) where
     gLogF (G.L1 x) = gLogF @k @r @i x
     gLogF (G.R1 x) = gLogF @k @r @i x
 
---instance GLogF k r i (G.D1 d f) where
---  gLogF (G.M1 x) = "Test"
+instance
+  (GLogF k Record i (G.Rec0 a), Typeable a, KnownNat i) =>
+  GLogF k DataName i (G.Rec0 a) where
+  gLogF f@(G.K1 x) = bool line "" $ Text.null result
+    where result = gLogF @k @Record @i f
+          line   = Text.concat
+            [ "\n  |"
+            , Text.replicate (fromInteger $ natVal $ Proxy @i) "  "
+            ,Text.showt $ typeOf x
+            , ": "
+            , result
+            ]
 
 instance {-# OVERLAPPABLE #-}
-  (Generic a, GLogF k Record (i + 1) (G.Rep a)) =>
+  (Generic a, GLogF k Record i (G.Rep a)) =>
   GLogF k Record i (G.Rec0 a) where
-  gLogF (G.K1 x) = gLogF @k @Record @(i + 1) $ G.from x
+  gLogF (G.K1 x) = gLogF @k @Record @i $ G.from x
+
+instance GLogF k Record i (G.Rec0 Int) where
+  gLogF (G.K1 x) = Text.showt x
 
 instance GLogF k Record i (G.Rec0 Integer) where
   gLogF (G.K1 x) = Text.showt x
+
+instance GLogF k Record i (G.Rec0 Double) where
+  gLogF (G.K1 x) = Text.showt x
+
+instance GLogF k Record i (G.Rec0 Text) where
+  gLogF (G.K1 x) = x
+
+instance GLogF k Record i (G.Rec0 Aeson.Value) where
+  gLogF (G.K1 x) = Text.showt $ typeOf x
+
+instance GLogF k Record i (G.Rec0 a) =>
+         GLogF k Record i (G.Rec0 (Maybe a)) where
+  gLogF (G.K1 (Just x)) = gLogF @k @Record @i @(G.Rec0 a) $ G.K1 x
+  gLogF (G.K1 Nothing)  = ""
+
+instance (GLogL (i + 1) (G.Rep [a]), Typeable a) =>
+  GLogF k Record i (G.Rec0 [a]) where
+  gLogF (G.K1 x) = Text.concat
+    [ Text.showt $ typeOf x
+    , ": "
+    , gLogL @(i + 1) 0 $ G.from x
+    ]
+
+---------------------------------------------------
+-- List
+---------------------------------------------------
+class GLogL (i :: Nat) f where
+  gLogL :: Int -> f a -> Text
+
+instance GLogL i f => GLogL i (G.M1 a b f) where
+  gLogL index (G.M1 x) = gLogL @i index x
+
+instance GLogL i g => GLogL i (f :+: g) where
+  gLogL _ (G.L1 _) = ""
+  gLogL index (G.R1 x) = gLogL @i index x
+--
+--instance GLogF (List j) Record i f =>
+--  GLogF (List j) Record i (G.C1 c f) where
+--  gLogF (G.M1 x) = gLogF @(List j) @Record @i x
+--
+--instance GLogF (List j) Record i f =>
+--  GLogF (List j) Record i (G.S1 s f) where
+--  gLogF (G.M1 x) = gLogF @(List j) @Record @i x
+--
+instance ( GLogF Entry Record i f
+         , GLogL i g
+         , KnownNat i
+         ) => GLogL i ((G.S1 s f) :*: g) where
+  gLogL index ((G.M1 x) :*: xs) = Text.concat
+    [ "\n  |"
+    , Text.replicate (fromInteger $ natVal $ Proxy @i) "  "
+    , "Index "
+    , Text.showt index
+    , ": "
+    , nothingIfEmpty $ gLogF @Entry @Record @i x
+    , gLogL @i index xs
+    ]
+--
+instance -- {-# OVERLAPPING #-}
+  (Generic a, GLogL i (G.Rep a)) =>
+  GLogL i (G.Rec0 a) where
+  gLogL index (G.K1 x) = gLogL @i (index + 1) $ G.from x
+
+--instance
+--  (GLogF Entry Record i (G.Rec0 a)) =>
+--  GLogF (List j) Record i (G.Rec0 a) where
+--  gLogF x = gLogF @Entry @Record @i x
+--instance (GLog f, GLogList g)
+--  => GLogList ((G.S1 c f) :*: g) where
+--  gLogList s i ((G.M1 x) :*: y) = Text.concat
+--    [ "\n  |"
+--    , Text.replicate i "  "
+--    , "Index "
+--    , Text.showt s
+--    , ": "
+--    , glog i x
+--    , gLogList (s + 1) i y
+--    ]
 -- D1
 
 --class GLogF (c :: Context) (g :: RecordStatus) (i :: Nat) f where
@@ -569,14 +714,18 @@ instance (Generic a, GLog (G.Rep a)) => Loggable (LogError a) where
 
 newtype LogDebug a = LogDebug a
 
-instance (Generic a, GLog (G.Rep a)) => Loggable (LogDebug a) where
-  logData (LogDebug x) = logDebug $ gMkLogEntry' 1 x
+--instance (Generic a, GLog (G.Rep a)) => Loggable (LogDebug a) where
+--  logData (LogDebug x) = logDebug $ gMkLogEntry' 1 x
+
+instance (Generic a, GLogF Entry Record 0 (G.Rep a))
+  => Loggable (LogDebug a) where
+  logData (LogDebug x) = logDebug $ gLogF @Entry @Record @0 $ G.from x
 
 newtype LogTest a = LogTest a
 
-instance (Generic a, GLogF Entry Record 1 (G.Rep a))
+instance (Generic a, GLogF Entry Record 0 (G.Rep a))
   => Loggable (LogTest a) where
-  logData (LogTest x) = logDebug $ gLogF @Entry @Record @1 $ G.from x
+  logData (LogTest x) = logDebug $ gLogF @Entry @Record @0 $ G.from x
 
 newtype GConst a = GConst a
 
@@ -774,6 +923,19 @@ mkSelector s@(x:xs)
         go x xs | isUpper x = ' ' : x : xs
                 | otherwise = x : xs
 
+mkSelector' :: String -> Text
+mkSelector' s = Text.pack $ dropPrefix s
+  where dropPrefix (x:xs)
+          | all isLower s = toUpper x : xs
+          | otherwise     = (toUpper l :) $ foldr go "" ls
+        go x xs
+          | isUpper x = ' ' : x : xs
+          | otherwise = x : xs
+        (l:ls) = dropWhile isLower s
+
+nothingIfEmpty :: Text -> Text
+nothingIfEmpty t = bool t "Nothing" $ Text.null t
+
 newtype TestNewtypeCommonData = TestNewtypeCommonCons Integer
   deriving stock Generic
   deriving Loggable via LogTest TestNewtypeCommonData
@@ -816,35 +978,44 @@ newtype TestNewtypeRecordNestedData
   deriving stock Generic
   deriving Loggable via LogTest TestNewtypeRecordNestedData
 
---data TestRecordData = TestRecordCons
---  { testRecordFieldNewtypeCommon :: TestNewtypeCommonData
---  , testRecordFieldNewtypeRecord :: TestNewtypeRecordData
---  , testRecordFieldListOfNewtypeCommon :: [TestNewtypeCommonData]
---  , testRecordFieldListOfNewtypeRecord :: [TestNewtypeRecordData]
---  } deriving stock Generic
---    deriving Loggable via LogTest TestRecordData
+data TestRecordData = TestRecordCons
+  { testRecordFieldNewtypeCommon :: TestNewtypeCommonData
+  , testRecordFieldNewtypeRecord :: TestNewtypeRecordData
+  , testRecordFieldListOfNewtypeCommon :: [TestNewtypeCommonData]
+  , testRecordFieldListOfNewtypeRecord :: [TestNewtypeRecordData]
+  } deriving stock Generic
+    deriving Loggable via LogTest TestRecordData
 
 data TestSumData
   = TestSumSingleNewtypeCommonCons TestNewtypeCommonData
---  | TestSumSingleNewtypeRecordCons TestNewtypeRecordData
---  | TestSumNewtypeRecordAndNewtypeCommonCons TestNewtypeRecordData TestNewtypeCommonData
---  | TestSumSingleListOfNewtypeCommonCons [TestNewtypeCommonData]
---  | TestSumSingleListOfNewtypeRecordCons [TestNewtypeRecordData]
---  | TestSumSingleListOfRecordCons [TestRecordData]
+  | TestSumSingleNewtypeRecordCons TestNewtypeRecordData
+  | TestSumNewtypeRecordAndNewtypeCommonCons
+    TestNewtypeRecordData
+    TestNewtypeCommonData
+  | TestSumOfProductsCons
+    TestRecordData
+    TestRecordData
+    TestUnitData
+    TestNewtypeCommonData
+    TestNewtypeRecordData
+    Integer
+  | TestSumSingleListOfNewtypeCommonCons [TestNewtypeCommonData]
+  | TestSumSingleListOfNewtypeRecordCons [TestNewtypeRecordData]
+  | TestSumSingleListOfRecordCons [TestRecordData]
   deriving stock Generic
   deriving Loggable via LogTest TestSumData
 
---data TestEnterRecordData = TestEnterRecordCons
---  { testEnterFieldNewtypeCommon :: TestNewtypeCommonData
---  , testEnterFieldNewtypeRecord :: TestNewtypeRecordData
---  , testEnterFieldListOfNewtypeCommon :: [TestNewtypeCommonData]
---  , testEnterFieldListOfNewtypeRecord :: [TestNewtypeRecordData]
---  , testEnterFieldRecord :: TestRecordData
---  , testEnterFieldListOfRecord :: [TestRecordData]
---  , testEnterRecordFieldSumSingle :: TestSumData
---  , testEnterRecordFieldSumList :: TestSumData
---  , testEnterRecordFieldListOfSum :: [TestSumData]
---  } deriving stock Generic
---    deriving Loggable via LogTest TestEnterRecordData
+data TestEnterRecordData = TestEnterRecordCons
+  { testEnterFieldNewtypeCommon :: TestNewtypeCommonData
+  , testEnterFieldNewtypeRecord :: TestNewtypeRecordData
+  , testEnterFieldListOfNewtypeCommon :: [TestNewtypeCommonData]
+  , testEnterFieldListOfNewtypeRecord :: [TestNewtypeRecordData]
+  , testEnterFieldRecord :: TestRecordData
+  , testEnterFieldListOfRecord :: [TestRecordData]
+  , testEnterRecordFieldSumSingle :: TestSumData
+  , testEnterRecordFieldSumList :: TestSumData
+  , testEnterRecordFieldListOfSum :: [TestSumData]
+  } deriving stock Generic
+    deriving Loggable via LogTest TestEnterRecordData
 
 

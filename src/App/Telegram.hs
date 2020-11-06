@@ -64,7 +64,7 @@ mkApp Config {..} Shared.Config {..} logger lock ref manager =
    in Env {..}
 
 runApp :: Env -> IO ()
-runApp = runReaderT (unApp test)--app)
+runApp = runReaderT (unApp app)
 
 test :: App Env ()
 test = do
@@ -78,12 +78,12 @@ test = do
   logData testNewtypeRecordOverNewtypeRecordData
   logData testNewtypeRecordNestedData
   logData testSum1
---  logData testSum2
---  logData testSum3
---  logData testSum4
+  logData testSum2
+  logData testSum3
+  logData testSum4
 --  logData testSum5
 --  logData testSum6
---  logData testEnterRecordData
+  logData testEnterRecordData
 
 testNewtypeCommonData = TestNewtypeCommonCons 1
 testNewtypeRecordData = TestNewtypeRecordCons 1
@@ -97,23 +97,23 @@ testNewtypeRecordOverNewtypeRecordData =
   TestNewtypeRecordOverNewtypeRecordCons testNewtypeRecordData
 testNewtypeRecordNestedData =
   TestNewtypeRecordNestedCons testNewtypeRecordOverNewtypeRecordData
---testListOfNewtypeCommon =
---  [ testNewtypeCommonData
---  , testNewtypeCommonData
---  , testNewtypeCommonData
---  ]
---
---testListOfNewtypeRecord =
---  [ testNewtypeRecordData
---  , testNewtypeRecordData
---  , testNewtypeRecordData
---  ]
---
---testListOfRecord =
---  [ testRecordData
---  , testRecordData
---  , testRecordData
---  ]
+testListOfNewtypeCommon =
+  [ testNewtypeCommonData
+  , testNewtypeCommonData
+  , testNewtypeCommonData
+  ]
+
+testListOfNewtypeRecord =
+  [ testNewtypeRecordData
+  , testNewtypeRecordData
+  , testNewtypeRecordData
+  ]
+
+testListOfRecord =
+  [ testRecordData
+  , testRecordData
+  , testRecordData
+  ]
 --
 --testRecordData = TestRecordCons
 --  testNewtypeCommonData
@@ -121,32 +121,47 @@ testNewtypeRecordNestedData =
 --  testListOfNewtypeCommon
 --  testListOfNewtypeRecord
 --
---testEnterRecordData = TestEnterRecordCons
---  testNewtypeCommonData
---  testNewtypeRecordData
---  testListOfNewtypeCommon
---  testListOfNewtypeRecord
---  testRecordData
---  testListOfRecord
---  testSum3
---  testSum6
---  testListOfSum
---
+testEnterRecordData = TestEnterRecordCons
+  testNewtypeCommonData
+  testNewtypeRecordData
+  testListOfNewtypeCommon
+  testListOfNewtypeRecord
+  testRecordData
+  testListOfRecord
+  testSum3
+  testSum6
+  testListOfSum
+
 testSum1 = TestSumSingleNewtypeCommonCons testNewtypeCommonData
---testSum2 = TestSumSingleNewtypeRecordCons testNewtypeRecordData
---testSum3 = TestSumNewtypeRecordAndNewtypeCommonCons
---  testNewtypeRecordData
---  testNewtypeCommonData
---testSum3 = TestSumSingleRecordCons testRecordData
---testSum4 = TestSumSingleListOfNewtypeCommonCons testListOfNewtypeCommon
---testSum5 = TestSumSingleListOfNewtypeRecordCons testListOfNewtypeRecord
---testSum6 = TestSumSingleListOfRecordCons testListOfRecord
---
---testListOfSum =
---  [ testSum1
---  , testSum2
---  , testSum3
---  , testSum4
+testSum2 = TestSumSingleNewtypeRecordCons testNewtypeRecordData
+testSum3 = TestSumNewtypeRecordAndNewtypeCommonCons
+  testNewtypeRecordData
+  testNewtypeCommonData
+testSum4 = TestSumOfProductsCons
+  testRecordData
+  testRecordData
+  TestUnitCons
+  testNewtypeCommonData
+  testNewtypeRecordData
+  42
+--testSum5 = TestSumSingleRecordCons testRecordData
+testSum6 = TestSumSingleListOfNewtypeCommonCons testListOfNewtypeCommon
+testSum7 = TestSumSingleListOfNewtypeRecordCons testListOfNewtypeRecord
+testSum8 = TestSumSingleListOfRecordCons testListOfRecord
+
+testListOfSum =
+  [ testSum1
+  , testSum2
+  , testSum3
+  , testSum4
 --  , testSum5
---  , testSum6
---  ]
+  , testSum6
+  , testSum7
+  , testSum8
+  ]
+
+testRecordData = TestRecordCons
+  testNewtypeCommonData
+  testNewtypeRecordData
+  testListOfNewtypeCommon
+  testListOfNewtypeRecord
