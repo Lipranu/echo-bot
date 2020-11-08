@@ -27,12 +27,13 @@ module Infrastructure.Requester
 import Infrastructure.Logger
 import Infrastructure.Has
 
-import Control.Monad.Catch   ( Exception (..), MonadThrow (..), throwM )
-import Control.Monad.Reader  ( MonadReader, lift )
-import Control.Monad.State   ( StateT (..) )
-import Data.Text.Encoding    ( decodeUtf8 )
-import Data.Text.Extended    ( Text )
-import GHC.Generics          ( Generic )
+import Control.Monad        ( (>=>) )
+import Control.Monad.Catch  ( Exception (..), MonadThrow (..), throwM )
+import Control.Monad.Reader ( MonadReader, lift )
+import Control.Monad.State  ( StateT (..) )
+import Data.Text.Encoding   ( decodeUtf8 )
+import Data.Text.Extended   ( Text )
+import GHC.Generics         ( Generic )
 
 import qualified Data.Aeson           as Aeson
 import qualified Data.ByteString.Lazy as LBS
@@ -100,10 +101,10 @@ requestAndDecode
   :: (MonadThrow m, ToRequest m a, Aeson.FromJSON b, HasRequester r m)
   => a
   -> m b
-requestAndDecode req = request req >>= decode
+requestAndDecode = request >=> decode
 
 parse :: (MonadThrow m, Aeson.FromJSON a) => Aeson.Value -> m a
 parse value = case Aeson.fromJSON value of
   Aeson.Success result -> return result
-  Aeson.Error error    -> throwM $ DecodeException (Text.pack error)
+  Aeson.Error   error  -> throwM $ DecodeException (Text.pack error)
                                  $ Text.showt value
