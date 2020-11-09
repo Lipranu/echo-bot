@@ -28,6 +28,8 @@ module Infrastructure.Logger
   , logError
   , logInfo
   , logWarning
+  , mkLogRepresentation
+  , mkLogRepresentationLine
   , mkLogEntry
   , mkLogEntryLine
   , mkLogger
@@ -46,12 +48,10 @@ import Control.Monad.State     ( StateT (..) )
 import Data.Aeson              ( (.:?), (.!=) )
 import Data.Text.Extended      ( Text )
 import Data.Time               ( UTCTime )
-import GHC.Generics            ( Generic )
 import Network.HTTP.Client     ( HttpException )
 
 import qualified Data.Aeson         as Aeson
 import qualified Data.Text.Extended as Text
-import qualified GHC.Generics       as G
 
 import Prelude hiding ( log )
 
@@ -79,21 +79,19 @@ type HasLogger r m =
   )
 
 instance Loggable HttpException where
-  logData e = logError $ mkLogEntry
+  logData e = logError $ mkLogRepresentation
     "HttpException:"
     [("Content", Text.showt e)]
 
 newtype LogError a = LogError a
 
-instance (Generic a, GLog Entry SkipDataName 0 (G.Rep a))
-  => Loggable (LogError a) where
-  logData (LogError x) = logError $ gLog @Entry @SkipDataName @0 $ G.from x
+instance GLogRepresentation a => Loggable (LogError a) where
+  logData (LogError x) = logError $ gLogRepresentation x
 
 newtype LogDebug a = LogDebug a
 
-instance (Generic a, GLog Entry SkipDataName 0 (G.Rep a))
-  => Loggable (LogDebug a) where
-  logData (LogDebug x) = logDebug $ gLog @Entry @SkipDataName @0 $ G.from x
+instance GLogRepresentation a => Loggable (LogDebug a) where
+  logData (LogDebug x) = logDebug $ gLogRepresentation x
 
 data Priority
   = Debug
