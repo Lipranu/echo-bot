@@ -31,8 +31,6 @@ module Infrastructure.Logger
   , logWarning
   , mkLogText
   , mkLogTextLine
-  , mkLogEntry
-  , mkLogEntryLine
   , mkLogger
   ) where
 
@@ -259,10 +257,3 @@ messageToLogEntry Message {..} = Text.concat [priority, mode, time, message]
     time     = case mTime of
       Nothing -> ""
       Just t  -> Text.concat [" (", Text.showt t, ")"]
-
-mkLogEntry :: Text -> [(Text, Text)] -> Text
-mkLogEntry text lines = text
-  <> Text.concat (mkLogEntryLine <$> lines)
-
-mkLogEntryLine :: (Text, Text) -> Text
-mkLogEntryLine (key, value) = "\n  |  " <> key <> ": " <> value

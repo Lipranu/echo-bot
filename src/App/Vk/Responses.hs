@@ -121,12 +121,12 @@ instance Aeson.FromJSON Updates where
             <> show e
 
 instance Loggable Updates where
-  logData (Updates upds ts) = logDebug $ mkLogEntry "Resived updates:"
+  logData (Updates upds ts) = logDebug $ mkLogText "Resived updates:"
     [ ("Amount"       , Text.showt $ length upds)
     , ("New timestamp", ts)
     ]
 
-  logData (OutOfDate ts) = logWarning $ mkLogEntry
+  logData (OutOfDate ts) = logWarning $ mkLogText
     "Event history is outdated or partially lost:"
     [("New Timestamp", Text.showt ts)]
 
@@ -442,7 +442,7 @@ instance Aeson.FromJSON UploadServer where
     UploadServer <$> o .: "upload_url"
 
 instance Loggable UploadServer where
-  logData (UploadServer url) = logDebug $ mkLogEntry "Recived upload server:"
+  logData (UploadServer url) = logDebug $ mkLogText "Recived upload server:"
     [("Url", url)]
 
 -- FileUploaded ------------------------------------------------------------
@@ -457,11 +457,11 @@ instance Aeson.FromJSON FileUploaded where
     <|> PhotoUploaded    <$> o .: "server" <*> o .: "hash" <*> o .: "photo"
 
 instance Loggable FileUploaded where
-  logData (DocumentUploaded file) = logDebug $ mkLogEntry
+  logData (DocumentUploaded file) = logDebug $ mkLogText
     "Document uploaded:"
     [("File", file)]
 
-  logData (PhotoUploaded server hash photo) = logInfo $ mkLogEntry
+  logData (PhotoUploaded server hash photo) = logInfo $ mkLogText
     "Photo uploaded:"
     [ ("Server", Text.showt server)
     , ("Hash"  , hash)

@@ -106,7 +106,7 @@ instance FromJSON UpdateType where
 
 instance Loggable UpdateType where
   logData (Message body) = logInfo "Recived update of type Message"
-  logData (UnsupportedUpdate body) = logWarning $ mkLogEntry
+  logData (UnsupportedUpdate body) = logWarning $ mkLogText
     "Recived unsupported update"
     [("Body", showt body)]
 
@@ -191,7 +191,7 @@ instance Loggable MessageType where
     Poll        body -> logData body
     Contact     body -> logData body
 --TODO: | MediaGroup
-    where addId id t = logDebug $ t <> mkLogEntryLine (t <> " Id", coerce id)
+    where addId id t = logDebug $ t <> mkLogTextLine (t <> " Id", coerce id)
 
 -- LocationBody ------------------------------------------------------------
 

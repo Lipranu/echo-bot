@@ -157,15 +157,15 @@ instance Loggable SendRequest where
 --TODO: | Poll
     where
       mkMediaLog (FileId id) SendCommonPart {..} srtype = logDebug $
-        (mkLogEntry ("Send" <> srtype) [(srtype <> " Id", id)])
-        <> (mkLogEntry "\n" $
+        (mkLogText ("Send" <> srtype) [(srtype <> " Id", id)])
+        <> (mkLogText "\n" $
             [("Chat Id", showt chatId), ("Parse Mode", parseMode)]
             <> case caption of
                Just v  -> [("Caption", v)]
                Nothing -> []
            )
 
-      mkStickerLog (FileId id) chat = logDebug $ mkLogEntry "SendSticker"
+      mkStickerLog (FileId id) chat = logDebug $ mkLogText "SendSticker"
         [("Sticker Id", id), ("Chat Id", showt chat)]
 
 -- SendCommonPart ----------------------------------------------------------
