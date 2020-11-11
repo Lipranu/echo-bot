@@ -17,6 +17,7 @@ module Infrastructure.Logger
   , Lock
   , LogDebug (..)
   , LogError (..)
+  , LogText (..)
   , Loggable (..)
   , Logger (..)
   , MonadLogger (..)
@@ -28,8 +29,8 @@ module Infrastructure.Logger
   , logError
   , logInfo
   , logWarning
-  , mkLogRepresentation
-  , mkLogRepresentationLine
+  , mkLogText
+  , mkLogTextLine
   , mkLogEntry
   , mkLogEntryLine
   , mkLogger
@@ -37,7 +38,7 @@ module Infrastructure.Logger
 
 -- IMPORTS -----------------------------------------------------------------
 
-import Infrastructure.Logger.LogRepresentation
+import Infrastructure.Logger.LogText
 import Infrastructure.Has
 
 import Control.Concurrent.MVar ( MVar, takeMVar, putMVar )
@@ -79,19 +80,19 @@ type HasLogger r m =
   )
 
 instance Loggable HttpException where
-  logData e = logError $ mkLogRepresentation
+  logData e = logError $ mkLogText
     "HttpException:"
     [("Content", Text.showt e)]
 
 newtype LogError a = LogError a
 
-instance GLogRepresentation a => Loggable (LogError a) where
-  logData (LogError x) = logError $ gLogRepresentation x
+instance ToLayout a => Loggable (LogError a) where
+  logData (LogError x) = logError $ layoutToText $ toLayout x
 
 newtype LogDebug a = LogDebug a
 
-instance GLogRepresentation a => Loggable (LogDebug a) where
-  logData (LogDebug x) = logDebug $ gLogRepresentation x
+instance ToLayout a => Loggable (LogDebug a) where
+  logData (LogDebug x) = logDebug $ layoutToText $ toLayout x
 
 data Priority
   = Debug
