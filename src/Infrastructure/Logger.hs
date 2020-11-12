@@ -24,6 +24,7 @@ module Infrastructure.Logger
   , MonadTime (..)
   , Options (..)
   , Priority (..)
+  , ToLayout (..)
   , log
   , logDebug
   , logError
@@ -84,13 +85,13 @@ instance Loggable HttpException where
 
 newtype LogError a = LogError a
 
-instance ToLayout a => Loggable (LogError a) where
-  logData (LogError x) = logError $ layoutToText $ toLayout x
+instance LogText a => Loggable (LogError a) where
+  logData (LogError x) = logError $ logText x
 
 newtype LogDebug a = LogDebug a
 
-instance ToLayout a => Loggable (LogDebug a) where
-  logData (LogDebug x) = logDebug $ layoutToText $ toLayout x
+instance LogText a => Loggable (LogDebug a) where
+  logData (LogDebug x) = logDebug $ logText x
 
 data Priority
   = Debug

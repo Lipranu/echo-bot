@@ -1,13 +1,11 @@
-{-# LANGUAGE DefaultSignatures    #-}
-{-# LANGUAGE DerivingStrategies   #-}
-{-# LANGUAGE DerivingVia          #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE StandaloneDeriving   #-}
-{-# LANGUAGE TypeFamilies         #-}
-{-# LANGUAGE TypeOperators        #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DefaultSignatures  #-}
+{-# LANGUAGE DerivingVia        #-}
+{-# LANGUAGE FlexibleContexts   #-}
+{-# LANGUAGE FlexibleInstances  #-}
+{-# LANGUAGE OverloadedStrings  #-}
+{-# LANGUAGE RecordWildCards    #-}
+{-# LANGUAGE StandaloneDeriving #-}
+{-# LANGUAGE TypeOperators      #-}
 
 module Infrastructure.Logger.LogText
   ( LogText (..)
@@ -81,8 +79,7 @@ instance ToLayout a => GLayout (G.Rec0 a) where
 class ToLayout a where
   toLayout :: a -> Layout
 
-instance {-# OVERLAPPABLE #-}
-  (Generic a, GLayout (G.Rep a)) => ToLayout a where
+  default toLayout :: (Generic a, GLayout (G.Rep a)) => a -> Layout
   toLayout x = gLayout (G.from x) mempty
 
 instance (Typeable a, ToLayout a) => ToLayout [a] where
@@ -97,6 +94,7 @@ instance (Typeable a, ToLayout a) => ToLayout (Maybe a) where
 instance ToLayout Text where
   toLayout x = mempty { title = Text.showt $ typeOf x, result = x }
 
+deriving via (ShowLayout Bool)    instance ToLayout Bool
 deriving via (ShowLayout Int)     instance ToLayout Int
 deriving via (ShowLayout Integer) instance ToLayout Integer
 deriving via (ShowLayout Double)  instance ToLayout Double
