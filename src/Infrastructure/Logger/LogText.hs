@@ -1,8 +1,10 @@
 {-# LANGUAGE DefaultSignatures    #-}
 {-# LANGUAGE DerivingStrategies   #-}
+{-# LANGUAGE DerivingVia          #-}
 {-# LANGUAGE FlexibleInstances    #-}
 {-# LANGUAGE OverloadedStrings    #-}
 {-# LANGUAGE RecordWildCards      #-}
+{-# LANGUAGE StandaloneDeriving   #-}
 {-# LANGUAGE TypeFamilies         #-}
 {-# LANGUAGE TypeOperators        #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -95,25 +97,10 @@ instance (Typeable a, ToLayout a) => ToLayout (Maybe a) where
 instance ToLayout Text where
   toLayout x = mempty { title = Text.showt $ typeOf x, result = x }
 
-instance ToLayout Value where
-  toLayout x = mempty { title  = Text.showt $ typeOf x
-                      , result = Text.showt x
-                      }
-
-instance ToLayout Int where
-  toLayout x = mempty { title  = Text.showt $ typeOf x
-                      , result = Text.showt x
-                      }
-
-instance ToLayout Integer where
-  toLayout x = mempty { title  = Text.showt $ typeOf x
-                      , result = Text.showt x
-                      }
-
-instance ToLayout Double where
-  toLayout x = mempty { title  = Text.showt $ typeOf x
-                      , result = Text.showt x
-                      }
+deriving via (ShowLayout Int)     instance ToLayout Int
+deriving via (ShowLayout Integer) instance ToLayout Integer
+deriving via (ShowLayout Double)  instance ToLayout Double
+deriving via (ShowLayout Value)   instance ToLayout Value
 
 -- TYPES -------------------------------------------------------------------
 
@@ -124,13 +111,21 @@ data Layout = Layout
   } deriving stock (Eq, Show)
 
 instance Semigroup Layout where
-  Layout t1 r1 f1 <> Layout t2 r2 f2 =
-    let title  = bool t1 t2 $ Text.null t1
-        result = bool r1 r2 $ Text.null r1
-     in Layout title result $ f1 <> f2
+  Layout t1 r1 f1 <> Layout t2 r2 f2 = Layout title result $ f1 <> f2
+    where title  = secondIfEmpty t1 t2
+          result = secondIfEmpty r1 r2
+          secondIfEmpty x y = bool x y $ Text.null x
 
 instance Monoid Layout where
   mempty = Layout mempty mempty mempty
+
+newtype ShowLayout a = ShowLayout a
+
+instance (Show a, Typeable a) => ToLayout (ShowLayout a) where
+  toLayout (ShowLayout x) = mempty
+    { title  = Text.showt $ typeOf x
+    , result = Text.showt x
+    }
 
 -- FUNCTIONS ---------------------------------------------------------------
 

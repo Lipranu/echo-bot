@@ -357,7 +357,7 @@ instance Aeson.FromJSON UrlAndSize where
 
 data Size = W | Z | Y | R | Q | P | O | X | M | S
   deriving stock (Generic, Eq, Ord)
-  deriving FromJSON via DropPrefix Size
+  deriving anyclass FromJSON --via DropPrefix Size
 
 -- VideoBody ---------------------------------------------------------------
 

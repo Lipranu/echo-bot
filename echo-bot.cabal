@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 --
--- hash: b17f64856ce30b59eafaf3f6c55265ecc4c4e2ba6314a271a954080a464cc3ba
+-- hash: a9ad84037be504ce6b7d2fdb608ec14946c9ccf9d330cc665013676f53fbc7ab
 
 name:           echo-bot
 version:        0.1.0.0
@@ -50,7 +50,7 @@ library
       Data.Text.Extended
       Infrastructure.Has
       Infrastructure.Logger
-      Infrastructure.Logger.LogRepresentation
+      Infrastructure.Logger.LogText
       Infrastructure.Requester
   other-modules:
       Paths_echo_bot
