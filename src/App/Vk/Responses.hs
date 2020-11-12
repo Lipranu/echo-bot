@@ -63,8 +63,8 @@ data ResponseException = ResponseException
   { eErrorCode     :: Integer
   , eErrorMsg      :: Text
   , eRequestParams :: [RequestParams]
-  } deriving stock (Show, Generic)
-    deriving anyclass Exception
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText, Exception)
     deriving FromJSON via DropPrefix ResponseException
     deriving Loggable via LogError   ResponseException
 
@@ -75,8 +75,8 @@ data UploadException = UploadException
   , uebBwact  :: Text
   , uebServer :: Integer
   , ueb_sig   :: Text
-  } deriving stock (Show, Generic)
-    deriving anyclass Exception
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText, Exception)
     deriving FromJSON via DropPrefix UploadException
     deriving Loggable via LogError   UploadException
 
@@ -85,7 +85,8 @@ data UploadException = UploadException
 data RequestParams = RequestParams
   { rpKey   :: Text
   , rpValue :: Text
-  } deriving stock (Show, Generic)
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass ToLayout
     deriving FromJSON via DropPrefix RequestParams
 
 -- LongPollServer ----------------------------------------------------------
@@ -94,7 +95,8 @@ data LongPollServer = LongPollServer
   { lpsKey    :: Text
   , lpsServer :: Text
   , lpsTs     :: Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving FromJSON via DropPrefix LongPollServer
     deriving Loggable via LogDebug   LongPollServer
 
@@ -156,13 +158,16 @@ instance Loggable Update where
 -- Message -----------------------------------------------------------------
 
 newtype MessageId = MessageId { getMessageId :: Integer }
-  deriving stock Generic
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass ToLayout
 
 newtype FromId = FromId { getFromId :: Integer }
-  deriving stock Generic
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass ToLayout
 
 newtype PeerId = PeerId { getPeerId :: Integer }
-  deriving stock Generic
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass ToLayout
 
 data Message = Message
   { mId          :: MessageId
@@ -176,7 +181,8 @@ data Message = Message
   , mForwardsId  :: [Integer]
   , mAttachments :: [Aeson.Value]
   , mPayload     :: Maybe Payload
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug Message
 
 instance Aeson.FromJSON Message where
@@ -214,11 +220,16 @@ instance Has (Maybe Command) Message where
 
 -- Context -----------------------------------------------------------------
 
-data Context = Private | Chat deriving stock Eq
+data Context
+  = Private
+  | Chat
+  deriving stock (Show, Eq)
 
 -- Payload -----------------------------------------------------------------
 
-data Payload = Payload Text Command deriving Generic
+data Payload = Payload Text Command
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass ToLayout
 
 instance Aeson.FromJSON Payload where
   parseJSON = Aeson.withText (path <> "Payload") $ \t -> Payload t
@@ -231,7 +242,8 @@ data Command
   | Repeat
   | NewCount Int
   | UnknownCommand Text
-  deriving stock Generic
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass ToLayout
 
 instance Aeson.FromJSON Command where
   parseJSON = Aeson.withText (path <> "Command") $ \case
@@ -305,7 +317,8 @@ data AttachmentBody = AttachmentBody
   , aOwnerId   :: Integer
   , aAccessKey :: Maybe Text
   , aType      :: Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug AttachmentBody
 
 instance Aeson.FromJSON (Text -> AttachmentBody) where
@@ -323,7 +336,8 @@ data PhotoBody = PhotoBody
   , pbAccessKey :: Maybe Text
   , pbUrl       :: Text
   , pbTitle     :: Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug PhotoBody
 
 instance Aeson.FromJSON PhotoBody where
@@ -366,7 +380,8 @@ data VideoBody = VideoBody
   , vbOwnerId   :: Integer
   , vbAccessKey :: Maybe Text
   , vbCanResend :: Bool
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug VideoBody
 
 instance Aeson.FromJSON VideoBody where
@@ -388,7 +403,8 @@ data AudioMessageBody = AudioMessageBody
   , ambAccessKey :: Maybe Text
   , ambUrl       :: Text
   , ambTitle     :: Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug AudioMessageBody
 
 instance Aeson.FromJSON AudioMessageBody where
@@ -409,7 +425,8 @@ data DocumentBody = DocumentBody
   , dbOwnerId   :: Integer
   , dbType      :: Text
   , dbAccessKey :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug DocumentBody
 
 instance Aeson.FromJSON DocumentBody where
@@ -475,7 +492,8 @@ data FileSaved = FileSaved
   , fsMediaId   :: Integer
   , fsOwnerId   :: Integer
   , fsAccessKey :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug FileSaved
 
 instance Aeson.FromJSON FileSaved where
@@ -493,7 +511,8 @@ data PhotoSaved = PhotoSaved
   { psMediaId   :: Integer
   , psOwnerId   :: Integer
   , psAccessKey :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug PhotoSaved
 
 instance Aeson.FromJSON PhotoSaved where

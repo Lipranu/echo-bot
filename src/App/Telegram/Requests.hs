@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass        #-}
 {-# LANGUAGE DeriveGeneric         #-}
 {-# LANGUAGE DerivingVia           #-}
 {-# LANGUAGE FlexibleContexts      #-}
@@ -183,7 +184,8 @@ data SendMessageBody = SendMessageBody
   , smChatId           :: Integer
   , smParseMode        :: Text
   , smReplyToMessageId :: Maybe Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving ToJSON   via DropPrefix SendMessageBody
     deriving Loggable via LogDebug   SendMessageBody
 
@@ -193,7 +195,8 @@ data SendLocationBody = SendLocationBody
   { slbLongitude      :: Double
   , slbLatitude       :: Double
   , slbChatId         :: Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving ToJSON   via DropPrefix SendLocationBody
     deriving Loggable via LogDebug   SendLocationBody
 
@@ -207,7 +210,8 @@ data SendVenueBody = SendVenueBody
   , svbAddress        :: Text
   , svbFoursquareId   :: Maybe Text
   , svbFoursquareType :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving ToJSON   via DropPrefix SendVenueBody
     deriving Loggable via LogDebug   SendVenueBody
 
@@ -219,7 +223,8 @@ data SendContactBody = SendContactBody
   , scbLastName    :: Maybe Text
   , scbVcard       :: Maybe Text
   , scbChatId      :: Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving ToJSON   via DropPrefix SendContactBody
     deriving Loggable via LogDebug   SendContactBody
 
@@ -229,7 +234,8 @@ data SendDiceBody = SendDiceBody
   { sdbEmoji  :: Text
   , sdbValue  :: Integer
   , sdbChatId :: Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving ToJSON   via DropPrefix SendDiceBody
     deriving Loggable via LogDebug   SendDiceBody
 

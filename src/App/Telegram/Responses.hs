@@ -1,12 +1,13 @@
-{-# LANGUAGE DeriveAnyClass       #-}
-{-# LANGUAGE DeriveGeneric        #-}
-{-# LANGUAGE DerivingVia          #-}
-{-# LANGUAGE FlexibleContexts     #-}
-{-# LANGUAGE FlexibleInstances    #-}
-{-# LANGUAGE LambdaCase           #-}
-{-# LANGUAGE OverloadedStrings    #-}
-{-# LANGUAGE RecordWildCards      #-}
-{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE DeriveAnyClass             #-}
+{-# LANGUAGE DeriveGeneric              #-}
+{-# LANGUAGE DerivingVia                #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module App.Telegram.Responses
   ( MessageType (..)
@@ -50,8 +51,8 @@ data ResponseException = ResponseException
   { eErrorCode          :: Integer
   , eDescription        :: Text
   , eResponseParameters :: Maybe ResponseParameters
-  } deriving stock (Show, Generic)
-    deriving anyclass Exception
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText, Exception)
     deriving FromJSON via DropPrefix ResponseException
     deriving Loggable via LogError   ResponseException
 
@@ -60,7 +61,8 @@ data ResponseException = ResponseException
 data ResponseParameters
   = MigrateToChatId Integer
   | RetryAfter Integer
-  deriving stock (Generic, Show)
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass ToLayout
 
 instance FromJSON ResponseParameters where
   parseJSON = Aeson.withObject (path <> "ResponseParameters") $ \o ->
@@ -118,7 +120,8 @@ data MessageBody = MessageBody
   , mbChatId    :: Integer
   , mbText      :: Maybe Text
   , mbType      :: MessageType
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving Loggable via LogDebug MessageBody
 
 instance FromJSON MessageBody where
@@ -135,7 +138,9 @@ instance FromJSON MessageBody where
 -- MessageType -------------------------------------------------------------
 
 newtype FileId = FileId { getFileId :: Text }
-  deriving stock Generic
+  deriving stock (Show, Generic)
+  deriving newtype Eq
+  deriving anyclass ToLayout
   deriving FromJSON via DropPrefix FileId
 
 data MessageType
@@ -154,7 +159,8 @@ data MessageType
   | Dice      DiceBody
   | Poll      PollBody
 --TODO: | MediaGroup
-  deriving stock Generic
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (ToLayout, LogText)
 
 instance FromJSON MessageType where
   parseJSON = Aeson.withObject (path <> "Attachment") $ \o ->
@@ -198,10 +204,9 @@ instance Loggable MessageType where
 data LocationBody = LocationBody
   { longitude :: Double
   , latitude  :: Double
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (FromJSON, ToLayout, LogText)
     deriving Loggable via LogDebug LocationBody
-
-instance FromJSON LocationBody
 
 -- VenueBody ---------------------------------------------------------------
 
@@ -211,7 +216,8 @@ data VenueBody = VenueBody
   , vbAddress        :: Text
   , vbFoursquareId   :: Maybe Text
   , vbFoursquareType :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving FromJSON via DropPrefix VenueBody
     deriving Loggable via LogDebug   VenueBody
 
@@ -222,7 +228,8 @@ data ContactBody = ContactBody
   , cbFirstName   :: Text
   , cbLastName    :: Maybe Text
   , cbVcard       :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving FromJSON via DropPrefix ContactBody
     deriving Loggable via LogDebug   ContactBody
 
@@ -231,7 +238,8 @@ data ContactBody = ContactBody
 data DiceBody = DiceBody
   { dbEmoji :: Text
   , dbValue :: Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving FromJSON via DropPrefix DiceBody
     deriving Loggable via LogDebug   DiceBody
 
@@ -251,7 +259,8 @@ data PollBody = PollBody
   , pbExplanationEntities   :: Maybe [MessageEntity]
   , pbOpenPeriod            :: Maybe Integer
   , pbCloseDate             :: Maybe Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText)
     deriving FromJSON via DropPrefix PollBody
     deriving Loggable via LogDebug   PollBody
 
@@ -260,13 +269,16 @@ data PollBody = PollBody
 data PollOption = PollOption
   { poText       :: Text
   , poVoterCount :: Integer
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass ToLayout
     deriving FromJSON via DropPrefix PollOption
 
 -- MessageEntity -----------------------------------------------------------
 
 newtype UserId = UserId { getUserId :: Integer }
-  deriving stock Generic
+  deriving stock (Show, Generic)
+  deriving newtype Eq
+  deriving anyclass ToLayout
   deriving FromJSON via DropPrefix UserId
 
 data MessageEntity = MessageEntity
@@ -276,7 +288,8 @@ data MessageEntity = MessageEntity
   , meUrl      :: Maybe Text
   , meUser     :: Maybe UserId
   , meLanguage :: Maybe Text
-  } deriving stock Generic
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass ToLayout
     deriving FromJSON via DropPrefix MessageEntity
 
 -- FUNCTIONS ---------------------------------------------------------------

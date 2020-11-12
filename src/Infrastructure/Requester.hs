@@ -72,8 +72,8 @@ instance (Has (Requester m) r, MonadReader r m)
 data DecodeException = DecodeException
   { errorMessage :: Text
   , source       :: Text
-  } deriving stock (Generic, Show)
-    deriving anyclass Exception
+  } deriving stock (Show, Eq, Generic)
+    deriving anyclass (ToLayout, LogText, Exception)
     deriving Loggable via LogError DecodeException
 
 -- FUNCTIONS ---------------------------------------------------------------
