@@ -49,8 +49,7 @@ instance (GLayout f, GLayout g) => GLayout (f :+: g) where
   gLayout (G.R1 x) = gLayout x
 
 instance (GLayout f, G.Constructor c) => GLayout (G.C1 c f) where
-  gLayout c@(G.M1 x) l = l <> gLayout x mempty
-    { title = toCapitalCase $ G.conName c }
+  gLayout c@(G.M1 x) l = l <> gLayout x (withTitle $ G.conName c)
 
 instance (GLayout (G.S1 s f), GLayout (g :*: h)) =>
   GLayout ((G.S1 s f) :*: (g :*: h)) where
@@ -62,14 +61,15 @@ instance (GLayout (f :*: g), GLayout (h :*: k)) =>
 
 instance (GLayout (G.S1 s f), GLayout (G.S1 s' g)) =>
   GLayout ((G.S1 s f) :*: (G.S1 s' g)) where
-  gLayout (x :*: y) l = l `inject` gLayout y mempty `inject` gLayout x mempty
+  gLayout (x :*: y) l = addResult l
+    `inject` gLayout y mempty
+    `inject` gLayout x mempty
 
 instance (GLayout f, G.Selector s) => GLayout (G.S1 s f) where
-  gLayout s@(G.M1 x) l = l <> gLayout x mempty
-    { title = toCapitalCase $ G.selName s }
+  gLayout s@(G.M1 x) l = l <> gLayout x (withTitle $ G.selName s)
 
 instance GLayout G.U1 where
-  gLayout _ l = l { result = title l }
+  gLayout _ = addResult
 
 instance ToLayout a => GLayout (G.Rec0 a) where
   gLayout (G.K1 x) l = l <> toLayout x
@@ -129,6 +129,12 @@ instance (Show a, Typeable a) => ToLayout (ShowLayout a) where
 
 inject :: Layout -> Layout -> Layout
 inject l1 l2 = l1 { fields = l2 : fields l1 }
+
+addResult :: Layout -> Layout
+addResult l = l <> mempty { result = title l }
+
+withTitle :: String -> Layout
+withTitle s = mempty { title = toCapitalCase s }
 
 toCapitalCase :: String -> Text
 toCapitalCase [] = mempty

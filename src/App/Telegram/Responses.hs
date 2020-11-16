@@ -7,7 +7,6 @@
 {-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
 {-# LANGUAGE RecordWildCards            #-}
-{-# LANGUAGE UndecidableInstances       #-}
 
 module App.Telegram.Responses
   ( MessageType (..)
@@ -108,6 +107,7 @@ instance FromJSON UpdateType where
 
 instance Loggable UpdateType where
   logData (Message body) = logInfo "Recived update of type Message"
+    >> logData body
   logData (UnsupportedUpdate body) = logWarning $ mkLogText
     "Recived unsupported update"
     [("Body", showt body)]
@@ -180,24 +180,24 @@ instance FromJSON MessageType where
 --TODO: | MediaGroup
     <|> pure TextMessage
 
-instance Loggable MessageType where
-  logData m = case m of
-    TextMessage      -> logDebug "Text Message"
-    Animation   id   -> addId id "Animation"
-    Audio       id   -> addId id "Audio"
-    Document    id   -> addId id "Document"
-    Photo       id   -> addId id "Photo"
-    Sticker     id   -> addId id "Sticker"
-    Video       id   -> addId id "Video"
-    VideoNote   id   -> addId id "VideoNote"
-    Voice       id   -> addId id "Voice"
-    Location    body -> logData body
-    Venue       body -> logData body
-    Dice        body -> logData body
-    Poll        body -> logData body
-    Contact     body -> logData body
---TODO: | MediaGroup
-    where addId id t = logDebug $ t <> mkLogTextLine (t <> " Id", coerce id)
+--instance Loggable MessageType where
+--  logData m = case m of
+--    TextMessage      -> logDebug "Text Message"
+--    Animation   id   -> addId id "Animation"
+--    Audio       id   -> addId id "Audio"
+--    Document    id   -> addId id "Document"
+--    Photo       id   -> addId id "Photo"
+--    Sticker     id   -> addId id "Sticker"
+--    Video       id   -> addId id "Video"
+--    VideoNote   id   -> addId id "VideoNote"
+--    Voice       id   -> addId id "Voice"
+--    Location    body -> logData body
+--    Venue       body -> logData body
+--    Dice        body -> logData body
+--    Poll        body -> logData body
+--    Contact     body -> logData body
+----TODO: | MediaGroup
+--    where addId id t = logDebug $ t <> mkLogTextLine (t <> " Id", coerce id)
 
 -- LocationBody ------------------------------------------------------------
 
